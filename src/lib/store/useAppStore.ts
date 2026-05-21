@@ -415,8 +415,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
 
       await get().fetchStoreData();
-    } catch (e: any) {
-      console.warn("Failed to initialize session. Reverting to local Demo Mode:", e.message);
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.warn("Failed to initialize session. Reverting to local Demo Mode:", errMsg);
       set({
         isDemoMode: true,
         user: DEMO_PROFILE,
@@ -425,7 +426,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         variants: DEMO_VARIANTS,
         invoices: DEMO_INVOICES,
         invoiceItems: DEMO_INVOICE_ITEMS,
-        errorMsg: e.message,
+        errorMsg: errMsg,
       });
     } finally {
       set({ isLoading: false });
@@ -486,16 +487,28 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (varError) throw varError;
 
       // Map back to our structure (inlining inventory quantity)
-      const mappedVariants: ProductVariant[] = (dbVariants || []).map((v: any) => ({
-        id: v.id,
-        product_id: v.product_id,
-        size: v.size,
-        color: v.color,
-        sku: v.sku,
-        price: Number(v.price),
-        stock: v.inventory?.[0]?.quantity ?? 0,
-        created_at: v.created_at,
-      }));
+      const mappedVariants: ProductVariant[] = (dbVariants || []).map((v: unknown) => {
+        const item = v as {
+          id: string;
+          product_id: string;
+          size: string;
+          color: string;
+          sku: string;
+          price: string | number;
+          inventory?: { quantity: number }[] | null;
+          created_at: string;
+        };
+        return {
+          id: item.id,
+          product_id: item.product_id,
+          size: item.size,
+          color: item.color,
+          sku: item.sku,
+          price: Number(item.price),
+          stock: item.inventory?.[0]?.quantity ?? 0,
+          created_at: item.created_at,
+        };
+      });
 
       // 3. Fetch Invoices
       const { data: dbInvoices, error: invError } = await supabase
@@ -511,9 +524,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         variants: mappedVariants,
         invoices: dbInvoices || [],
       });
-    } catch (e: any) {
-      console.error("Error fetching store database:", e.message);
-      set({ errorMsg: "Failed to sync inventory: " + e.message });
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.error("Error fetching store database:", errMsg);
+      set({ errorMsg: "Failed to sync inventory: " + errMsg });
     } finally {
       set({ isLoading: false });
     }
@@ -619,9 +633,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Refresh store data to keep in complete sync
       await get().fetchStoreData();
       return true;
-    } catch (e: any) {
-      console.error("Error creating product:", e.message);
-      set({ errorMsg: "Failed to add product: " + e.message, isLoading: false });
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.error("Error creating product:", errMsg);
+      set({ errorMsg: "Failed to add product: " + errMsg, isLoading: false });
       return false;
     }
   },
@@ -660,9 +675,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       await get().fetchStoreData();
       return true;
-    } catch (e: any) {
-      console.error("Error deleting product:", e.message);
-      set({ errorMsg: "Failed to delete product: " + e.message, isLoading: false });
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.error("Error deleting product:", errMsg);
+      set({ errorMsg: "Failed to delete product: " + errMsg, isLoading: false });
       return false;
     }
   },
@@ -699,9 +715,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       await get().fetchStoreData();
       return true;
-    } catch (e: any) {
-      console.error("Error updating stock directly:", e.message);
-      set({ errorMsg: "Failed to save stock adjustment: " + e.message, isLoading: false });
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.error("Error updating stock directly:", errMsg);
+      set({ errorMsg: "Failed to save stock adjustment: " + errMsg, isLoading: false });
       return false;
     }
   },
@@ -824,7 +841,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({ isLoading: true, errorMsg: null });
 
-    const totalQuantity = cart.reduce((sum, item) => sum + item.quantity, 0);
     const subtotalPrice = cart.reduce((sum, item) => sum + item.quantity * item.price, 0);
     const totalAmount = Math.max(0, subtotalPrice - cartDiscount);
 
@@ -991,10 +1007,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       await get().fetchStoreData();
       return true;
-    } catch (e: any) {
-      console.error("Checkout Transaction Failed, Rolled back:", e.message);
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : "Failed to process sale. Please try again.";
+      console.error("Checkout Transaction Failed, Rolled back:", errMsg);
       set({
-        errorMsg: e.message || "Failed to process sale. Please try again.",
+        errorMsg: errMsg,
         isLoading: false,
       });
       return false;

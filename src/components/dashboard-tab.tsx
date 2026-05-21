@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useAppStore, Invoice, InvoiceItem } from "@/lib/store/useAppStore";
+import { useAppStore, Invoice } from "@/lib/store/useAppStore";
 import {
   TrendingUp,
   AlertTriangle,
@@ -12,7 +12,6 @@ import {
   Eye,
   Store,
   Cpu,
-  Zap,
   Play,
   Terminal,
 } from "lucide-react";
@@ -96,7 +95,7 @@ export default function DashboardTab() {
           ).toFixed(2)}ms (average ${(
             (t2_end - t2_start) /
             500
-          ).toFixed(4)}ms/search).`
+          ).toFixed(4)}ms/search). Found ${matchesFound} total matches.`
         );
 
         // --- PHASE 3: Rapid Transaction Throughput ---
@@ -118,7 +117,7 @@ export default function DashboardTab() {
             t3_end - t3_start
           ).toFixed(2)}ms (${((t3_end - t3_start) / 100).toFixed(
             4
-          )}ms/transaction).`
+          )}ms/transaction). Successfully completed ${successfulBills} mock checkouts.`
         );
 
         // --- PHASE 4: Transaction Rollback Safety ---
@@ -148,8 +147,9 @@ export default function DashboardTab() {
           itemA.stock -= 2;
           itemB.stock -= 1;
           txSuccess = true;
-        } catch (e: any) {
-          log(`[ROLLBACK] Cart validation failed: "${e.message}". Restoring original inventories.`);
+        } catch (e: unknown) {
+          const errMsg = e instanceof Error ? e.message : "Validation failed";
+          log(`[ROLLBACK] Cart validation failed: "${errMsg}". Restoring original inventories.`);
           itemA.stock = originalStockA;
           itemB.stock = originalStockB;
         }
@@ -162,8 +162,9 @@ export default function DashboardTab() {
         }
 
         log("🎯 BENCHMARK RESULTS: PaisaPOS is 100% stable, robust, and safe under extreme sales volume.");
-      } catch (err: any) {
-        setTestLog((prev) => [...prev, `[ERROR] Stress Test failed: ${err.message}`]);
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : "Stress test failed";
+        setTestLog((prev) => [...prev, `[ERROR] Stress Test failed: ${errMsg}`]);
       } finally {
         setIsTesting(false);
       }
@@ -265,7 +266,7 @@ export default function DashboardTab() {
         <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Today's Sales
+              Today&apos;s Sales
             </span>
             <div className="p-2 bg-emerald-500/10 text-emerald-500 rounded-lg">
               <TrendingUp className="w-4 h-4" />
@@ -358,7 +359,7 @@ export default function DashboardTab() {
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <ShoppingBag className="w-8 h-8 text-muted-foreground mb-2 opacity-40" />
                 <p className="text-sm font-semibold text-muted-foreground">No invoices generated yet</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Click "New Sale" to process your first bill.</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Click &quot;New Sale&quot; to process your first bill.</p>
               </div>
             ) : (
               <table className="w-full text-left text-sm border-collapse">

@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import { useAppStore, Product, ProductVariant } from "@/lib/store/useAppStore";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useAppStore } from "@/lib/store/useAppStore";
 import {
   Search,
   ShoppingCart,
@@ -10,7 +10,6 @@ import {
   Loader2,
   User,
   Phone,
-  Tag,
   Check,
   Percent,
   Keyboard,
@@ -55,6 +54,16 @@ export default function BillingTab() {
     }
   }, []);
 
+  const handleCheckoutSubmit = useCallback(async () => {
+    const success = await checkout();
+    if (success) {
+      // Set focus back to search after successful checkout
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 300);
+    }
+  }, [checkout]);
+
   // Keyboard navigation & hotkeys
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -79,7 +88,7 @@ export default function BillingTab() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [cart, isLoading]);
+  }, [cart, isLoading, handleCheckoutSubmit]);
 
   // -------------------------------------------------------------------------
   // FILTER PRODUCTS BY SEARCH QUERY
@@ -104,7 +113,10 @@ export default function BillingTab() {
   // Automatically select the single product if search filters down to exactly 1 product
   useEffect(() => {
     if (filteredProducts.length === 1 && searchQuery.trim() !== "") {
-      setSelectedProductId(filteredProducts[0].id);
+      const timer = setTimeout(() => {
+        setSelectedProductId(filteredProducts[0].id);
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [filteredProducts, searchQuery]);
 
@@ -125,15 +137,7 @@ export default function BillingTab() {
     prevItemsCountRef.current = totalItemsCount;
   }, [totalItemsCount]);
 
-  const handleCheckoutSubmit = async () => {
-    const success = await checkout();
-    if (success) {
-      // Set focus back to search after successful checkout
-      setTimeout(() => {
-        searchInputRef.current?.focus();
-      }, 300);
-    }
-  };
+
 
   const paymentOptions = ["Cash", "eSewa", "Khalti", "Fonepay"] as const;
 
@@ -208,7 +212,7 @@ export default function BillingTab() {
               <Search className="w-10 h-10 text-muted-foreground mb-3 opacity-30 animate-bounce" />
               <h3 className="text-sm font-bold text-foreground">No Products Found</h3>
               <p className="text-xs text-muted-foreground mt-1 max-w-xs">
-                Could not find any items matching "{searchQuery}". Check spelling or create a new SKU in the Inventory tab.
+                Could not find any items matching &quot;{searchQuery}&quot;. Check spelling or create a new SKU in the Inventory tab.
               </p>
             </div>
           ) : (

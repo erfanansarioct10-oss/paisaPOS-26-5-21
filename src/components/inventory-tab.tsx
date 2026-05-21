@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useAppStore, Product, ProductVariant } from "@/lib/store/useAppStore";
+import React, { useState, useEffect, useCallback } from "react";
+import { useAppStore } from "@/lib/store/useAppStore";
 import {
   Package,
   Plus,
@@ -9,10 +9,8 @@ import {
   ChevronDown,
   ChevronRight,
   Sparkles,
-  ArrowRight,
   X,
   Loader2,
-  CheckCircle,
   AlertTriangle,
 } from "lucide-react";
 
@@ -57,7 +55,7 @@ export default function InventoryTab() {
   };
 
   // Run bulk matrix generation when inputs or triggers change
-  const generateMatrix = () => {
+  const generateMatrix = useCallback(() => {
     if (!prodName) return;
 
     // Clean inputs
@@ -94,17 +92,20 @@ export default function InventoryTab() {
     });
 
     setGeneratedVariants(matrix);
-  };
+  }, [prodName, sizeInput, colorInput, basePrice, baseStock]);
 
   // Re-generate matrix automatically when bulk inputs change
   useEffect(() => {
     if (prodName && isOpen) {
-      generateMatrix();
+      const timer = setTimeout(() => {
+        generateMatrix();
+      }, 0);
+      return () => clearTimeout(timer);
     }
-  }, [sizeInput, colorInput, basePrice, baseStock, prodName, isOpen]);
+  }, [prodName, isOpen, generateMatrix]);
 
   // Adjust a cell value in the generated variants list
-  const updateGeneratedCell = (index: number, key: keyof GeneratedVariant, value: any) => {
+  const updateGeneratedCell = (index: number, key: keyof GeneratedVariant, value: string | number) => {
     setGeneratedVariants(
       generatedVariants.map((item, idx) =>
         idx === index ? { ...item, [key]: value } : item
@@ -173,7 +174,7 @@ export default function InventoryTab() {
             <Package className="w-12 h-12 text-muted-foreground mb-3 opacity-30 animate-pulse" />
             <h3 className="text-base font-bold text-foreground">No Products Tracked</h3>
             <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
-              Your inventory is empty. Click "Add Product" to quickly generate size and color variants in seconds.
+              Your inventory is empty. Click &quot;Add Product&quot; to quickly generate size and color variants in seconds.
             </p>
           </div>
         ) : (
