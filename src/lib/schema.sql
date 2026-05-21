@@ -88,6 +88,18 @@ create table invoice_items (
   subtotal numeric(10,2) not null check (subtotal >= 0)
 );
 
+-- 8. AUDIT LOGS TABLE
+create table audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  store_id uuid references stores(id) on delete cascade,
+  user_id uuid, -- Matches auth.uid()
+  operation text not null, -- e.g. 'CHECKOUT', 'STOCK_ADJUSTMENT'
+  affected_entity text not null, -- e.g. 'Invoice: INV-2026-0001', 'SKU: HOOD-BLK-M'
+  result text not null, -- e.g. 'SUCCESS', 'FAILED'
+  error_message text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
 -- =========================================================================
 -- ATOMIC PL/PGSQL TRANSACTION FOR HIGH-SPEED CHECKOUT & STOCK SYNC
 -- =========================================================================
@@ -107,8 +119,12 @@ declare
   v_item jsonb;
   v_current_stock int;
   v_sku text;
+  v_db_price numeric(10,2);
+  v_item_subtotal numeric(10,2);
+  v_calculated_subtotal numeric(10,2) := 0.00;
+  v_expected_total numeric(10,2);
 begin
-  -- 1. Insert Core Invoice
+  -- 1. Insert Core Invoice (relying on client values first; we validate the total at the end of the transaction)
   insert into invoices (
     store_id, invoice_number, customer_name, customer_phone, 
     total_amount, discount_amount, paid_amount, payment_method
@@ -125,7 +141,7 @@ begin
     where variant_id = (v_item->>'variant_id')::uuid
     for update; 
 
-    select sku into v_sku
+    select price, sku into v_db_price, v_sku
     from product_variants
     where id = (v_item->>'variant_id')::uuid;
 
@@ -145,17 +161,43 @@ begin
         updated_at = now()
     where variant_id = (v_item->>'variant_id')::uuid;
 
-    -- Record Invoice Item
+    -- Recalculate subtotal using authentic database price
+    v_item_subtotal := v_db_price * (v_item->>'quantity')::int;
+    v_calculated_subtotal := v_calculated_subtotal + v_item_subtotal;
+
+    -- Record Invoice Item using server-verified values
     insert into invoice_items (
       invoice_id, variant_id, quantity, unit_price, subtotal
     ) values (
       v_invoice_id,
       (v_item->>'variant_id')::uuid,
       (v_item->>'quantity')::int,
-      (v_item->>'unit_price')::numeric,
-      (v_item->>'subtotal')::numeric
+      v_db_price,
+      v_item_subtotal
     );
   end loop;
+
+  -- 3. Price Tampering Integrity Verification
+  v_expected_total := v_calculated_subtotal - p_discount_amount;
+  if v_expected_total < 0.00 then
+    v_expected_total := 0.00;
+  end if;
+
+  if abs(v_expected_total - p_total_amount) > 0.01 then
+    raise exception 'Price tampering detected! Client reported total of %, but recalculated total is %', 
+      p_total_amount, v_expected_total;
+  end if;
+
+  -- 4. Record successful operation to audit log
+  insert into audit_logs (store_id, user_id, operation, affected_entity, result, created_at)
+  values (
+    p_store_id, 
+    auth.uid(), 
+    'CHECKOUT', 
+    'Invoice: ' || p_invoice_number, 
+    'SUCCESS', 
+    now()
+  );
 
   return v_invoice_id;
 end;
@@ -171,25 +213,68 @@ alter table product_variants enable row level security;
 alter table inventory enable row level security;
 alter table invoices enable row level security;
 alter table invoice_items enable row level security;
+alter table audit_logs enable row level security;
 
--- Basic tenant read/write policies based on store_id mapping (can be adjusted for custom auth setups)
+-- 1. Optimized Stable Security Definer Store Helper (Prevents redundant joining RLS policies)
+create or replace function get_user_store_id() returns uuid as $$
+  select store_id from users where id = auth.uid();
+$$ language sql stable security definer;
+
+-- 2. Core Tenant Isolation Policies
 create policy "Users can manage their own store record" on stores 
-  for all using (id in (select store_id from users where id = auth.uid()));
+  for all using (id = get_user_store_id());
 
 create policy "Users can manage their own user record" on users 
   for all using (id = auth.uid());
 
 create policy "Users can manage products in their store" on products 
-  for all using (store_id in (select store_id from users where id = auth.uid()));
+  for all using (store_id = get_user_store_id());
 
 create policy "Users can manage product variants" on product_variants 
-  for all using (product_id in (select id from products where store_id in (select store_id from users where id = auth.uid())));
+  for all using (product_id in (select id from products where store_id = get_user_store_id()));
 
 create policy "Users can manage inventory" on inventory 
-  for all using (variant_id in (select id from product_variants where product_id in (select id from products where store_id in (select store_id from users where id = auth.uid()))));
+  for all using (variant_id in (select id from product_variants where product_id in (select id from products where store_id = get_user_store_id())));
 
 create policy "Users can manage invoices" on invoices 
-  for all using (store_id in (select store_id from users where id = auth.uid()));
+  for all using (store_id = get_user_store_id());
 
 create policy "Users can manage invoice items" on invoice_items 
-  for all using (invoice_id in (select id from invoices where store_id in (select store_id from users where id = auth.uid())));
+  for all using (invoice_id in (select id from invoices where store_id = get_user_store_id()));
+
+create policy "Users can manage audit logs of their store" on audit_logs 
+  for all using (store_id = get_user_store_id());
+
+-- =========================================================================
+-- ONBOARDING TRANSACTIONAL REGISTRATION RPC (P0 DEADLOCK REMEDIATION)
+-- =========================================================================
+create or replace function register_store_and_user(
+  p_user_id uuid,
+  p_full_name text,
+  p_store_name text
+) returns uuid as $$
+declare
+  v_store_id uuid;
+begin
+  -- 1. Insert store bypasses initial RLS since this is a security definer function
+  insert into stores (name, phone, address, pan_vat)
+  values (p_store_name, '', '', '')
+  returning id into v_store_id;
+
+  -- 2. Insert user profile linking to store
+  insert into users (id, name, store_id)
+  values (p_user_id, p_full_name, v_store_id);
+
+  return v_store_id;
+end;
+$$ language plpgsql security definer;
+
+-- =========================================================================
+-- HIGH-PERFORMANCE SYSTEM INDEXES FOR MASSIVE SAAS SCALE
+-- =========================================================================
+create index if not exists idx_products_store_id on products(store_id);
+create index if not exists idx_product_variants_product_id on product_variants(product_id);
+create index if not exists idx_product_variants_sku on product_variants(sku);
+create index if not exists idx_inventory_variant_id on inventory(variant_id);
+create index if not exists idx_invoices_store_created on invoices(store_id, created_at desc);
+create index if not exists idx_invoice_items_invoice_id on invoice_items(invoice_id);

@@ -357,16 +357,16 @@ export default function BillingTab() {
                   <div className="flex items-center border border-border bg-slate-950 rounded-lg shadow-sm">
                     <button
                       onClick={() => updateCartQuantity(item.variant_id, item.quantity - 1)}
-                      className="w-8 h-8 flex items-center justify-center hover:bg-slate-900 text-muted-foreground hover:text-foreground font-extrabold focus:outline-none transition-colors border-r border-border"
+                      className="w-11 h-11 flex items-center justify-center hover:bg-slate-900 text-muted-foreground hover:text-foreground font-extrabold text-sm focus:outline-none transition-colors border-r border-border"
                     >
                       -
                     </button>
-                    <span className="w-8 text-center font-bold font-mono text-xs text-white">
+                    <span className="w-10 text-center font-bold font-mono text-xs text-white">
                       {item.quantity}
                     </span>
                     <button
                       onClick={() => updateCartQuantity(item.variant_id, item.quantity + 1)}
-                      className="w-8 h-8 flex items-center justify-center hover:bg-slate-900 text-muted-foreground hover:text-foreground font-extrabold focus:outline-none transition-colors border-l border-border"
+                      className="w-11 h-11 flex items-center justify-center hover:bg-slate-900 text-muted-foreground hover:text-foreground font-extrabold text-sm focus:outline-none transition-colors border-l border-border"
                     >
                       +
                     </button>

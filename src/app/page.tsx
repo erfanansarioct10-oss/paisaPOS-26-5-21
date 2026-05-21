@@ -79,30 +79,14 @@ export default function LoginPage() {
         if (signUpError) throw signUpError;
         if (!signUpData.user) throw new Error("Registration failed. Please check your credentials.");
 
-        // 2. Create the store record
-        const { data: store, error: storeError } = await supabase
-          .from("stores")
-          .insert({
-            name: storeName,
-            phone: "",
-            address: "",
-            pan_vat: "",
-          })
-          .select()
-          .single();
+        // 2. Create the store & user profile atomically via security definer RPC (resolves RLS onboarding deadlock)
+        const { error: onboardingError } = await supabase.rpc("register_store_and_user", {
+          p_user_id: signUpData.user.id,
+          p_full_name: fullName,
+          p_store_name: storeName,
+        });
 
-        if (storeError) throw storeError;
-
-        // 3. Create the user profile linking to store
-        const { error: profileError } = await supabase
-          .from("users")
-          .insert({
-            id: signUpData.user.id,
-            name: fullName,
-            store_id: store.id,
-          });
-
-        if (profileError) throw profileError;
+        if (onboardingError) throw onboardingError;
 
         // Force a brief sign-out and re-signin or show confirmation
         setLocalError("Account registered successfully! Logging you in...");
@@ -110,8 +94,9 @@ export default function LoginPage() {
 
       // Re-initialize Zustand state which pulls the auth user details and routes them
       await initializeSession();
-    } catch (err: any) {
-      setLocalError(err.message || "An authentication error occurred.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "An authentication error occurred.";
+      setLocalError(message);
     } finally {
       setLocalLoading(false);
     }
