@@ -42,7 +42,6 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
     // 2. Call the Security Definer registration RPC
     console.log("[QA] Triggering register_store_and_user onboarding RPC...");
     const { data: storeId, error: onboardingError } = await supabase.rpc("register_store_and_user", {
-      p_user_id: userId,
       p_full_name: fullName,
       p_store_name: storeName,
     });
@@ -215,6 +214,30 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
     expect(checkInvoice.invoice_items.length).toBe(1);
     expect(checkInvoice.invoice_items[0].quantity).toBe(4);
 
+    // 13.5. Verify check constraint on payment method: only Cash, eSewa, Khalti, Fonepay are allowed
+    console.log("[QA] Testing payment method check constraint with invalid method 'Visa'...");
+    const { error: invalidCheckoutError } = await supabase.rpc("create_invoice_and_deduct_stock", {
+      p_store_id: storeId,
+      p_invoice_number: "INV-PRE-GENERATED",
+      p_customer_name: "John Doe Nepal",
+      p_customer_phone: "9851000000",
+      p_total_amount: 2450.00,
+      p_discount_amount: 0.00,
+      p_paid_amount: 2450.00,
+      p_payment_method: "Visa", // Invalid payment method
+      p_items: [
+        {
+          variant_id: variant.id,
+          quantity: 1,
+          unit_price: 2450.00,
+          subtotal: 2450.00,
+        }
+      ],
+    });
+
+    expect(invalidCheckoutError).not.toBeNull();
+    expect(invalidCheckoutError!.message).toContain("check_payment_method");
+
     // 14. Clean up - DELETE the store. Cascade constraints must automatically wipe out products, variants, inventory, and invoices.
     console.log("[QA] Cleaning up database by deleting test store (cascade)...");
     const { error: storeDeleteError } = await supabase
@@ -243,5 +266,5 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
     // 17. Clean up Supabase Session
     console.log("[QA] Logging out test session...");
     await supabase.auth.signOut();
-  });
+  }, 15000);
 });

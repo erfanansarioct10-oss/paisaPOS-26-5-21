@@ -2,8 +2,20 @@
 // PaisaPOS — Inventory (Products & Variants) Slice
 // =========================================================================
 
-import { supabase } from "@/lib/supabase";
 import type { AppState, Product, ProductVariant } from "./types";
+import { upsertProductAction, deleteProductAction, adjustStockAction } from "@/app/actions";
+import { getSyncToken } from "@/lib/broadcast";
+
+function mapProductError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (msg.includes("duplicate key value violates unique constraint") || msg.toLowerCase().includes("sku already exists") || msg.toLowerCase().includes("unique constraint")) {
+    return "Failed to save product: A variant with this SKU already exists.";
+  }
+  if (msg.toLowerCase().includes("unauthorized") || msg.toLowerCase().includes("unauthenticated")) {
+    return "Failed to save product: Unauthorized action.";
+  }
+  return "Failed to save product. Please check the inputs and try again.";
+}
 
 type SetState = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
 type GetState = () => AppState;
@@ -57,7 +69,8 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
         const channel = new BroadcastChannel("paisapos-demo-sync");
         channel.postMessage({
           type: "SYNC_PRODUCT_ADD",
-          payload: { products: newProducts, variants: newAllVariants }
+          payload: { products: newProducts, variants: newAllVariants },
+          token: getSyncToken()
         });
         channel.close();
       }
@@ -65,58 +78,40 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
     }
 
     try {
-      // 1. Insert product record
-      const { data: product, error: prodError } = await supabase
-        .from("products")
-        .insert({
-          store_id: store.id,
-          name,
-          category,
-          low_stock_threshold: lowStockThreshold,
-        })
-        .select()
-        .single();
-
-      if (prodError) throw prodError;
-
-      // 2. Prepare variants and insert them
-      const variantsToInsert = variantData.map(v => ({
-        product_id: product.id,
-        size: v.size,
-        color: v.color,
-        sku: v.sku,
-        price: v.price,
-      }));
-
-      const { data: dbVariants, error: varError } = await supabase
-        .from("product_variants")
-        .insert(variantsToInsert)
-        .select();
-
-      if (varError) throw varError;
-
-      // 3. Prepare inventory records for the created variants
-      const inventoryToInsert = dbVariants.map(v => {
-        const matchingInput = variantData.find(vd => vd.sku === v.sku);
-        return {
-          variant_id: v.id,
-          quantity: matchingInput?.stock ?? 0,
-        };
+      await upsertProductAction({
+        productId: null,
+        name,
+        category,
+        lowStockThreshold,
+        deletedVariantIds: [],
+        variants: variantData.map(v => ({
+          size: v.size,
+          color: v.color,
+          sku: v.sku,
+          price: v.price,
+          stock: v.stock,
+        })),
       });
-
-      const { error: invError } = await supabase
-        .from("inventory")
-        .insert(inventoryToInsert);
-
-      if (invError) throw invError;
 
       // Refresh store data to keep in complete sync
       await get().fetchStoreData();
+
+      // Broadcast changes using signed BroadcastChannel payloads
+      if (typeof window !== "undefined") {
+        const channel = new BroadcastChannel("paisapos-demo-sync");
+        channel.postMessage({
+          type: "SYNC_PRODUCT_ADD",
+          payload: { products: get().products, variants: get().variants },
+          token: getSyncToken()
+        });
+        channel.close();
+      }
+
       return true;
     } catch (e: unknown) {
-      const errMsg = e instanceof Error ? e.message : String(e);
-      console.error("Error creating product:", errMsg);
-      set({ errorMsg: "Failed to add product: " + errMsg, isLoading: false });
+      const errMsg = mapProductError(e);
+      console.error("Error creating product:", e);
+      set({ errorMsg: errMsg, isLoading: false });
       return false;
     }
   },
@@ -141,7 +136,8 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
         const channel = new BroadcastChannel("paisapos-demo-sync");
         channel.postMessage({
           type: "SYNC_PRODUCT_DELETE",
-          payload: { products: newProducts, variants: newAllVariants }
+          payload: { products: newProducts, variants: newAllVariants },
+          token: getSyncToken()
         });
         channel.close();
       }
@@ -149,19 +145,26 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
     }
 
     try {
-      const { error } = await supabase
-        .from("products")
-        .delete()
-        .eq("id", productId);
-
-      if (error) throw error;
+      await deleteProductAction(productId);
 
       await get().fetchStoreData();
+
+      // Broadcast changes using signed BroadcastChannel payloads
+      if (typeof window !== "undefined") {
+        const channel = new BroadcastChannel("paisapos-demo-sync");
+        channel.postMessage({
+          type: "SYNC_PRODUCT_DELETE",
+          payload: { products: get().products, variants: get().variants },
+          token: getSyncToken()
+        });
+        channel.close();
+      }
+
       return true;
     } catch (e: unknown) {
-      const errMsg = e instanceof Error ? e.message : String(e);
-      console.error("Error deleting product:", errMsg);
-      set({ errorMsg: "Failed to delete product: " + errMsg, isLoading: false });
+      const errMsg = mapProductError(e);
+      console.error("Error deleting product:", e);
+      set({ errorMsg: errMsg, isLoading: false });
       return false;
     }
   },
@@ -238,7 +241,8 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
         const channel = new BroadcastChannel("paisapos-demo-sync");
         channel.postMessage({
           type: "SYNC_PRODUCT_UPDATE",
-          payload: { products: updatedProducts, variants: updatedAllVariants }
+          payload: { products: updatedProducts, variants: updatedAllVariants },
+          token: getSyncToken()
         });
         channel.close();
       }
@@ -246,93 +250,41 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
     }
 
     try {
-      // 1. Update product details in Supabase
-      const { error: prodError } = await supabase
-        .from("products")
-        .update({
-          name,
-          category,
-          low_stock_threshold: lowStockThreshold,
-        })
-        .eq("id", productId);
+      await upsertProductAction({
+        productId,
+        name,
+        category,
+        lowStockThreshold,
+        deletedVariantIds,
+        variants: variantsData.map(v => ({
+          id: v.id,
+          size: v.size,
+          color: v.color,
+          sku: v.sku,
+          price: v.price,
+          stock: v.stock,
+        })),
+      });
 
-      if (prodError) throw prodError;
-
-      // 2. Delete variants from Supabase
-      if (deletedVariantIds.length > 0) {
-        const { error: delError } = await supabase
-          .from("product_variants")
-          .delete()
-          .in("id", deletedVariantIds);
-
-        if (delError) throw delError;
-      }
-
-      // 3. Update or Insert variants and inventory
-      for (const v of variantsData) {
-        if (v.id) {
-          // Update existing variant
-          const { error: varUpdateError } = await supabase
-            .from("product_variants")
-            .update({
-              size: v.size,
-              color: v.color,
-              sku: v.sku,
-              price: v.price,
-            })
-            .eq("id", v.id);
-
-          if (varUpdateError) throw varUpdateError;
-
-          // Upsert inventory stock level
-          const { error: invUpdateError } = await supabase
-            .from("inventory")
-            .upsert(
-              {
-                variant_id: v.id,
-                quantity: v.stock,
-              },
-              {
-                onConflict: "variant_id",
-              }
-            );
-
-          if (invUpdateError) throw invUpdateError;
-        } else {
-          // Insert new variant
-          const { data: dbVar, error: varInsertError } = await supabase
-            .from("product_variants")
-            .insert({
-              product_id: productId,
-              size: v.size,
-              color: v.color,
-              sku: v.sku,
-              price: v.price,
-            })
-            .select()
-            .single();
-
-          if (varInsertError) throw varInsertError;
-
-          // Insert stock into inventory table
-          const { error: invInsertError } = await supabase
-            .from("inventory")
-            .insert({
-              variant_id: dbVar.id,
-              quantity: v.stock,
-            });
-
-          if (invInsertError) throw invInsertError;
-        }
-      }
-
-      // 4. Reload local memory cache
+      // Reload local memory cache
       await get().fetchStoreData();
+
+      // Broadcast changes using signed BroadcastChannel payloads
+      if (typeof window !== "undefined") {
+        const channel = new BroadcastChannel("paisapos-demo-sync");
+        channel.postMessage({
+          type: "SYNC_PRODUCT_UPDATE",
+          payload: { products: get().products, variants: get().variants },
+          token: getSyncToken()
+        });
+        channel.close();
+      }
+
       return true;
     } catch (e: unknown) {
-      const errMsg = e instanceof Error ? e.message : String(e);
-      console.error("Error updating product:", errMsg);
-      set({ errorMsg: "Failed to update product: " + errMsg, isLoading: false });
+      const errMsg = mapProductError(e);
+      console.error("Error updating product:", e);
+      set({ errorMsg: errMsg, isLoading: false });
       return false;
     }
   },
@@ -355,7 +307,8 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
         const channel = new BroadcastChannel("paisapos-demo-sync");
         channel.postMessage({
           type: "SYNC_STOCK_DIRECT",
-          payload: { variants: updatedVariants }
+          payload: { variants: updatedVariants },
+          token: getSyncToken()
         });
         channel.close();
       }
@@ -363,18 +316,25 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
     }
 
     try {
-      const { error } = await supabase
-        .from("inventory")
-        .update({ quantity: newStock, updated_at: new Date().toISOString() })
-        .eq("variant_id", variantId);
-
-      if (error) throw error;
+      await adjustStockAction(variantId, newStock);
 
       await get().fetchStoreData();
+
+      // Broadcast changes using signed BroadcastChannel payloads
+      if (typeof window !== "undefined") {
+        const channel = new BroadcastChannel("paisapos-demo-sync");
+        channel.postMessage({
+          type: "SYNC_STOCK_DIRECT",
+          payload: { variants: get().variants },
+          token: getSyncToken()
+        });
+        channel.close();
+      }
+
       return true;
     } catch (e: unknown) {
-      const errMsg = e instanceof Error ? e.message : String(e);
-      console.error("Error updating stock directly:", errMsg);
+      const errMsg = mapProductError(e);
+      console.error("Error updating stock directly:", e);
       set({ errorMsg: "Failed to save stock adjustment: " + errMsg, isLoading: false });
       return false;
     }

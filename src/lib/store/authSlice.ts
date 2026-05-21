@@ -12,6 +12,55 @@ import {
   DEMO_INVOICES,
   DEMO_INVOICE_ITEMS,
 } from "./demoData";
+import { verifyAndDecryptBroadcast } from "@/lib/broadcast";
+import type { RealtimeChannel } from "@supabase/supabase-js";
+
+let activeRealtimeChannel: RealtimeChannel | null = null;
+let realtimeFetchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+const subscribeToRealtimeChanges = (storeId: string, fetchStoreData: () => Promise<void>) => {
+  if (activeRealtimeChannel) {
+    supabase.removeChannel(activeRealtimeChannel);
+    activeRealtimeChannel = null;
+  }
+  if (realtimeFetchTimeout) {
+    clearTimeout(realtimeFetchTimeout);
+    realtimeFetchTimeout = null;
+  }
+
+  const debouncedFetch = () => {
+    if (realtimeFetchTimeout) {
+      clearTimeout(realtimeFetchTimeout);
+    }
+    realtimeFetchTimeout = setTimeout(() => {
+      fetchStoreData().catch((err) => console.error("Error fetching store data via realtime sync:", err));
+    }, 100);
+  };
+
+  activeRealtimeChannel = supabase
+    .channel(`store-realtime-${storeId}`)
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "products" },
+      debouncedFetch
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "product_variants" },
+      debouncedFetch
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "inventory" },
+      debouncedFetch
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "invoices" },
+      debouncedFetch
+    )
+    .subscribe();
+};
 
 type SetState = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
 type GetState = () => AppState;
@@ -68,7 +117,9 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
 
       const channel = new BroadcastChannel("paisapos-demo-sync");
       channel.onmessage = (event: MessageEvent) => {
-        const { type, payload } = event.data;
+        const verified = verifyAndDecryptBroadcast(event);
+        if (!verified) return;
+        const { type, payload } = verified;
         if (type === "SYNC_CHECKOUT") {
           set({
             invoices: payload.invoices,
@@ -117,11 +168,12 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
     }
 
     try {
-      // 1. Get current auth user
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) throw sessionError;
+      // 1. Get current auth user (getUser() validates JWT against the auth server,
+      //    unlike getSession() which only reads from localStorage and can accept stale/stolen tokens)
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+      if (authError && authError.message !== "Auth session missing!") throw authError;
 
-      if (!session) {
+      if (!authUser) {
         // No session: enter Demo Mode ONLY if explicitly chosen or persisted
         if (isDemo) {
           console.log("No active Supabase session. Initializing Pre-seeded Demo Workspace.");
@@ -155,7 +207,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       const { data: profile, error: profileError } = await supabase
         .from("users")
         .select("*")
-        .eq("id", session.user.id)
+        .eq("id", authUser.id)
         .single();
 
       if (profileError || !profile) {
@@ -178,9 +230,11 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       // Success: Save Session details, trigger data fetches
       set({
         isDemoMode: false,
-        user: { id: profile.id, name: profile.name, store_id: profile.store_id, email: session.user.email },
+        user: { id: profile.id, name: profile.name, store_id: profile.store_id, email: authUser.email },
         store: store,
       });
+
+      subscribeToRealtimeChanges(profile.store_id, get().fetchStoreData);
 
       await get().fetchStoreData();
     } catch (e: unknown) {
@@ -225,6 +279,18 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
     if (typeof window !== "undefined") {
       localStorage.removeItem("paisapos_demo_mode");
       localStorage.removeItem("paisapos_active_tab");
+    }
+    if (activeRealtimeChannel) {
+      try {
+        await supabase.removeChannel(activeRealtimeChannel);
+      } catch (err) {
+        console.warn("Failed to remove realtime channel on signout:", err);
+      }
+      activeRealtimeChannel = null;
+    }
+    if (realtimeFetchTimeout) {
+      clearTimeout(realtimeFetchTimeout);
+      realtimeFetchTimeout = null;
     }
     if (!get().isDemoMode) {
       try {

@@ -5,6 +5,8 @@ import { createAuthSlice } from "../authSlice";
 import { createInventorySlice } from "../inventorySlice";
 import { createCartSlice } from "../cartSlice";
 import { supabase } from "@/lib/supabase";
+import { verifyAndDecryptBroadcast, getSyncToken } from "@/lib/broadcast";
+import * as actions from "@/app/actions";
 
 // Unified Test Store Initializer
 const createTestStore = () => {
@@ -532,6 +534,110 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
       } finally {
         mockFrom.mockRestore();
       }
+    });
+  });
+
+  // =========================================================================
+  // 6. SECURITY, ZOD BROADCAST VERIFICATION & ERROR MAPPING
+  // =========================================================================
+  describe("Security, Broadcast Channel Verification & Server Action Error Mapping", () => {
+    describe("Zod Broadcast Channel Verification", () => {
+      test("should fail verification for messages with invalid sync token", () => {
+        const event = {
+          data: {
+            type: "SYNC_STOCK_DIRECT",
+            payload: {
+              variants: [{ id: "var-1", stock: 10 }]
+            },
+            token: "invalid-token-123"
+          }
+        } as MessageEvent;
+
+        const result = verifyAndDecryptBroadcast(event);
+        expect(result).toBeNull();
+      });
+
+      test("should pass verification for messages with valid schema and correct sync token", () => {
+        const token = getSyncToken();
+        const event = {
+          data: {
+            type: "SYNC_STOCK_DIRECT",
+            payload: {
+              variants: [{ id: "var-1", stock: 10 }]
+            },
+            token: token
+          }
+        } as MessageEvent;
+
+        const result = verifyAndDecryptBroadcast(event);
+        expect(result).not.toBeNull();
+        expect(result?.type).toBe("SYNC_STOCK_DIRECT");
+        expect(result?.payload.variants[0].id).toBe("var-1");
+      });
+
+      test("should fail verification for messages with invalid payload schema matching the type", () => {
+        const token = getSyncToken();
+        const event = {
+          data: {
+            type: "SYNC_STOCK_DIRECT",
+            payload: {
+              products: []
+            },
+            token: token
+          }
+        } as MessageEvent;
+
+        const result = verifyAndDecryptBroadcast(event);
+        expect(result).toBeNull();
+      });
+    });
+
+    describe("Server Action Error Mapping", () => {
+      test("should map checkout price tampering database errors to clear user-friendly messages", async () => {
+        store.setState({ isDemoMode: false });
+        store.getState().addToCart("var-1-m");
+        
+        const mockCheckoutAction = vi.spyOn(actions, "checkoutAction").mockRejectedValue(
+          new Error("Price tampering detected! Client reported total of 100, but recalculated total is 200")
+        );
+
+        const result = await store.getState().checkout();
+        expect(result).toBe(false);
+        expect(store.getState().errorMsg).toBe("Checkout failed: Price validation mismatch. Please refresh your cart.");
+
+        mockCheckoutAction.mockRestore();
+      });
+
+      test("should map checkout stock insufficiency database errors directly", async () => {
+        store.setState({ isDemoMode: false });
+        store.getState().addToCart("var-1-m");
+
+        const mockCheckoutAction = vi.spyOn(actions, "checkoutAction").mockRejectedValue(
+          new Error("Insufficient stock for SKU HOOD-BLK-M. Available: 2, Requested: 5")
+        );
+
+        const result = await store.getState().checkout();
+        expect(result).toBe(false);
+        expect(store.getState().errorMsg).toBe("Insufficient stock for SKU HOOD-BLK-M. Available: 2, Requested: 5");
+
+        mockCheckoutAction.mockRestore();
+      });
+
+      test("should map product SKU uniqueness violation database errors to friendly variant SKU warning", async () => {
+        store.setState({ isDemoMode: false });
+
+        const mockUpsertProductAction = vi.spyOn(actions, "upsertProductAction").mockRejectedValue(
+          new Error("duplicate key value violates unique constraint \"product_variants_sku_key\"")
+        );
+
+        const result = await store.getState().addProduct("Kurti Set", "Ethnic", 5, [
+          { size: "S", color: "Red", sku: "KURT-RED-S", price: 1500, stock: 10 }
+        ]);
+        expect(result).toBe(false);
+        expect(store.getState().errorMsg).toBe("Failed to save product: A variant with this SKU already exists.");
+
+        mockUpsertProductAction.mockRestore();
+      });
     });
   });
 });

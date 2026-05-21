@@ -10,6 +10,7 @@ import BillingTab from "@/components/billing-tab";
 import InventoryTab from "@/components/inventory-tab";
 import HistoryTab from "@/components/history-tab";
 import { Loader2, Store } from "lucide-react";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 export default function DashboardContainer() {
   const router = useRouter();
@@ -72,8 +73,16 @@ export default function DashboardContainer() {
           
           {/* TAB SWITCH SWITCHBOARD */}
           {activeTab === "dashboard" && <DashboardTab />}
-          {activeTab === "billing" && <BillingTab />}
-          {activeTab === "inventory" && <InventoryTab />}
+          {activeTab === "billing" && (
+            <ErrorBoundary fallbackName="Billing Workspace">
+              <BillingTab />
+            </ErrorBoundary>
+          )}
+          {activeTab === "inventory" && (
+            <ErrorBoundary fallbackName="Inventory Workspace">
+              <InventoryTab />
+            </ErrorBoundary>
+          )}
           {activeTab === "history" && <HistoryTab />}
 
         </div>

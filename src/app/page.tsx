@@ -81,7 +81,6 @@ export default function LoginPage() {
 
         // 2. Create the store & user profile atomically via security definer RPC (resolves RLS onboarding deadlock)
         const { error: onboardingError } = await supabase.rpc("register_store_and_user", {
-          p_user_id: signUpData.user.id,
           p_full_name: fullName,
           p_store_name: storeName,
         });
@@ -95,7 +94,10 @@ export default function LoginPage() {
       // Re-initialize Zustand state which pulls the auth user details and routes them
       await initializeSession();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "An authentication error occurred.";
+      let message = err instanceof Error ? err.message : "An authentication error occurred.";
+      if (message.includes("Password should contain at least one character of each")) {
+        message = "Password must contain at least one lowercase letter, one uppercase letter, and one number.";
+      }
       setLocalError(message);
     } finally {
       setLocalLoading(false);

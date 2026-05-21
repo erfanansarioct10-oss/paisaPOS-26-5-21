@@ -2,8 +2,23 @@
 // PaisaPOS — Cart & Checkout Slice
 // =========================================================================
 
-import { supabase } from "@/lib/supabase";
 import type { AppState, CartItem, Invoice, InvoiceItem } from "./types";
+import { checkoutAction } from "@/app/actions";
+import { getSyncToken } from "@/lib/broadcast";
+
+function mapCheckoutError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (msg.toLowerCase().includes("insufficient stock")) {
+    return msg;
+  }
+  if (msg.toLowerCase().includes("price tampering")) {
+    return "Checkout failed: Price validation mismatch. Please refresh your cart.";
+  }
+  if (msg.toLowerCase().includes("unauthorized") || msg.toLowerCase().includes("unauthenticated")) {
+    return "Checkout failed: Unauthorized session. Please sign in again.";
+  }
+  return "Failed to process sale. Please try again.";
+}
 
 type SetState = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
 type GetState = () => AppState;
@@ -232,7 +247,8 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
               ...invoiceItems,
               [newInvoiceId]: createdItems,
             },
-          }
+          },
+          token: getSyncToken()
         });
         channel.close();
       }
@@ -240,7 +256,7 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
       return true;
     }
 
-    // Real Supabase checkout via custom RPC transactional function
+    // Real Supabase checkout via Server Action (MEDIUM-09, MEDIUM-20)
     try {
       const itemsPayload = cart.map(item => ({
         variant_id: item.variant_id,
@@ -249,42 +265,22 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
         subtotal: item.quantity * item.price,
       }));
 
-      // Call our robust atomic PostgreSQL transaction function in Supabase
-      const { data: returnedInvoiceId, error: rpcError } = await supabase.rpc(
-        "create_invoice_and_deduct_stock",
-        {
-          p_store_id: store.id,
-          p_invoice_number: invoiceNumStr,
-          p_customer_name: customerName || "General Customer",
-          p_customer_phone: customerPhone || null,
-          p_total_amount: totalAmount,
-          p_discount_amount: cartDiscount,
-          p_paid_amount: totalAmount,
-          p_payment_method: paymentMethod,
-          p_items: itemsPayload,
-        }
-      );
+      const dbInvoiceWithItems = await checkoutAction({
+        storeId: store.id,
+        invoiceNumber: invoiceNumStr,
+        customerName: customerName || "General Customer",
+        customerPhone: customerPhone || null,
+        totalAmount,
+        discountAmount: cartDiscount,
+        paidAmount: totalAmount,
+        paymentMethod,
+        items: itemsPayload,
+      });
 
-      if (rpcError) throw rpcError;
-
-      // 4. Fetch the created invoice and items for immediate receipt display
-      const { data: dbInvoice, error: invFetchError } = await supabase
-        .from("invoices")
-        .select("*")
-        .eq("id", returnedInvoiceId)
-        .single();
-
-      if (invFetchError) throw invFetchError;
-
-      const { data: dbItems, error: itemsFetchError } = await supabase
-        .from("invoice_items")
-        .select("*")
-        .eq("invoice_id", returnedInvoiceId);
-
-      if (itemsFetchError) throw itemsFetchError;
+      const { invoice_items: dbItems, ...dbInvoice } = dbInvoiceWithItems;
 
       // Map dynamic receipt fields
-      const receiptItems: InvoiceItem[] = dbItems.map(item => {
+      const receiptItems: InvoiceItem[] = (dbItems || []).map((item: InvoiceItem) => {
         const v = variants.find(vr => vr.id === item.variant_id);
         const p = products.find(pr => pr.id === v?.product_id);
         return {
@@ -307,9 +303,28 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
       });
 
       await get().fetchStoreData();
+
+      // Broadcast changes using signed BroadcastChannel payloads
+      if (typeof window !== "undefined") {
+        const channel = new BroadcastChannel("paisapos-demo-sync");
+        channel.postMessage({
+          type: "SYNC_CHECKOUT",
+          payload: {
+            invoices: get().invoices,
+            variants: get().variants,
+            invoiceItems: {
+              ...get().invoiceItems,
+              [dbInvoice.id]: receiptItems,
+            },
+          },
+          token: getSyncToken()
+        });
+        channel.close();
+      }
+
       return true;
     } catch (e: unknown) {
-      const errMsg = e instanceof Error ? e.message : "Failed to process sale. Please try again.";
+      const errMsg = mapCheckoutError(e);
       console.error("Checkout Transaction Failed, Rolled back:", errMsg);
       set({
         errorMsg: errMsg,

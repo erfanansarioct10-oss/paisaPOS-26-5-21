@@ -126,7 +126,22 @@ declare
   v_expected_total numeric(10,2);
   v_store_invoice_count int;
   v_invoice_number text;
+  v_user_id uuid;
 begin
+  -- Resolve and validate authenticated user
+  v_user_id := auth.uid();
+  if v_user_id is null then
+    raise exception 'Unauthenticated. Only logged-in users can perform checkout.';
+  end if;
+
+  -- Verify store ownership to prevent cross-tenant billing/checkout
+  if not exists (
+    select 1 from users 
+    where id = v_user_id and store_id = p_store_id
+  ) then
+    raise exception 'Unauthorized. You do not have permission to checkout for this store.';
+  end if;
+
   -- Acquire an exclusive lock on the store row to serialize checkouts *only* for this store
   -- to prevent concurrent count race conditions.
   perform id from stores where id = p_store_id for update;
@@ -150,6 +165,15 @@ begin
 
   -- 2. Iterate invoice line items, perform atomic stock checks & reductions
   for v_item in select * from jsonb_array_elements(p_items) loop
+    -- Verify variant ownership (the variant must belong to the user's store)
+    if not exists (
+      select 1 from product_variants pv
+      join products p on pv.product_id = p.id
+      where pv.id = (v_item->>'variant_id')::uuid and p.store_id = p_store_id
+    ) then
+      raise exception 'Variant with ID % does not belong to your store', (v_item->>'variant_id');
+    end if;
+
     -- Resolve variant details and lock matching inventory row to prevent concurrent race conditions
     select quantity into v_current_stock
     from inventory
@@ -193,6 +217,11 @@ begin
   end loop;
 
   -- 3. Price Tampering Integrity Verification
+  -- Cap/validate discount to the subtotal of items to prevent negative totals or excessive discount exploits
+  if p_discount_amount > v_calculated_subtotal then
+    raise exception 'Discount amount % exceeds the subtotal %', p_discount_amount, v_calculated_subtotal;
+  end if;
+
   v_expected_total := v_calculated_subtotal - p_discount_amount;
   if v_expected_total < 0.00 then
     v_expected_total := 0.00;
@@ -207,7 +236,7 @@ begin
   insert into audit_logs (store_id, user_id, operation, affected_entity, result, created_at)
   values (
     p_store_id, 
-    auth.uid(), 
+    v_user_id, 
     'CHECKOUT', 
     'Invoice: ' || v_invoice_number, 
     'SUCCESS', 
@@ -257,20 +286,39 @@ create policy "Users can manage invoices" on invoices
 create policy "Users can manage invoice items" on invoice_items 
   for all using (invoice_id in (select id from invoices where store_id = get_user_store_id()));
 
-create policy "Users can manage audit logs of their store" on audit_logs 
-  for all using (store_id = get_user_store_id());
+-- Audit logs are IMMUTABLE: users can read and insert, but never update or delete.
+-- This ensures a tamper-proof audit trail as required by SECURITY_SYSTEM.md.
+create policy "Users can read audit logs of their store" on audit_logs 
+  for select using (store_id = get_user_store_id());
+
+create policy "Users can insert audit logs for their store" on audit_logs 
+  for insert with check (store_id = get_user_store_id());
 
 -- =========================================================================
 -- ONBOARDING TRANSACTIONAL REGISTRATION RPC (P0 DEADLOCK REMEDIATION)
 -- =========================================================================
+-- DROP the old signature with 3 parameters to avoid signature mismatch errors in PostgreSQL
+drop function if exists register_store_and_user(uuid, text, text);
+
 create or replace function register_store_and_user(
-  p_user_id uuid,
   p_full_name text,
   p_store_name text
 ) returns uuid as $$
 declare
   v_store_id uuid;
+  v_user_id uuid;
 begin
+  -- Resolve authenticated user ID
+  v_user_id := auth.uid();
+  if v_user_id is null then
+    raise exception 'Unauthenticated. Only logged-in users can register a store.';
+  end if;
+
+  -- Prevent duplicate registration: check if profile already exists
+  if exists (select 1 from users where id = v_user_id) then
+    raise exception 'User is already registered and associated with a store.';
+  end if;
+
   -- 1. Insert store bypasses initial RLS since this is a security definer function
   insert into stores (name, phone, address, pan_vat)
   values (p_store_name, '', '', '')
@@ -278,7 +326,7 @@ begin
 
   -- 2. Insert user profile linking to store
   insert into users (id, name, store_id)
-  values (p_user_id, p_full_name, v_store_id);
+  values (v_user_id, p_full_name, v_store_id);
 
   return v_store_id;
 end;
