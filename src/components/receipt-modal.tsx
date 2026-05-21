@@ -64,7 +64,7 @@ export default function ReceiptModal() {
         {/* RECEIPT VIEWPORT */}
         <div className="flex-1 overflow-y-auto p-6 font-sans">
           {/* Printable Container */}
-          <div className="print-area bg-white text-black p-4 border border-slate-100 rounded-md max-w-[80mm] mx-auto shadow-sm">
+          <div className="print-area bg-white text-black p-4 border border-slate-100 rounded-md max-w-[80mm] mx-auto shadow-sm print:border-none print:shadow-none print:p-0 print:rounded-none print:mx-0">
             {/* Store branding info */}
             <div className="text-center pb-4 border-b border-dashed border-slate-300">
               <h2 className="font-outfit font-extrabold text-xl tracking-tight uppercase">

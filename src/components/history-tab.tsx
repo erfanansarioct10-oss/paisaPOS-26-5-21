@@ -2,11 +2,13 @@
 
 import React, { useState } from "react";
 import { useAppStore, Invoice } from "@/lib/store/useAppStore";
-import { Search, Eye, History } from "lucide-react";
+import { Search, Eye, History, Calendar, CreditCard, DollarSign, Layers, Sparkles } from "lucide-react";
 
 export default function HistoryTab() {
   const { invoices, products, variants, invoiceItems, setActiveInvoice } = useAppStore();
   const [searchQuery, setSearchQuery] = useState("");
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState("All");
+  const [dateFilter, setDateFilter] = useState("All Time");
 
   const formatCurrency = (amount: number) => {
     return `Rs. ${amount.toLocaleString()}`;
@@ -27,15 +29,46 @@ export default function HistoryTab() {
     }
   };
 
-  // Filter invoices based on customer details or invoice number
+  // Filter invoices based on customer details, invoice number, payment method, and date boundaries
   const filteredInvoices = invoices.filter((inv) => {
+    // 1. Search Query filter
     const query = searchQuery.toLowerCase();
     const matchesNumber = inv.invoice_number.toLowerCase().includes(query);
     const matchesName = inv.customer_name?.toLowerCase().includes(query) ?? false;
     const matchesPhone = inv.customer_phone?.toLowerCase().includes(query) ?? false;
     const matchesMethod = inv.payment_method.toLowerCase().includes(query);
+    const matchesSearch = searchQuery === "" || matchesNumber || matchesName || matchesPhone || matchesMethod;
 
-    return matchesNumber || matchesName || matchesPhone || matchesMethod;
+    // 2. Payment Method filter
+    const matchesPaymentMethod =
+      paymentMethodFilter === "All" ||
+      inv.payment_method.toLowerCase() === paymentMethodFilter.toLowerCase();
+
+    // 3. Date boundary filter (local timezone)
+    let matchesDate = true;
+    if (dateFilter !== "All Time") {
+      const invDate = new Date(inv.created_at);
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+      if (dateFilter === "Today") {
+        matchesDate = invDate >= startOfToday && invDate <= endOfToday;
+      } else if (dateFilter === "Yesterday") {
+        const startOfYesterday = new Date(startOfToday);
+        startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+        const endOfYesterday = new Date(endOfToday);
+        endOfYesterday.setDate(endOfYesterday.getDate() - 1);
+        matchesDate = invDate >= startOfYesterday && invDate <= endOfYesterday;
+      } else if (dateFilter === "This Week") {
+        const startOfWeek = new Date(startOfToday);
+        const day = startOfWeek.getDay(); // 0 is Sunday
+        startOfWeek.setDate(startOfWeek.getDate() - day);
+        matchesDate = invDate >= startOfWeek && invDate <= endOfToday;
+      }
+    }
+
+    return matchesSearch && matchesPaymentMethod && matchesDate;
   });
 
   const handleReprint = (invoice: Invoice) => {
@@ -56,6 +89,21 @@ export default function HistoryTab() {
     setActiveInvoice(invoice, filledItems);
   };
 
+  // Compute dynamic reconciliation statistics for currently filtered view
+  const totalSales = filteredInvoices.reduce((sum, inv) => sum + inv.total_amount, 0);
+  const totalCount = filteredInvoices.length;
+
+  const methodBreakdown = filteredInvoices.reduce((acc, inv) => {
+    let method = "Cash";
+    const lm = inv.payment_method.toLowerCase();
+    if (lm === "esewa") method = "eSewa";
+    else if (lm === "khalti") method = "Khalti";
+    else if (lm === "fonepay") method = "Fonepay";
+    else if (lm === "cash") method = "Cash";
+    acc[method] = (acc[method] || 0) + inv.total_amount;
+    return acc;
+  }, {} as Record<string, number>);
+
   return (
     <div className="space-y-6">
       {/* PAGE HEADER */}
@@ -64,20 +112,155 @@ export default function HistoryTab() {
           Invoice History
         </h1>
         <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-          View, search, and reprint past invoice records.
+          View, search, and reprint past invoice records with advanced period filtering.
         </p>
       </div>
 
-      {/* SEARCH BAR */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder="Search by Invoice No, Name, Phone or Method..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="block w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-white placeholder-slate-600 transition-all shadow-sm"
-        />
+      {/* ADVANCED FILTERS PANEL */}
+      <div className="bg-card border border-border rounded-xl p-4 sm:p-5 shadow-sm space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* SEARCH FIELD */}
+          <div className="relative">
+            <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
+              Search Invoice
+            </label>
+            <div className="relative">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search No, Name, Phone or Method..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="block w-full pl-10 pr-4 h-11 bg-slate-950 border border-slate-800 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-white placeholder-slate-600 transition-all shadow-sm"
+              />
+            </div>
+          </div>
+
+          {/* DATE PRESET FILTER */}
+          <div>
+            <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
+              Date Period
+            </label>
+            <div className="relative">
+              <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              <select
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="block w-full pl-10 pr-4 h-11 bg-slate-950 border border-slate-800 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-white appearance-none cursor-pointer shadow-sm transition-all"
+              >
+                <option value="All Time">All Time</option>
+                <option value="Today">Today (Nepal local time)</option>
+                <option value="Yesterday">Yesterday</option>
+                <option value="This Week">This Week</option>
+              </select>
+            </div>
+          </div>
+
+          {/* PAYMENT CHANNEL PILLS */}
+          <div>
+            <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
+              Payment Channel
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {["All", "Cash", "eSewa", "Khalti", "Fonepay"].map((method) => {
+                const isActive = paymentMethodFilter === method;
+                return (
+                  <button
+                    key={method}
+                    type="button"
+                    onClick={() => setPaymentMethodFilter(method)}
+                    className={`h-11 px-4 text-xs font-semibold rounded-xl border transition-all ${
+                      isActive
+                        ? "bg-primary border-primary text-primary-foreground shadow-sm"
+                        : "bg-slate-950 border-slate-800 text-muted-foreground hover:text-foreground hover:bg-slate-900"
+                    }`}
+                  >
+                    {method}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* RECONCILIATION SUMMARY STATS */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* TOTAL SALES */}
+        <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between shadow-sm">
+          <div className="space-y-1">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+              Total Revenue
+            </p>
+            <h3 className="text-xl sm:text-2xl font-black text-foreground font-mono">
+              {formatCurrency(totalSales)}
+            </h3>
+            <p className="text-[10px] text-muted-foreground">
+              For currently filtered view
+            </p>
+          </div>
+          <div className="p-3 rounded-lg bg-emerald-500/10 text-emerald-500 border border-emerald-500/10">
+            <DollarSign className="w-5 h-5" />
+          </div>
+        </div>
+
+        {/* RECEIPT COUNT */}
+        <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between shadow-sm">
+          <div className="space-y-1">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+              Total Receipts
+            </p>
+            <h3 className="text-xl sm:text-2xl font-black text-foreground font-mono">
+              {totalCount} bills
+            </h3>
+            <p className="text-[10px] text-muted-foreground">
+              {filteredInvoices.length === invoices.length ? "All transactions" : "Filtered subset"}
+            </p>
+          </div>
+          <div className="p-3 rounded-lg bg-primary/10 text-primary border border-primary/10">
+            <Layers className="w-5 h-5" />
+          </div>
+        </div>
+
+        {/* CASH DRAWER */}
+        <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between shadow-sm">
+          <div className="space-y-1">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+              Cash Drawer
+            </p>
+            <h3 className="text-xl sm:text-2xl font-black text-amber-500 font-mono">
+              {formatCurrency(methodBreakdown["Cash"] || 0)}
+            </h3>
+            <p className="text-[10px] text-muted-foreground">
+              Collected in hand
+            </p>
+          </div>
+          <div className="p-3 rounded-lg bg-amber-500/10 text-amber-500 border border-amber-500/10">
+            <CreditCard className="w-5 h-5" />
+          </div>
+        </div>
+
+        {/* DIGITAL PAYMENTS */}
+        <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between shadow-sm">
+          <div className="space-y-1">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+              Digital Channels
+            </p>
+            <h3 className="text-xl sm:text-2xl font-black text-indigo-400 font-mono">
+              {formatCurrency(
+                (methodBreakdown["eSewa"] || 0) +
+                (methodBreakdown["Khalti"] || 0) +
+                (methodBreakdown["Fonepay"] || 0)
+              )}
+            </h3>
+            <p className="text-[10px] text-muted-foreground">
+              eSewa, Khalti, Fonepay sum
+            </p>
+          </div>
+          <div className="p-3 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/10">
+            <Sparkles className="w-5 h-5" />
+          </div>
+        </div>
       </div>
 
       {/* INVOICES TABLE/LIST CARD */}
