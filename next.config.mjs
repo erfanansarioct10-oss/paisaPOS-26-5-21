@@ -1,5 +1,3 @@
-import type { NextConfig } from "next";
-
 const isProd = process.env.NODE_ENV === "production";
 
 const cspHeader = `
@@ -13,7 +11,8 @@ const cspHeader = `
   ${isProd ? "upgrade-insecure-requests;" : ""}
 `;
 
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   async headers() {
     return [
       {
