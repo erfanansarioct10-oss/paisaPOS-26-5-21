@@ -68,12 +68,16 @@ export default function ReceiptModal() {
             {/* Store branding info */}
             <div className="text-center pb-4 border-b border-dashed border-slate-300">
               <h2 className="font-outfit font-extrabold text-xl tracking-tight uppercase">
-                {store?.name || "KTM Streetwear"}
+                {store?.name || "PaisaPOS Store"}
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {store?.address || "Civil Mall, Kathmandu"}
-              </p>
-              <p className="text-xs text-slate-500">Tel: {store?.phone || "9851012345"}</p>
+              {store?.address && (
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {store.address}
+                </p>
+              )}
+              {store?.phone && (
+                <p className="text-xs text-slate-500">Tel: {store.phone}</p>
+              )}
               {store?.pan_vat && (
                 <p className="text-[10px] font-mono mt-1 text-slate-600">
                   PAN/VAT: {store.pan_vat}

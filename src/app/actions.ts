@@ -244,7 +244,25 @@ export async function adjustStockAction(variantId: string, newStock: number) {
   return true;
 }
 
-export async function updateStoreAction(data: { name: string; phone: string; address: string; panVat: string }) {
+const updateStoreSchema = z.object({
+  name: z.string().min(1, "Store name is required").max(100, "Store name must be under 100 characters"),
+  phone: z.string().max(20, "Phone number must be under 20 characters").nullable().optional().or(z.literal("")),
+  address: z.string().max(200, "Address must be under 200 characters").nullable().optional().or(z.literal("")),
+  panVat: z.string().max(20, "PAN / VAT number must be under 20 characters").nullable().optional().or(z.literal("")),
+});
+
+const updateProfileSchema = z.object({
+  name: z.string().min(1, "Display name is required").max(100, "Display name must be under 100 characters"),
+});
+
+export async function updateStoreAction(rawParams: unknown) {
+  const validation = updateStoreSchema.safeParse(rawParams);
+  if (!validation.success) {
+    const errorMsg = validation.error.issues.map(e => e.message).join(", ");
+    throw new Error("Invalid store info: " + errorMsg);
+  }
+  const data = validation.data;
+
   const supabase = await getSupabaseServerClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -272,7 +290,14 @@ export async function updateStoreAction(data: { name: string; phone: string; add
   return true;
 }
 
-export async function updateProfileAction(data: { name: string }) {
+export async function updateProfileAction(rawParams: unknown) {
+  const validation = updateProfileSchema.safeParse(rawParams);
+  if (!validation.success) {
+    const errorMsg = validation.error.issues.map(e => e.message).join(", ");
+    throw new Error("Invalid profile details: " + errorMsg);
+  }
+  const data = validation.data;
+
   const supabase = await getSupabaseServerClient();
 
   const { data: { user } } = await supabase.auth.getUser();

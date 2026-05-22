@@ -1,5 +1,17 @@
 # Memory
-> Last updated: 2026-05-22 21:48 NPT
+> Last updated: 2026-05-22 22:05 NPT
+
+## Store Settings Validation, CRUD Synchronization & Dynamic Printing (2026-05-22)
+
+**Observation:** The settings page was initializing form fields to empty strings on load because state values were initialized synchronously from Zustand before the session loading was complete. Also, the `updateStoreAction` and `updateProfileAction` server actions lacked validation constraints, and the printed receipt rendered hardcoded placeholders ("KTM Streetwear", "Civil Mall, Kathmandu") when actual store settings were unconfigured.
+
+**Action:**
+- **Server Action Validation**: Created Zod validation schemas (`updateStoreSchema` and `updateProfileSchema`) inside [actions.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/actions.ts#L247-L256) to strictly validate store configuration limits on the server, mapping parsing issues back to user-friendly messages.
+- **Form State Key Synchronization**: Removed asynchronous `useEffect` hooks in [settings/page.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/(authenticated)/settings/page.tsx) that caused React 19 `react-hooks/set-state-in-effect` errors. Instead, implemented the React `key` reset pattern by binding `key={store?.id || "loading-store"}` and `key={user?.id || "loading-profile"}` to the form layouts. When store data finishes fetching, the form remounts and initializes states cleanly with database metadata.
+- **Clean Receipt Headers**: Conditionally rendered address, phone, and PAN/VAT fields in the receipt print viewport ([receipt-modal.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/components/receipt-modal.tsx#L68-L86)) to hide blank metadata instead of outputting static mock placeholders.
+- **Verification**: Executed `npm run lint` and `npm run build` locally, successfully passing both with 0 compilation and lint warnings/errors.
+
+**Lesson:** In React 19/Next.js, using standard `key` triggers to reset input forms is far more performant and cleaner than syncing props to local state via `useEffect` hooks. To deliver premium SaaS layout aesthetics, always hide unconfigured metadata fields from thermal receipts rather than filling them with static default placeholders.
 
 ## Favicon Logo Customization & Cleanup (2026-05-22)
 
