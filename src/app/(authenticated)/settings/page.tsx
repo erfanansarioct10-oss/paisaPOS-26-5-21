@@ -49,6 +49,8 @@ export default function SettingsPage() {
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
+
+
   const handleSaveStore = async (e: React.FormEvent) => {
     e.preventDefault();
     setStoreError(null);
@@ -116,7 +118,7 @@ export default function SettingsPage() {
       {/* SETTINGS GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* STORE INFORMATION CARD */}
-        <form onSubmit={handleSaveStore} className="bg-card border border-border rounded-xl p-5 sm:p-6 shadow-sm space-y-5">
+        <form key={store?.id || "loading-store"} onSubmit={handleSaveStore} className="bg-card border border-border rounded-xl p-5 sm:p-6 shadow-sm space-y-5">
           <div className="flex items-center gap-2.5 pb-3 border-b border-border">
             <div className="p-2 bg-primary/10 text-primary rounded-lg">
               <Store className="w-4 h-4" />
@@ -164,7 +166,7 @@ export default function SettingsPage() {
         </form>
 
         {/* ACCOUNT SETTINGS CARD */}
-        <form onSubmit={handleSaveProfile} className="bg-card border border-border rounded-xl p-5 sm:p-6 shadow-sm space-y-5 h-fit">
+        <form key={user?.id || "loading-profile"} onSubmit={handleSaveProfile} className="bg-card border border-border rounded-xl p-5 sm:p-6 shadow-sm space-y-5 h-fit">
           <div className="flex items-center gap-2.5 pb-3 border-b border-border">
             <div className="p-2 bg-primary/10 text-primary rounded-lg">
               <User className="w-4 h-4" />
