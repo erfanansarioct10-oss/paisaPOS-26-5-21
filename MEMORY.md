@@ -1,5 +1,26 @@
 # Memory
-> Last updated: 2026-05-22 08:41 NPT
+> Last updated: 2026-05-22 09:17 NPT
+
+## Technical Patch: ESLint & TypeScript Lint Compliance (2026-05-22)
+
+**Observation:** Three lint errors were blocking compliance:
+1. `react-hooks/set-state-in-effect` — `setIsOpen(true)` called synchronously inside a `useEffect` in [inventory-tab.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/components/inventory-tab.tsx#L37-L40).
+2. `@typescript-eslint/no-explicit-any` — Two uses of `any` in [authSlice.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/store/authSlice.ts#L299-L305) (`Record<string, any[]>` and `inv: any`).
+**Action:**
+- Wrapped `setIsOpen(true)` in `setTimeout(() => setIsOpen(true), 0)` to defer the state update out of the synchronous effect body. The `?add=true` redirect-to-open-modal flow remains functionally identical.
+- Imported `Invoice` and `InvoiceItem` from `./types`, defined a local combined type `DbInvoiceWithItems = Invoice & { invoice_items?: InvoiceItem[] }`, and cast `dbInvoices` explicitly. Replaced `Record<string, any[]>` with `Record<string, InvoiceItem[]>`.
+- Verified: `npm run lint` = 0 errors, `npm run test` = 24/24 passed, `npm run build` = compiled successfully.
+**Lesson:** React 19's strict effect rules forbid synchronous `setState` inside effect bodies — wrap in `setTimeout` or `queueMicrotask` to defer. Always use explicit type interfaces over `any` casts when mapping Supabase relational join results.
+
+## Technical Patch: Empty Invoice Reprint Line Items Fix (2026-05-22)
+
+**Observation:** The receipt/reprint modal showed the invoice header and net total correctly, but line item rows (description, qty, price, total) were blank and subtotal displayed Rs. 0.
+**Action:**
+- Root cause: `fetchStoreData` in [authSlice.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/store/authSlice.ts) queried invoices with `.select("*")` which does not include the related `invoice_items` rows. The Zustand `invoiceItems` cache remained empty (`{}`).
+- Changed the query to `.select("*, invoice_items(*)")` and populated `invoiceItemsMap` keyed by `invoice_id` during the synchronized state set.
+- Both `dashboard-tab.tsx` and `history-tab.tsx` already read from `invoiceItems[invoice.id]`, so the fix was self-contained to the store fetch layer.
+- Verified: all 24 tests passed, production build succeeded with zero errors.
+**Lesson:** Supabase relational selects require explicit nested table inclusion (e.g. `*, child_table(*)`) — a bare `*` only returns flat columns from the parent table. Always verify that Zustand caches for joined data are populated during the initial data sync.
 
 ## Technical Patch: Responsive Checkout Button Hotkey Label (2026-05-22)
 
