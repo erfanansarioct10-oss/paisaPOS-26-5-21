@@ -12,11 +12,10 @@ import {
   Menu,
   X,
   User,
-  ShieldCheck,
 } from "lucide-react";
 
 export default function Sidebar() {
-  const { activeTab, setTab, store, user, isDemoMode, signOut } = useAppStore();
+  const { activeTab, setTab, store, user, signOut } = useAppStore();
   const [isOpen, setIsOpen] = useState(false);
 
   const navItems = [
@@ -91,12 +90,6 @@ export default function Sidebar() {
             </div>
           </div>
 
-          {isDemoMode && (
-            <div className="mt-3 flex items-center gap-1.5 px-2 py-1 rounded bg-amber-500/10 text-amber-500 text-[10px] font-medium border border-amber-500/20 w-fit">
-              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-              <span>PRE-SEEDED DEMO MODE</span>
-            </div>
-          )}
         </div>
 
         {/* NAVIGATION LINKS */}
@@ -129,7 +122,7 @@ export default function Sidebar() {
           >
             <span className="flex items-center gap-2">
               <LogOut className="w-3.5 h-3.5" />
-              <span>{isDemoMode ? "Exit Demo Mode" : "Sign Out"}</span>
+              <span>Sign Out</span>
             </span>
           </button>
         </div>

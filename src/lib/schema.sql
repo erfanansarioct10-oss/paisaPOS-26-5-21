@@ -74,7 +74,7 @@ create table invoices (
   total_amount numeric(10,2) not null check (total_amount >= 0),
   discount_amount numeric(10,2) default 0.00 check (discount_amount >= 0),
   paid_amount numeric(10,2) not null check (paid_amount >= 0),
-  payment_method text not null, -- 'Cash' | 'eSewa' | 'Khalti' | 'Fonepay'
+  payment_method text not null check (payment_method in ('Cash', 'eSewa', 'Khalti', 'Fonepay')),
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   unique (store_id, invoice_number)
 );
@@ -134,11 +134,16 @@ begin
     raise exception 'Unauthenticated. Only logged-in users can perform checkout.';
   end if;
 
+  -- Set checkout context local parameter to prevent stock trigger audit duplication
+  perform set_config('app.checkout_active', 'true', true);
+
   -- Verify store ownership to prevent cross-tenant billing/checkout
   if not exists (
     select 1 from users 
     where id = v_user_id and store_id = p_store_id
   ) then
+    -- Reset setting just in case, though rollback will handle it
+    perform set_config('app.checkout_active', 'false', true);
     raise exception 'Unauthorized. You do not have permission to checkout for this store.';
   end if;
 
@@ -164,7 +169,12 @@ begin
   ) returning id into v_invoice_id;
 
   -- 2. Iterate invoice line items, perform atomic stock checks & reductions
-  for v_item in select * from jsonb_array_elements(p_items) loop
+  -- Items are ordered alphabetically by variant_id UUID to eliminate deadlock vulnerability under concurrent checkout
+  for v_item in 
+    select x.val 
+    from jsonb_array_elements(p_items) as x(val) 
+    order by (x.val->>'variant_id') 
+  loop
     -- Verify variant ownership (the variant must belong to the user's store)
     if not exists (
       select 1 from product_variants pv
@@ -186,6 +196,11 @@ begin
 
     if v_current_stock is null then
       raise exception 'Variant with SKU % does not exist in inventory', v_sku;
+    end if;
+
+    -- Explicit validation to prevent negative/zero/non-positive quantities
+    if (v_item->>'quantity')::int <= 0 then
+      raise exception 'Invalid quantity % for SKU %', (v_item->>'quantity')::int, v_sku;
     end if;
 
     -- Atomic safety check

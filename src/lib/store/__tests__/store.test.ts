@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, test, expect, beforeEach, vi, beforeAll, afterAll } from "vitest";
 import { create } from "zustand";
 import { AppState, Product, ProductVariant } from "../types";
@@ -5,8 +6,167 @@ import { createAuthSlice } from "../authSlice";
 import { createInventorySlice } from "../inventorySlice";
 import { createCartSlice } from "../cartSlice";
 import { supabase } from "@/lib/supabase";
-import { verifyAndDecryptBroadcast, getSyncToken } from "@/lib/broadcast";
 import * as actions from "@/app/actions";
+
+let currentStore: any = null;
+
+// Mock the Server Actions
+vi.mock("@/app/actions", () => {
+  return {
+    upsertProductAction: vi.fn(async (params) => {
+      if (!currentStore) throw new Error("No active store");
+      const state = currentStore.getState();
+      
+      const productId = params.productId || `prod-${Math.random().toString(36).substr(2, 9)}`;
+      
+      // SKU validation
+      for (const v of params.variants) {
+        const exists = state.variants.find(
+          (x: any) => x.sku === v.sku && x.id !== v.id && x.product_id !== productId
+        );
+        if (exists) {
+          throw new Error("duplicate key value violates unique constraint \"product_variants_sku_key\"");
+        }
+      }
+
+      const isNew = !params.productId;
+      
+      // Update/insert product
+      let updatedProducts = [...state.products];
+      if (isNew) {
+        updatedProducts = [{
+          id: productId,
+          store_id: state.store?.id || "test-store-id",
+          name: params.name,
+          category: params.category,
+          low_stock_threshold: params.lowStockThreshold,
+          image_url: null,
+        }, ...state.products];
+      } else {
+        updatedProducts = updatedProducts.map((p: any) =>
+          p.id === productId
+            ? { ...p, name: params.name, category: params.category, low_stock_threshold: params.lowStockThreshold }
+            : p
+        );
+      }
+
+      // Update/insert variants
+      let updatedVariants = [...state.variants];
+      
+      // Remove deleted variants
+      if (params.deletedVariantIds && params.deletedVariantIds.length > 0) {
+        updatedVariants = updatedVariants.filter((v: any) => !params.deletedVariantIds.includes(v.id));
+      }
+
+      params.variants.forEach((v: any) => {
+        const varId = v.id || `var-${Math.random().toString(36).substr(2, 9)}`;
+        const existingIdx = updatedVariants.findIndex((x: any) => x.id === varId);
+        const varData = {
+          id: varId,
+          product_id: productId,
+          size: v.size,
+          color: v.color,
+          sku: v.sku,
+          price: v.price,
+          stock: v.stock,
+        };
+        if (existingIdx > -1) {
+          updatedVariants[existingIdx] = varData;
+        } else {
+          updatedVariants.push(varData);
+        }
+      });
+
+      currentStore.setState({
+        products: updatedProducts,
+        variants: updatedVariants,
+      });
+
+      return productId;
+    }),
+
+    deleteProductAction: vi.fn(async (productId) => {
+      if (!currentStore) throw new Error("No active store");
+      const state = currentStore.getState();
+      currentStore.setState({
+        products: state.products.filter((p: any) => p.id !== productId),
+        variants: state.variants.filter((v: any) => v.product_id !== productId),
+      });
+      return true;
+    }),
+
+    adjustStockAction: vi.fn(async (variantId, newStock) => {
+      if (!currentStore) throw new Error("No active store");
+      const state = currentStore.getState();
+      currentStore.setState({
+        variants: state.variants.map((v: any) =>
+          v.id === variantId ? { ...v, stock: newStock } : v
+        ),
+      });
+      return true;
+    }),
+
+    checkoutAction: vi.fn(async (params) => {
+      if (!currentStore) throw new Error("No active store");
+      const state = currentStore.getState();
+
+      // Check stock
+      for (const item of params.items) {
+        const variant = state.variants.find((v: any) => v.id === item.variant_id);
+        if (!variant || (variant.stock ?? 0) < item.quantity) {
+          throw new Error(`Insufficient stock for SKU ${variant?.sku || "unknown"}. Available: ${variant?.stock ?? 0}, Requested: ${item.quantity}`);
+        }
+      }
+
+      // Deduct stock
+      const updatedVariants = state.variants.map((v: any) => {
+        const item = params.items.find((i: any) => i.variant_id === v.id);
+        if (item) {
+          return { ...v, stock: v.stock - item.quantity };
+        }
+        return v;
+      });
+
+      // Price validation check
+      const recalculatedTotal = params.items.reduce((sum: number, item: any) => sum + item.quantity * item.unit_price, 0) - params.discountAmount;
+      if (Math.abs(recalculatedTotal - params.totalAmount) > 0.01) {
+        throw new Error(`Price tampering detected! Client reported total of ${params.totalAmount}, but recalculated total is ${recalculatedTotal}`);
+      }
+
+      const invoiceId = `inv-${Math.random().toString(36).substr(2, 9)}`;
+      const newInvoice = {
+        id: invoiceId,
+        store_id: params.storeId,
+        invoice_number: params.invoiceNumber,
+        customer_name: params.customerName,
+        customer_phone: params.customerPhone,
+        total_amount: params.totalAmount,
+        discount_amount: params.discountAmount,
+        payment_method: params.paymentMethod,
+        created_at: new Date().toISOString(),
+      };
+
+      const newInvoiceItems = params.items.map((item: any) => ({
+        id: `item-${Math.random().toString(36).substr(2, 9)}`,
+        invoice_id: invoiceId,
+        variant_id: item.variant_id,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        subtotal: item.subtotal,
+      }));
+
+      currentStore.setState({
+        variants: updatedVariants,
+        invoices: [newInvoice, ...state.invoices],
+      });
+
+      return {
+        ...newInvoice,
+        invoice_items: newInvoiceItems,
+      };
+    }),
+  };
+});
 
 // Unified Test Store Initializer
 const createTestStore = () => {
@@ -22,10 +182,13 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
 
   beforeEach(() => {
     store = createTestStore();
+    currentStore = store;
+
+    // Mock fetchStoreData to be a no-op so that it doesn't overwrite our mock updates
+    vi.spyOn(store.getState(), "fetchStoreData").mockImplementation(async () => {});
     
     // Seed initial dummy store metadata for testing
     store.setState({
-      isDemoMode: true,
       store: {
         id: "test-store-id",
         name: "Test KTM Streetwear",
@@ -428,21 +591,19 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
       expect(store.getState().activeTab).toBe("history");
     });
 
-    test("should clear tab and demo mode from localStorage on signOut", async () => {
+    test("should clear tab from localStorage on signOut", async () => {
       mockLocalStorage["paisapos_active_tab"] = "inventory";
-      mockLocalStorage["paisapos_demo_mode"] = "true";
 
       await store.getState().signOut();
 
       expect(mockLocalStorage["paisapos_active_tab"]).toBeUndefined();
-      expect(mockLocalStorage["paisapos_demo_mode"]).toBeUndefined();
       expect(store.getState().activeTab).toBe("dashboard");
     });
 
     test("should correctly map inventory quantity to variant stock for both array and object formats", async () => {
-      // 1. Force isDemoMode to false so fetchStoreData does not return early
-      store.setState({
-        isDemoMode: false,
+      // Create a store where fetchStoreData is NOT mocked:
+      const unmockedStore = createTestStore();
+      unmockedStore.setState({
         store: {
           id: "test-store-id",
           name: "Test Store",
@@ -450,10 +611,8 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
         },
       });
 
-      // 2. Setup mock supabase.from chain
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // Setup mock supabase.from chain
       const createChainMock = (data: any) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const chain: any = {
           select: () => chain,
           eq: () => chain,
@@ -461,7 +620,6 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
           in: () => chain,
           single: () => chain,
         };
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         chain.then = (resolve: any) => {
           resolve({ data, error: null });
         };
@@ -515,9 +673,9 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
       });
 
       try {
-        await store.getState().fetchStoreData();
+        await unmockedStore.getState().fetchStoreData();
 
-        const variants = store.getState().variants;
+        const variants = unmockedStore.getState().variants;
         expect(variants.length).toBe(3);
 
         const varArray = variants.find(v => v.id === "var-array");
@@ -538,63 +696,11 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
   });
 
   // =========================================================================
-  // 6. SECURITY, ZOD BROADCAST VERIFICATION & ERROR MAPPING
+  // 6. SECURITY & ERROR MAPPING
   // =========================================================================
-  describe("Security, Broadcast Channel Verification & Server Action Error Mapping", () => {
-    describe("Zod Broadcast Channel Verification", () => {
-      test("should fail verification for messages with invalid sync token", () => {
-        const event = {
-          data: {
-            type: "SYNC_STOCK_DIRECT",
-            payload: {
-              variants: [{ id: "var-1", stock: 10 }]
-            },
-            token: "invalid-token-123"
-          }
-        } as MessageEvent;
-
-        const result = verifyAndDecryptBroadcast(event);
-        expect(result).toBeNull();
-      });
-
-      test("should pass verification for messages with valid schema and correct sync token", () => {
-        const token = getSyncToken();
-        const event = {
-          data: {
-            type: "SYNC_STOCK_DIRECT",
-            payload: {
-              variants: [{ id: "var-1", stock: 10 }]
-            },
-            token: token
-          }
-        } as MessageEvent;
-
-        const result = verifyAndDecryptBroadcast(event);
-        expect(result).not.toBeNull();
-        expect(result?.type).toBe("SYNC_STOCK_DIRECT");
-        expect(result?.payload.variants[0].id).toBe("var-1");
-      });
-
-      test("should fail verification for messages with invalid payload schema matching the type", () => {
-        const token = getSyncToken();
-        const event = {
-          data: {
-            type: "SYNC_STOCK_DIRECT",
-            payload: {
-              products: []
-            },
-            token: token
-          }
-        } as MessageEvent;
-
-        const result = verifyAndDecryptBroadcast(event);
-        expect(result).toBeNull();
-      });
-    });
-
+  describe("Security & Server Action Error Mapping", () => {
     describe("Server Action Error Mapping", () => {
       test("should map checkout price tampering database errors to clear user-friendly messages", async () => {
-        store.setState({ isDemoMode: false });
         store.getState().addToCart("var-1-m");
         
         const mockCheckoutAction = vi.spyOn(actions, "checkoutAction").mockRejectedValue(
@@ -609,7 +715,6 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
       });
 
       test("should map checkout stock insufficiency database errors directly", async () => {
-        store.setState({ isDemoMode: false });
         store.getState().addToCart("var-1-m");
 
         const mockCheckoutAction = vi.spyOn(actions, "checkoutAction").mockRejectedValue(
@@ -624,8 +729,6 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
       });
 
       test("should map product SKU uniqueness violation database errors to friendly variant SKU warning", async () => {
-        store.setState({ isDemoMode: false });
-
         const mockUpsertProductAction = vi.spyOn(actions, "upsertProductAction").mockRejectedValue(
           new Error("duplicate key value violates unique constraint \"product_variants_sku_key\"")
         );

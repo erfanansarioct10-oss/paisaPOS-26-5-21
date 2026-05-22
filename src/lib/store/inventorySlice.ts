@@ -2,9 +2,8 @@
 // PaisaPOS — Inventory (Products & Variants) Slice
 // =========================================================================
 
-import type { AppState, Product, ProductVariant } from "./types";
+import type { AppState } from "./types";
 import { upsertProductAction, deleteProductAction, adjustStockAction } from "@/app/actions";
-import { getSyncToken } from "@/lib/broadcast";
 
 function mapProductError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
@@ -30,52 +29,10 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
     lowStockThreshold: number,
     variantData: Array<{ size: string; color: string; sku: string; price: number; stock: number }>
   ): Promise<boolean> => {
-    const { isDemoMode, store, products, variants } = get();
+    const { store } = get();
     if (!store) return false;
 
     set({ isLoading: true, errorMsg: null });
-
-    if (isDemoMode) {
-      // Simulate quick add locally
-      const newProductId = `prod-${Date.now()}`;
-      const newProduct: Product = {
-        id: newProductId,
-        store_id: store.id,
-        name,
-        category,
-        image_url: null,
-        low_stock_threshold: lowStockThreshold,
-      };
-
-      const newVariants: ProductVariant[] = variantData.map((v, index) => ({
-        id: `var-${Date.now()}-${index}`,
-        product_id: newProductId,
-        size: v.size,
-        color: v.color,
-        sku: v.sku,
-        price: v.price,
-        stock: v.stock,
-      }));
-
-      const newProducts = [newProduct, ...products];
-      const newAllVariants = [...variants, ...newVariants];
-      set({
-        products: newProducts,
-        variants: newAllVariants,
-        isLoading: false,
-      });
-
-      if (typeof window !== "undefined") {
-        const channel = new BroadcastChannel("paisapos-demo-sync");
-        channel.postMessage({
-          type: "SYNC_PRODUCT_ADD",
-          payload: { products: newProducts, variants: newAllVariants },
-          token: getSyncToken()
-        });
-        channel.close();
-      }
-      return true;
-    }
 
     try {
       await upsertProductAction({
@@ -96,17 +53,6 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
       // Refresh store data to keep in complete sync
       await get().fetchStoreData();
 
-      // Broadcast changes using signed BroadcastChannel payloads
-      if (typeof window !== "undefined") {
-        const channel = new BroadcastChannel("paisapos-demo-sync");
-        channel.postMessage({
-          type: "SYNC_PRODUCT_ADD",
-          payload: { products: get().products, variants: get().variants },
-          token: getSyncToken()
-        });
-        channel.close();
-      }
-
       return true;
     } catch (e: unknown) {
       const errMsg = mapProductError(e);
@@ -120,45 +66,12 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
   // DELETE PRODUCT
   // -----------------------------------------------------------------------
   deleteProduct: async (productId: string): Promise<boolean> => {
-    const { isDemoMode, products, variants } = get();
     set({ isLoading: true, errorMsg: null });
-
-    if (isDemoMode) {
-      const newProducts = products.filter(p => p.id !== productId);
-      const newAllVariants = variants.filter(v => v.product_id !== productId);
-      set({
-        products: newProducts,
-        variants: newAllVariants,
-        isLoading: false,
-      });
-
-      if (typeof window !== "undefined") {
-        const channel = new BroadcastChannel("paisapos-demo-sync");
-        channel.postMessage({
-          type: "SYNC_PRODUCT_DELETE",
-          payload: { products: newProducts, variants: newAllVariants },
-          token: getSyncToken()
-        });
-        channel.close();
-      }
-      return true;
-    }
 
     try {
       await deleteProductAction(productId);
 
       await get().fetchStoreData();
-
-      // Broadcast changes using signed BroadcastChannel payloads
-      if (typeof window !== "undefined") {
-        const channel = new BroadcastChannel("paisapos-demo-sync");
-        channel.postMessage({
-          type: "SYNC_PRODUCT_DELETE",
-          payload: { products: get().products, variants: get().variants },
-          token: getSyncToken()
-        });
-        channel.close();
-      }
 
       return true;
     } catch (e: unknown) {
@@ -187,67 +100,7 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
     }>,
     deletedVariantIds: string[]
   ): Promise<boolean> => {
-    const { isDemoMode, products, variants } = get();
     set({ isLoading: true, errorMsg: null });
-
-    if (isDemoMode) {
-      // 1. Update product metadata
-      const updatedProducts = products.map(p =>
-        p.id === productId
-          ? { ...p, name, category, low_stock_threshold: lowStockThreshold }
-          : p
-      );
-
-      // 2. Filter out deleted variants
-      const remainingVariants = variants.filter(v => !deletedVariantIds.includes(v.id));
-
-      // 3. Separate other variants from this product's variants
-      const otherVariants = remainingVariants.filter(v => v.product_id !== productId);
-
-      // 4. Process new and updated variants
-      const productVariants: ProductVariant[] = variantsData.map((v, index) => {
-        if (v.id) {
-          return {
-            id: v.id,
-            product_id: productId,
-            size: v.size,
-            color: v.color,
-            sku: v.sku,
-            price: v.price,
-            stock: v.stock,
-          };
-        } else {
-          return {
-            id: `var-${Date.now()}-${index}`,
-            product_id: productId,
-            size: v.size,
-            color: v.color,
-            sku: v.sku,
-            price: v.price,
-            stock: v.stock,
-          };
-        }
-      });
-
-      const updatedAllVariants = [...otherVariants, ...productVariants];
-
-      set({
-        products: updatedProducts,
-        variants: updatedAllVariants,
-        isLoading: false,
-      });
-
-      if (typeof window !== "undefined") {
-        const channel = new BroadcastChannel("paisapos-demo-sync");
-        channel.postMessage({
-          type: "SYNC_PRODUCT_UPDATE",
-          payload: { products: updatedProducts, variants: updatedAllVariants },
-          token: getSyncToken()
-        });
-        channel.close();
-      }
-      return true;
-    }
 
     try {
       await upsertProductAction({
@@ -269,17 +122,6 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
       // Reload local memory cache
       await get().fetchStoreData();
 
-      // Broadcast changes using signed BroadcastChannel payloads
-      if (typeof window !== "undefined") {
-        const channel = new BroadcastChannel("paisapos-demo-sync");
-        channel.postMessage({
-          type: "SYNC_PRODUCT_UPDATE",
-          payload: { products: get().products, variants: get().variants },
-          token: getSyncToken()
-        });
-        channel.close();
-      }
-
       return true;
     } catch (e: unknown) {
       const errMsg = mapProductError(e);
@@ -293,43 +135,12 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
   // DIRECT STOCK ADJUSTMENT
   // -----------------------------------------------------------------------
   updateStockDirect: async (variantId: string, newStock: number): Promise<boolean> => {
-    const { isDemoMode, variants } = get();
     set({ isLoading: true, errorMsg: null });
-
-    if (isDemoMode) {
-      const updatedVariants = variants.map(v => (v.id === variantId ? { ...v, stock: newStock } : v));
-      set({
-        variants: updatedVariants,
-        isLoading: false,
-      });
-
-      if (typeof window !== "undefined") {
-        const channel = new BroadcastChannel("paisapos-demo-sync");
-        channel.postMessage({
-          type: "SYNC_STOCK_DIRECT",
-          payload: { variants: updatedVariants },
-          token: getSyncToken()
-        });
-        channel.close();
-      }
-      return true;
-    }
 
     try {
       await adjustStockAction(variantId, newStock);
 
       await get().fetchStoreData();
-
-      // Broadcast changes using signed BroadcastChannel payloads
-      if (typeof window !== "undefined") {
-        const channel = new BroadcastChannel("paisapos-demo-sync");
-        channel.postMessage({
-          type: "SYNC_STOCK_DIRECT",
-          payload: { variants: get().variants },
-          token: getSyncToken()
-        });
-        channel.close();
-      }
 
       return true;
     } catch (e: unknown) {

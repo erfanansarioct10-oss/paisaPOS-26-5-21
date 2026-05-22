@@ -2,6 +2,44 @@
 
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { z } from "zod";
+
+const checkoutSchema = z.object({
+  storeId: z.string().uuid(),
+  invoiceNumber: z.string().max(50),
+  customerName: z.string().min(1).max(100),
+  customerPhone: z.string().max(20).nullable(),
+  totalAmount: z.number().nonnegative(),
+  discountAmount: z.number().nonnegative(),
+  paidAmount: z.number().nonnegative(),
+  paymentMethod: z.enum(["Cash", "eSewa", "Khalti", "Fonepay"]),
+  items: z.array(
+    z.object({
+      variant_id: z.string().uuid(),
+      quantity: z.number().int().positive(),
+      unit_price: z.number().nonnegative(),
+      subtotal: z.number().nonnegative(),
+    })
+  ).min(1),
+});
+
+const upsertProductSchema = z.object({
+  productId: z.string().uuid().nullable(),
+  name: z.string().min(1).max(150),
+  category: z.string().min(1).max(100),
+  lowStockThreshold: z.number().int().nonnegative(),
+  deletedVariantIds: z.array(z.string().uuid()),
+  variants: z.array(
+    z.object({
+      id: z.string().uuid().optional(),
+      size: z.string().min(1).max(50),
+      color: z.string().min(1).max(50),
+      sku: z.string().min(1).max(100),
+      price: z.number().nonnegative(),
+      stock: z.number().int().nonnegative(),
+    })
+  ).min(1),
+});
 
 async function getSupabaseServerClient() {
   const cookieStore = await cookies();
@@ -33,22 +71,13 @@ async function getSupabaseServerClient() {
   });
 }
 
-export async function checkoutAction(params: {
-  storeId: string;
-  invoiceNumber: string;
-  customerName: string;
-  customerPhone: string | null;
-  totalAmount: number;
-  discountAmount: number;
-  paidAmount: number;
-  paymentMethod: string;
-  items: Array<{
-    variant_id: string;
-    quantity: number;
-    unit_price: number;
-    subtotal: number;
-  }>;
-}) {
+export async function checkoutAction(rawParams: unknown) {
+  const validation = checkoutSchema.safeParse(rawParams);
+  if (!validation.success) {
+    throw new Error("Invalid checkout payload: " + validation.error.message);
+  }
+  const params = validation.data;
+
   const supabase = await getSupabaseServerClient();
   
   // Sort items alphabetically by variant_id UUID to eliminate deadlock vulnerability under concurrent checkout
@@ -100,21 +129,13 @@ export async function checkoutAction(params: {
   return dbInvoice;
 }
 
-export async function upsertProductAction(params: {
-  productId: string | null;
-  name: string;
-  category: string;
-  lowStockThreshold: number;
-  deletedVariantIds: string[];
-  variants: Array<{
-    id?: string;
-    size: string;
-    color: string;
-    sku: string;
-    price: number;
-    stock: number;
-  }>;
-}) {
+export async function upsertProductAction(rawParams: unknown) {
+  const validation = upsertProductSchema.safeParse(rawParams);
+  if (!validation.success) {
+    throw new Error("Invalid product details payload: " + validation.error.message);
+  }
+  const params = validation.data;
+
   const supabase = await getSupabaseServerClient();
   
   const { data: productId, error } = await supabase.rpc(
@@ -164,6 +185,15 @@ export async function deleteProductAction(productId: string) {
   if (error) {
     throw new Error(error.message);
   }
+
+  // Record successful deletion to audit log
+  await supabase.from("audit_logs").insert({
+    store_id: profile.store_id,
+    user_id: user.id,
+    operation: "PRODUCT_DELETE",
+    affected_entity: "Product ID: " + productId,
+    result: "SUCCESS",
+  });
 
   return true;
 }

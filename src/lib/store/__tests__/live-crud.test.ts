@@ -238,6 +238,30 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
     expect(invalidCheckoutError).not.toBeNull();
     expect(invalidCheckoutError!.message).toContain("check_payment_method");
 
+    // 13.6. Verify validation for zero or negative quantity in checkout
+    console.log("[QA] Testing checkout validation with non-positive quantity...");
+    const { error: nonPositiveQtyError } = await supabase.rpc("create_invoice_and_deduct_stock", {
+      p_store_id: storeId,
+      p_invoice_number: "INV-PRE-GENERATED",
+      p_customer_name: "John Doe Nepal",
+      p_customer_phone: "9851000000",
+      p_total_amount: 0.00,
+      p_discount_amount: 0.00,
+      p_paid_amount: 0.00,
+      p_payment_method: "Fonepay",
+      p_items: [
+        {
+          variant_id: variant.id,
+          quantity: 0, // Non-positive quantity
+          unit_price: 2450.00,
+          subtotal: 0.00,
+        }
+      ],
+    });
+
+    expect(nonPositiveQtyError).not.toBeNull();
+    expect(nonPositiveQtyError!.message).toContain("Invalid quantity");
+
     // 14. Clean up - DELETE the store. Cascade constraints must automatically wipe out products, variants, inventory, and invoices.
     console.log("[QA] Cleaning up database by deleting test store (cascade)...");
     const { error: storeDeleteError } = await supabase

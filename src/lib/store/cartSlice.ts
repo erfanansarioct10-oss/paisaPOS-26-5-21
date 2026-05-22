@@ -4,7 +4,6 @@
 
 import type { AppState, CartItem, Invoice, InvoiceItem } from "./types";
 import { checkoutAction } from "@/app/actions";
-import { getSyncToken } from "@/lib/broadcast";
 
 function mapCheckoutError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
@@ -140,7 +139,6 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
   // -----------------------------------------------------------------------
   checkout: async (): Promise<boolean> => {
     const {
-      isDemoMode,
       store,
       cart,
       cartDiscount,
@@ -150,7 +148,6 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
       invoices,
       variants,
       products,
-      invoiceItems,
     } = get();
 
     if (!store || cart.length === 0) return false;
@@ -161,100 +158,7 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
     const totalAmount = Math.max(0, subtotalPrice - cartDiscount);
 
     // Dynamic Invoice Number Generation
-    const timestamp = Date.now();
     const invoiceNumStr = `INV-${new Date().getFullYear()}-${String(invoices.length + 1).padStart(4, "0")}`;
-
-    if (isDemoMode) {
-      // 1. Double check stock in local state
-      for (const cartItem of cart) {
-        const variant = variants.find(v => v.id === cartItem.variant_id);
-        const stockAvailable = variant?.stock ?? 0;
-        if (stockAvailable < cartItem.quantity) {
-          set({
-            errorMsg: `Insufficient stock for SKU ${cartItem.sku}. Available: ${stockAvailable}, Requested: ${cartItem.quantity}`,
-            isLoading: false,
-          });
-          return false;
-        }
-      }
-
-      // 2. Perform local state changes atomically
-      const newInvoiceId = `inv-${timestamp}`;
-      const newInvoice: Invoice = {
-        id: newInvoiceId,
-        store_id: store.id,
-        invoice_number: invoiceNumStr,
-        customer_name: customerName || "General Customer",
-        customer_phone: customerPhone || null,
-        total_amount: totalAmount,
-        discount_amount: cartDiscount,
-        paid_amount: totalAmount,
-        payment_method: paymentMethod,
-        created_at: new Date().toISOString(),
-      };
-
-      // Create invoice items + update variant quantities in state
-      const createdItems: InvoiceItem[] = [];
-      const updatedVariants = variants.map(v => {
-        const cartMatch = cart.find(ci => ci.variant_id === v.id);
-        if (cartMatch) {
-          const itemSubtotal = cartMatch.quantity * cartMatch.price;
-          createdItems.push({
-            id: `inv-item-${timestamp}-${cartMatch.variant_id}`,
-            invoice_id: newInvoiceId,
-            variant_id: cartMatch.variant_id,
-            quantity: cartMatch.quantity,
-            unit_price: cartMatch.price,
-            subtotal: itemSubtotal,
-            product_name: cartMatch.name,
-            size: cartMatch.size,
-            color: cartMatch.color,
-          });
-          return {
-            ...v,
-            stock: Math.max(0, (v.stock ?? 0) - cartMatch.quantity),
-          };
-        }
-        return v;
-      });
-
-      // Update state
-      set({
-        invoices: [newInvoice, ...invoices],
-        variants: updatedVariants,
-        invoiceItems: {
-          ...invoiceItems,
-          [newInvoiceId]: createdItems,
-        },
-        activeInvoice: newInvoice,
-        activeInvoiceItems: createdItems,
-        cart: [],
-        cartDiscount: 0,
-        customerName: "",
-        customerPhone: "",
-        paymentMethod: "Cash",
-        isLoading: false,
-      });
-
-      if (typeof window !== "undefined") {
-        const channel = new BroadcastChannel("paisapos-demo-sync");
-        channel.postMessage({
-          type: "SYNC_CHECKOUT",
-          payload: {
-            invoices: [newInvoice, ...invoices],
-            variants: updatedVariants,
-            invoiceItems: {
-              ...invoiceItems,
-              [newInvoiceId]: createdItems,
-            },
-          },
-          token: getSyncToken()
-        });
-        channel.close();
-      }
-
-      return true;
-    }
 
     // Real Supabase checkout via Server Action (MEDIUM-09, MEDIUM-20)
     try {
@@ -303,24 +207,6 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
       });
 
       await get().fetchStoreData();
-
-      // Broadcast changes using signed BroadcastChannel payloads
-      if (typeof window !== "undefined") {
-        const channel = new BroadcastChannel("paisapos-demo-sync");
-        channel.postMessage({
-          type: "SYNC_CHECKOUT",
-          payload: {
-            invoices: get().invoices,
-            variants: get().variants,
-            invoiceItems: {
-              ...get().invoiceItems,
-              [dbInvoice.id]: receiptItems,
-            },
-          },
-          token: getSyncToken()
-        });
-        channel.close();
-      }
 
       return true;
     } catch (e: unknown) {

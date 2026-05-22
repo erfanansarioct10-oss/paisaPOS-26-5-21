@@ -4,15 +4,6 @@
 
 import { supabase, hasSupabaseConfig } from "@/lib/supabase";
 import type { AppState, ProductVariant } from "./types";
-import {
-  DEMO_STORE,
-  DEMO_PROFILE,
-  DEMO_PRODUCTS,
-  DEMO_VARIANTS,
-  DEMO_INVOICES,
-  DEMO_INVOICE_ITEMS,
-} from "./demoData";
-import { verifyAndDecryptBroadcast } from "@/lib/broadcast";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 let activeRealtimeChannel: RealtimeChannel | null = null;
@@ -70,7 +61,6 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
   // INITIAL STATE
   // -----------------------------------------------------------------------
   activeTab: "dashboard" as const,
-  isDemoMode: false, // Default to false so that if Supabase is configured we start at the login screen
   user: null,
   store: null,
   isLoading: true,
@@ -94,16 +84,6 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
     }
     set({ activeTab: tab });
   },
-  setDemoMode: (enabled: boolean) => {
-    if (typeof window !== "undefined") {
-      if (enabled) {
-        localStorage.setItem("paisapos_demo_mode", "true");
-      } else {
-        localStorage.removeItem("paisapos_demo_mode");
-      }
-    }
-    set({ isDemoMode: enabled });
-  },
 
   // -----------------------------------------------------------------------
   // SESSION INITIALIZATION
@@ -114,54 +94,20 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       if (savedTab && ["dashboard", "billing", "inventory", "history"].includes(savedTab)) {
         set({ activeTab: savedTab });
       }
-
-      const channel = new BroadcastChannel("paisapos-demo-sync");
-      channel.onmessage = (event: MessageEvent) => {
-        const verified = verifyAndDecryptBroadcast(event);
-        if (!verified) return;
-        const { type, payload } = verified;
-        if (type === "SYNC_CHECKOUT") {
-          set({
-            invoices: payload.invoices,
-            variants: payload.variants,
-            invoiceItems: payload.invoiceItems,
-          });
-        } else if (type === "SYNC_STOCK_DIRECT") {
-          set({
-            variants: payload.variants,
-          });
-        } else if (
-          type === "SYNC_PRODUCT_ADD" ||
-          type === "SYNC_PRODUCT_DELETE" ||
-          type === "SYNC_PRODUCT_UPDATE"
-        ) {
-          set({
-            products: payload.products,
-            variants: payload.variants,
-          });
-        }
-      };
     }
 
     set({ isLoading: true, errorMsg: null });
     const isSupabaseReady = hasSupabaseConfig();
 
-    let isDemo = get().isDemoMode;
-    if (typeof window !== "undefined") {
-      isDemo = isDemo || localStorage.getItem("paisapos_demo_mode") === "true";
-    }
-
     if (!isSupabaseReady) {
-      // Gracefully fall back to pre-seeded local Demo Mode
-      console.log("Supabase config not found. Auto-booting in Demo Mode.");
       set({
-        isDemoMode: true,
-        user: DEMO_PROFILE,
-        store: DEMO_STORE,
-        products: DEMO_PRODUCTS,
-        variants: DEMO_VARIANTS,
-        invoices: DEMO_INVOICES,
-        invoiceItems: DEMO_INVOICE_ITEMS,
+        user: null,
+        store: null,
+        products: [],
+        variants: [],
+        invoices: [],
+        invoiceItems: {},
+        errorMsg: "Supabase credentials are not configured in your environment variables.",
         isLoading: false,
       });
       return;
@@ -174,32 +120,16 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       if (authError && authError.message !== "Auth session missing!") throw authError;
 
       if (!authUser) {
-        // No session: enter Demo Mode ONLY if explicitly chosen or persisted
-        if (isDemo) {
-          console.log("No active Supabase session. Initializing Pre-seeded Demo Workspace.");
-          set({
-            isDemoMode: true,
-            user: DEMO_PROFILE,
-            store: DEMO_STORE,
-            products: DEMO_PRODUCTS,
-            variants: DEMO_VARIANTS,
-            invoices: DEMO_INVOICES,
-            invoiceItems: DEMO_INVOICE_ITEMS,
-            isLoading: false,
-          });
-        } else {
-          console.log("No active Supabase session. Remaining on Login Screen.");
-          set({
-            isDemoMode: false,
-            user: null,
-            store: null,
-            products: [],
-            variants: [],
-            invoices: [],
-            invoiceItems: {},
-            isLoading: false,
-          });
-        }
+        console.log("No active Supabase session. Remaining on Login Screen.");
+        set({
+          user: null,
+          store: null,
+          products: [],
+          variants: [],
+          invoices: [],
+          invoiceItems: {},
+          isLoading: false,
+        });
         return;
       }
 
@@ -213,7 +143,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       if (profileError || !profile) {
         // Profile doesn't exist, sign out
         await supabase.auth.signOut();
-        throw new Error("Store user profile not found. Reverting to Demo.");
+        throw new Error("Store user profile not found.");
       }
 
       // 3. Load Store Meta
@@ -229,7 +159,6 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
 
       // Success: Save Session details, trigger data fetches
       set({
-        isDemoMode: false,
         user: { id: profile.id, name: profile.name, store_id: profile.store_id, email: authUser.email },
         store: store,
       });
@@ -240,32 +169,18 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : String(e);
       console.warn("Failed to initialize session:", errMsg);
-      if (isSupabaseReady && !isDemo) {
-        try {
-          await supabase.auth.signOut();
-        } catch {}
-        set({
-          isDemoMode: false,
-          user: null,
-          store: null,
-          products: [],
-          variants: [],
-          invoices: [],
-          invoiceItems: {},
-          errorMsg: errMsg,
-        });
-      } else {
-        set({
-          isDemoMode: true,
-          user: DEMO_PROFILE,
-          store: DEMO_STORE,
-          products: DEMO_PRODUCTS,
-          variants: DEMO_VARIANTS,
-          invoices: DEMO_INVOICES,
-          invoiceItems: DEMO_INVOICE_ITEMS,
-          errorMsg: errMsg,
-        });
-      }
+      try {
+        await supabase.auth.signOut();
+      } catch {}
+      set({
+        user: null,
+        store: null,
+        products: [],
+        variants: [],
+        invoices: [],
+        invoiceItems: {},
+        errorMsg: errMsg,
+      });
     } finally {
       set({ isLoading: false });
     }
@@ -277,7 +192,6 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
   signOut: async () => {
     set({ isLoading: true });
     if (typeof window !== "undefined") {
-      localStorage.removeItem("paisapos_demo_mode");
       localStorage.removeItem("paisapos_active_tab");
     }
     if (activeRealtimeChannel) {
@@ -292,16 +206,13 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       clearTimeout(realtimeFetchTimeout);
       realtimeFetchTimeout = null;
     }
-    if (!get().isDemoMode) {
-      try {
-        await supabase.auth.signOut();
-      } catch (err) {
-        console.warn("Supabase auth signOut failed, clearing local state anyway:", err);
-      }
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn("Supabase auth signOut failed, clearing local state anyway:", err);
     }
     // Fully reset store and clear state so user redirects back to the login screen
     set({
-      isDemoMode: false,
       user: null,
       store: null,
       products: [],
@@ -319,8 +230,8 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
   // FETCH STORE DATA FROM SUPABASE
   // -----------------------------------------------------------------------
   fetchStoreData: async () => {
-    const { isDemoMode, store } = get();
-    if (isDemoMode || !store) return;
+    const { store } = get();
+    if (!store) return;
 
     set({ isLoading: true });
     try {

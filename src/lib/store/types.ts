@@ -90,7 +90,6 @@ export interface InvoiceItem {
 export interface AppState {
   // Navigation & Core UI
   activeTab: "dashboard" | "billing" | "inventory" | "history";
-  isDemoMode: boolean;
   user: Profile | null;
   store: StoreMetadata | null;
   isLoading: boolean;
@@ -117,7 +116,6 @@ export interface AppState {
 
   // ACTIONS
   setTab: (tab: "dashboard" | "billing" | "inventory" | "history") => void;
-  setDemoMode: (enabled: boolean) => void;
   initializeSession: () => Promise<void>;
   signOut: () => Promise<void>;
 

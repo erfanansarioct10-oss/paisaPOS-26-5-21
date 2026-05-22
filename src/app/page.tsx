@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store/useAppStore";
 import { supabase, hasSupabaseConfig } from "@/lib/supabase";
-import { Store, ShieldCheck, Mail, Lock, User, AlertCircle, Loader2 } from "lucide-react";
+import { Store, Mail, Lock, User, AlertCircle, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,7 +13,6 @@ export default function LoginPage() {
     isLoading,
     errorMsg,
     initializeSession,
-    setDemoMode,
   } = useAppStore();
 
   const [isLogin, setIsLogin] = useState(true);
@@ -37,18 +36,14 @@ export default function LoginPage() {
     }
   }, [user, router]);
 
-  const handleDemoMode = async () => {
-    setDemoMode(true);
-    await initializeSession();
-    router.push("/dashboard");
-  };
+
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError(null);
 
     if (!hasSupabaseConfig()) {
-      setLocalError("Supabase credentials are not configured in your environment variables. Please use the Demo Mode to try PaisaPOS.");
+      setLocalError("Supabase credentials are not configured in your environment variables.");
       return;
     }
 
@@ -125,33 +120,7 @@ export default function LoginPage() {
       {/* CORE CONTAINER */}
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10 px-4 sm:px-0">
         <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl p-8 space-y-6">
-          {/* DEMO BYPASS BANNER */}
-          <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-center space-y-3">
-            <div className="flex items-center justify-center gap-2 text-amber-500">
-              <ShieldCheck className="w-5 h-5 shrink-0" />
-              <span className="text-xs font-semibold uppercase tracking-wider font-mono">
-                Instant Walkthrough
-              </span>
-            </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Skip setup entirely. Test the POS billing terminal, bulk variant generation, and low stock alerts with our pre-loaded boutique datasets.
-            </p>
-            <button
-              onClick={handleDemoMode}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 text-slate-950 font-bold text-sm rounded-lg hover:bg-amber-400 active:scale-[0.99] shadow transition-all focus:outline-none"
-            >
-              <span>Explore Demo Store</span>
-            </button>
-          </div>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center" aria-hidden="true">
-              <div className="w-full border-t border-slate-800" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-slate-900 px-3 text-slate-500 font-mono">OR USE YOUR STORE</span>
-            </div>
-          </div>
 
           {/* DYNAMIC ERROR STRIPS */}
           {(localError || errorMsg) && (
