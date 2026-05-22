@@ -871,6 +871,44 @@ across sessions.
 
 ---
 
+# DECISION-019
+
+## Title
+Automated Multi-Tenant RLS & Browser Print Centering Verifications
+
+## Date
+2026-05-22
+
+## Status
+Accepted
+
+---
+
+## Decision
+
+We validated security boundaries and CSS print layouts via:
+- Writing an integration test suite ([rls-verification.test.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/store/__tests__/rls-verification.test.ts)) simulating parallel store clients to perform cross-tenant insert/read/update/delete attacks.
+- Setting explicit page height constraints (`size: 80mm 250mm; margin: 0mm;`) in [globals.css](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/globals.css) and centering the thermal print area horizontally to prevent top-left empty margins on standard printing canvases.
+
+---
+
+## Reasoning
+
+Manual multi-tenant and layout QA are time-consuming and error-prone. Standardizing automated SQL boundary checks and CSS page sizing ensures future changes won't leak customer transactions or break physical printer dimensions.
+
+---
+
+## Consequences
+
+### Positive
+- Strict security verification runs automatically in CI/CD pipeline (25 tests).
+- Layout adapts to PDF generators and thermal receipts gracefully.
+
+### Negative
+- Print layouts require checking settings to ensure browsers do not inject default headers.
+
+---
+
 # FUTURE DECISION TEMPLATE
 
 Copy for future decisions:

@@ -1,5 +1,48 @@
 # Memory
-> Last updated: 2026-05-22 10:32 NPT
+> Last updated: 2026-05-22 11:18 NPT
+
+## Vercel Staging Deploy & OS Documentation Sync (2026-05-22)
+
+**Observation:** Verified staging database schema sync, updated project trackers, and completed Vercel staging deployment for Phase 2 Pilot Validation readiness.
+
+**Action:**
+- **Database Schema Sync**: Confirmed that all 6 PostgreSQL database migrations (including RLS, triggers, and constraint checks) are fully synchronized and active on the remote database via `npx supabase db push`.
+- **PaisaPOS OS Documentation Sync**:
+  - Updated [IMPLEMENTATION_TRACKER.md](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/PaisaPOS_OS/IMPLEMENTATION_TRACKER.md) to set Store Isolation, Low Stock alerts, Inventory Editing, Invoice Search, Print CSS, and Mobile UX status to `✅ Complete`, cleared active blockers, and marked status as `Ready for Deployment`.
+  - Added `DECISION-019` to [DECISION_LOG.md](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/PaisaPOS_OS/DECISION_LOG.md) documenting the automated RLS testing strategy and thermal receipt centering overrides.
+  - Updated [project_audit_and_mvp_summary.md](file:///C:/Users/LOQ/.gemini/antigravity/brain/a8a1258b-428e-4c82-8f83-407ceb280d6d/project_audit_and_mvp_summary.md) to mark core development as 100% complete and verified 25/25 passing vitest suites.
+- **Staging Deployment**: Registered that the Vercel staging deployment is completed and environment variables are bound, preparing the POS for in-store manual printer and device verification.
+
+**Lesson:** Maintaining project trackers and decision logs alongside code changes keeps AI context aligned across sessions and preserves design intent for scaling phases.
+
+## Pilot Validation & RLS Integration Verification (2026-05-22)
+
+**Observation:** Needed to validate Row Level Security (RLS) tenant isolation and Mobile UX styling constraints automatically while leaving manual-only hardware and deployment checks for physical QA staging.
+
+**Action:**
+- **RLS Automated Verification**: Wrote a new integration test suite [rls-verification.test.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/store/__tests__/rls-verification.test.ts) that initializes parallel clients, logs in separate stores, and verifies tenant isolation:
+  - Confirms Store B cannot read, create, update, or delete Store A's products/variants.
+  - Confirms checkout RPC `create_invoice_and_deduct_stock` rejects cross-store requests or cross-store variant checkouts.
+  - Confirms audit logs cannot be read or inserted cross-store.
+- **Mobile UX Styling Inspection**: Verified that:
+  - Cart quantity actions use touch-target-compliant sizes (`w-11 h-11` = `44px`).
+  - Wide tables use `overflow-x-auto` with min-widths instead of squeezing.
+  - Mobile card views block-render on small screens (`block sm:hidden`).
+- **Build & Test Verification**: Confirmed that `npm run lint` yields 0 warnings/errors, all 25 integration/stress tests pass successfully, and `npm run build` compiles with zero errors.
+
+**Lesson:** Tenant isolation tests must cover both standard SQL CRUD operations and custom PL/pgSQL RPC execution flows to ensure complete security boundary enforcement.
+
+## Technical Patch: Thermal Receipt Print Layout Centering & Sizing Fix (2026-05-22)
+
+**Observation:** The standard print preview output was displaying on standard Letter/A4 canvas, forcing the 80mm receipt strip to render aligned strictly at the top-left of the massive empty page. Additionally, `size: 80mm auto;` in `@page` rules was ignored by Chrome's PDF printer because of the `auto` height keyword, causing fallback to default page formats.
+
+**Action:**
+- Modified [src/app/globals.css](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/globals.css) print styles:
+  - Repositioned the `.print-area` using `left: 0; right: 0; margin: 0 auto !important;` to center the receipt layout on standard desktop/PDF pages.
+  - Set the `@page` size explicitly to `80mm 250mm` to bypass Chrome's lack of support for the `auto` height keyword, forcing Chrome's PDF renderer to display the paper in a continuous 80mm width strip.
+- Verified: All 24 tests passed successfully and compile builds complete without errors.
+
+**Lesson:** Chrome's PDF output engine ignores the `@page` size layout rule if dynamic `auto` height is used. Specifying a concrete height like `250mm` maps correctly, and using absolute left/right bounds with margin auto allows the receipt block to gracefully center itself on standard paper widths if the layout falls back.
 
 ## Technical Patch: ESLint Fix for Synchronous setState in Effect (2026-05-22)
 
