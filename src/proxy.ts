@@ -25,7 +25,11 @@ export async function proxy(request: NextRequest) {
 
   if (!supabaseUrl || !supabaseAnonKey) {
     const { pathname } = request.nextUrl
-    if (pathname.startsWith('/dashboard')) {
+    const protectedRoutes = ['/dashboard', '/billing', '/inventory', '/invoices']
+    const isProtectedRoute = protectedRoutes.some(
+      route => pathname === route || pathname.startsWith(route + '/')
+    )
+    if (isProtectedRoute) {
       const url = request.nextUrl.clone()
       url.pathname = '/'
       url.search = ''
@@ -74,12 +78,26 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  // Protect /dashboard and all its sub-routes
-  if (pathname.startsWith('/dashboard')) {
+  // Protect all authenticated paths
+  const protectedRoutes = ['/dashboard', '/billing', '/inventory', '/invoices']
+  const isProtectedRoute = protectedRoutes.some(
+    route => pathname === route || pathname.startsWith(route + '/')
+  )
+  if (isProtectedRoute) {
     if (!user) {
       // Unauthenticated, redirect to home page
       const url = request.nextUrl.clone()
       url.pathname = '/'
+      url.search = ''
+      return NextResponse.redirect(url)
+    }
+  }
+
+  // Redirect authenticated users away from / (login page) to /dashboard
+  if (pathname === '/') {
+    if (user) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
       url.search = ''
       return NextResponse.redirect(url)
     }

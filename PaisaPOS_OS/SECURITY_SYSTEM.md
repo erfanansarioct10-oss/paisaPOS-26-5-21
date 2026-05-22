@@ -358,7 +358,7 @@ This audit evaluates the PaisaPOS codebase across five target security domains. 
 
 ### Issue 1: Fail-Open Route Guarding Middleware on Missing Environment Configuration
 - **Vulnerability Explanation:** The Next.js middleware implementation checks for the existence of Supabase client credentials (`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`). If these variables are missing or undefined in the environment, the middleware catches this configuration absence and returns `NextResponse.next()`, failing open. As a result, route guarding for pathnames starting with `/dashboard` is bypassed, allowing access to the protected workspace routes. While the frontend will default to local Demo Mode, exposing the underlying pages and API calls represents a security route bypass.
-- **Affected Code:** [proxy.ts:L23-28](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/proxy.ts#L23-28)
+- **Affected Code:** [proxy.ts:L23-35](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/proxy.ts#L23-35)
 - **Severity:** High
 - **Fixed/Secure Code Pattern:**
   ```typescript

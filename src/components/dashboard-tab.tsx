@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useRouter } from "next/navigation";
 import { useAppStore, Invoice } from "@/lib/store/useAppStore";
 import {
   TrendingUp,
@@ -14,12 +15,12 @@ import {
 } from "lucide-react";
 
 export default function DashboardTab() {
+  const router = useRouter();
   const {
     invoices,
     products,
     variants,
     store,
-    setTab,
     setActiveInvoice,
     invoiceItems,
   } = useAppStore();
@@ -107,7 +108,7 @@ export default function DashboardTab() {
         </div>
 
         <button
-          onClick={() => setTab("billing")}
+          onClick={() => router.push("/billing")}
           className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:opacity-95 shadow transition-all active:scale-[0.99] shrink-0"
         >
           <Plus className="w-4 h-4" />
@@ -201,7 +202,7 @@ export default function DashboardTab() {
           <div className="px-5 py-4 border-b border-border flex items-center justify-between">
             <h3 className="font-semibold text-foreground">Recent Invoices</h3>
             <button
-              onClick={() => setTab("history")}
+              onClick={() => router.push("/invoices")}
               className="text-xs font-semibold text-primary hover:underline flex items-center gap-1"
             >
               <span>View All</span>

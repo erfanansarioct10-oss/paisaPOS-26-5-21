@@ -1,5 +1,35 @@
 # Memory
-> Last updated: 2026-05-22 07:45 NPT
+> Last updated: 2026-05-22 08:41 NPT
+
+## Technical Patch: Responsive Checkout Button Hotkey Label (2026-05-22)
+
+**Observation:** The checkout button in the POS cart footer displayed `Checkout (Ctrl+Enter)`. The `(Ctrl+Enter)` text does not make sense on mobile or tablet touch interfaces.
+**Action:**
+- Wrapped the keyboard shortcut hint text ` (Ctrl+Enter)` inside [src/components/billing-tab.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/components/billing-tab.tsx#L491) in a responsive span: `<span className="hidden lg:inline text-xs opacity-80 font-normal ml-1">`.
+- This automatically hides the shortcut hint on mobile and tablet viewport widths (< `lg`) while retaining it with a clean secondary styling on desktop displays (>= `lg`).
+- Verified all **24 tests passed** and `npm run build` compiled successfully with zero errors.
+**Lesson:** Interface hint elements that depend on physical keyboards should always be conditionally hidden or adapted using responsive breakpoints (e.g. `hidden lg:inline`) to maintain clean UX across mobile touch devices.
+
+## Technical Patch: Flat Page Routing & Back Navigation Warning Guard (2026-05-22)
+
+**Observation:** The user wanted flat URL segments directly at root (e.g. `/inventory` instead of `/dashboard/inventory`) and a safety warning when pressing the browser back button with an active cashier cart.
+**Action:**
+- Utilized Next.js **Route Groups** folder convention `src/app/(authenticated)/` to support flat URL targets (`/dashboard`, `/billing`, `/inventory`, `/invoices`) while keeping the shared layout, sidebar, session checks, and receipt overlay intact.
+- Updated route checks inside proxy middleware [src/proxy.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/proxy.ts) to protect the flat endpoints from unauthenticated visits, and updated [sidebar.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/components/sidebar.tsx) path targets.
+- Cleaned the build tree by recursively removing the old legacy `src/app/dashboard` folder structure.
+- Implemented **Option A warning guard** in [billing/page.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/(authenticated)/billing/page.tsx): uses `beforeunload` for exits/reloads, and inserts a browser history state checkpoint to intercept `popstate` on back-button nav (prompting a confirmation warning, but preserving cart state in background if they choose to leave).
+- Verified that all **24 tests passed** and production static page compilation completed with 0 errors.
+**Lesson:** Next.js Route Groups `(name)` are perfect for sharing structures (like sidebar menus) across flat routes without polluting path names. Using popstate history markers allows reliable back-navigation interception in React without losing background state.
+
+## Technical Patch: Browser Back Navigation Redirect Flash Fix (2026-05-22)
+
+**Observation:** Clicking the browser or phone back button from `/dashboard` would cause a brief flash of the `/` (login/auth) screen before redirecting back to `/dashboard`.
+**Action:**
+- Modified [src/proxy.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/proxy.ts) (which conforms to Next.js 16's custom proxy middleware convention) to intercept requests to `/` and immediately return a server-side redirect to `/dashboard` if a valid session exists.
+- Replaced `router.push` with `router.replace` in both [page.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/page.tsx) and [dashboard/page.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/dashboard/page.tsx) to ensure redirected routes do not linger in the browser's history stack.
+- Deleted the deprecated `middleware.ts` wrapper file to clean the build pipeline and satisfy Next.js 16 compiler requirements.
+- Ran the test suite via `npm run test` and validated the Next.js production compilation build via `npm run build` (both succeeded with 0 warnings/failures).
+**Lesson:** Client-side route protection should always be paired with server/middleware-level redirection on landing pages to avoid visual flashes. Use `router.replace` when performing session-state redirections to avoid history stack pollution.
 
 ## Technical Patch: Concurrency Test Verification, Schema Alignment & ESLint Fixes (2026-05-22)
 

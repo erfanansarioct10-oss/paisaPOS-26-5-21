@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { useAppStore } from "@/lib/store/useAppStore";
 import {
   LayoutDashboard,
@@ -15,20 +16,15 @@ import {
 } from "lucide-react";
 
 export default function Sidebar() {
-  const { activeTab, setTab, store, user, signOut } = useAppStore();
+  const { activeTab, store, user, signOut } = useAppStore();
   const [isOpen, setIsOpen] = useState(false);
 
   const navItems = [
-    { id: "dashboard", name: "Dashboard", icon: LayoutDashboard },
-    { id: "billing", name: "Billing POS", icon: Calculator },
-    { id: "inventory", name: "Inventory", icon: Package },
-    { id: "history", name: "Invoices", icon: History },
+    { id: "dashboard", name: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
+    { id: "billing", name: "Billing POS", icon: Calculator, path: "/billing" },
+    { id: "inventory", name: "Inventory", icon: Package, path: "/inventory" },
+    { id: "history", name: "Invoices", icon: History, path: "/invoices" },
   ] as const;
-
-  const handleTabSelect = (tab: typeof navItems[number]["id"]) => {
-    setTab(tab);
-    setIsOpen(false);
-  };
 
   return (
     <>
@@ -66,7 +62,7 @@ export default function Sidebar() {
           <Store className="w-6 h-6 text-primary shrink-0" />
           <div className="flex flex-col">
             <span className="font-outfit font-extrabold tracking-tight text-xl text-foreground">
-              PaisaPOS
+               PaisaPOS
             </span>
             <span className="text-[10px] text-muted-foreground font-mono tracking-widest uppercase">
               Nepali Boutique Sync
@@ -89,7 +85,6 @@ export default function Sidebar() {
               </span>
             </div>
           </div>
-
         </div>
 
         {/* NAVIGATION LINKS */}
@@ -98,9 +93,10 @@ export default function Sidebar() {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
-              <button
+              <Link
                 key={item.id}
-                onClick={() => handleTabSelect(item.id)}
+                href={item.path}
+                onClick={() => setIsOpen(false)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                   isActive
                     ? "bg-primary text-primary-foreground font-semibold shadow-sm"
@@ -109,7 +105,7 @@ export default function Sidebar() {
               >
                 <Icon className="w-4 h-4 shrink-0" />
                 <span>{item.name}</span>
-              </button>
+              </Link>
             );
           })}
         </nav>

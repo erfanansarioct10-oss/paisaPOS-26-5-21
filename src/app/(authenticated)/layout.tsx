@@ -1,22 +1,21 @@
 "use client";
 
 import React, { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useAppStore } from "@/lib/store/useAppStore";
 import Sidebar from "@/components/sidebar";
 import ReceiptModal from "@/components/receipt-modal";
-import DashboardTab from "@/components/dashboard-tab";
-import BillingTab from "@/components/billing-tab";
-import InventoryTab from "@/components/inventory-tab";
-import HistoryTab from "@/components/history-tab";
 import { Loader2, Store } from "lucide-react";
-import { ErrorBoundary } from "@/components/error-boundary";
 
-export default function DashboardContainer() {
+export default function AuthenticatedLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const router = useRouter();
+  const pathname = usePathname();
   const {
     user,
-    activeTab,
     isLoading,
     initializeSession,
   } = useAppStore();
@@ -29,7 +28,7 @@ export default function DashboardContainer() {
   // Route protection: If loaded and user profile is absent, send back to credentials page
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push("/");
+      router.replace("/");
     }
   }, [user, isLoading, router]);
 
@@ -60,6 +59,9 @@ export default function DashboardContainer() {
   // Double check protection bypass
   if (!user) return null;
 
+  // Determine if we should overflow-hidden (specifically for Billing POS tab workspace)
+  const isBillingRoute = pathname === "/billing";
+
   return (
     <div className="flex flex-col md:flex-row h-screen bg-background overflow-hidden">
       {/* 1. NAVIGATION DRAWER SIDEBAR */}
@@ -68,23 +70,9 @@ export default function DashboardContainer() {
       {/* 2. DYNAMIC WORKSPACE PANEL */}
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden bg-background">
         <div className={`flex-1 flex flex-col min-h-0 ${
-          activeTab === "billing" ? "overflow-hidden" : "overflow-y-auto"
+          isBillingRoute ? "overflow-hidden" : "overflow-y-auto"
         } px-4 py-5 sm:p-6 lg:p-8`}>
-          
-          {/* TAB SWITCH SWITCHBOARD */}
-          {activeTab === "dashboard" && <DashboardTab />}
-          {activeTab === "billing" && (
-            <ErrorBoundary fallbackName="Billing Workspace">
-              <BillingTab />
-            </ErrorBoundary>
-          )}
-          {activeTab === "inventory" && (
-            <ErrorBoundary fallbackName="Inventory Workspace">
-              <InventoryTab />
-            </ErrorBoundary>
-          )}
-          {activeTab === "history" && <HistoryTab />}
-
+          {children}
         </div>
       </main>
 

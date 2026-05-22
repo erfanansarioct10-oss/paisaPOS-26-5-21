@@ -3,7 +3,7 @@
 // =========================================================================
 
 import { supabase, hasSupabaseConfig } from "@/lib/supabase";
-import type { AppState, ProductVariant } from "./types";
+import type { AppState, ProductVariant, Invoice, InvoiceItem } from "./types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 let activeRealtimeChannel: RealtimeChannel | null = null;
@@ -287,19 +287,29 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
         };
       });
 
-      // 3. Fetch Invoices
+      // 3. Fetch Invoices with line items to populate cached line items (fixes empty reprint line items bug)
       const { data: dbInvoices, error: invError } = await supabase
         .from("invoices")
-        .select("*")
+        .select("*, invoice_items(*)")
         .eq("store_id", store.id)
         .order("created_at", { ascending: false });
 
       if (invError) throw invError;
 
+      type DbInvoiceWithItems = Invoice & { invoice_items?: InvoiceItem[] };
+
+      const invoiceItemsMap: Record<string, InvoiceItem[]> = {};
+      if (dbInvoices) {
+        (dbInvoices as DbInvoiceWithItems[]).forEach((inv) => {
+          invoiceItemsMap[inv.id] = inv.invoice_items || [];
+        });
+      }
+
       set({
         products: dbProducts || [],
         variants: mappedVariants,
         invoices: dbInvoices || [],
+        invoiceItems: invoiceItemsMap,
       });
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : String(e);

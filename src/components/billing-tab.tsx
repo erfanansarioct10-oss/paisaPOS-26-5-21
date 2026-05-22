@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store/useAppStore";
 import {
   Search,
@@ -13,9 +14,11 @@ import {
   Check,
   Percent,
   Keyboard,
+  Plus,
 } from "lucide-react";
 
 export default function BillingTab() {
+  const router = useRouter();
   const {
     products,
     variants,
@@ -44,6 +47,22 @@ export default function BillingTab() {
   // Cart bounce pulse micro-animation states
   const [pulseCart, setPulseCart] = useState(false);
   const prevItemsCountRef = useRef(0);
+
+  // Responsive placeholder text to prevent clipping on mobile screens
+  const [placeholder, setPlaceholder] = useState("Search products...");
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 768) {
+        setPlaceholder("Type Product, Category or SKU... (Press '/' to focus, 'Esc' to clear)");
+      } else {
+        setPlaceholder("Search products, category, or SKU...");
+      }
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -190,16 +209,16 @@ export default function BillingTab() {
           <input
             ref={searchInputRef}
             type="text"
-            placeholder="Type Product, Category or SKU... (Press '/' to focus, 'Esc' to clear)"
+            placeholder={placeholder}
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
               // Clear product selection when search text is edited
               if (selectedProductId) setSelectedProductId(null);
             }}
-            className="block w-full pl-10 pr-12 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-white placeholder-slate-600 transition-all shadow-sm"
+            className="block w-full pl-10 pr-4 md:pr-12 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-white placeholder-slate-600 transition-all shadow-sm"
           />
-          <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[10px] text-muted-foreground font-mono bg-secondary px-1.5 py-0.5 rounded border border-border">
+          <div className="hidden md:flex absolute right-3.5 top-1/2 -translate-y-1/2 items-center gap-1 text-[10px] text-muted-foreground font-mono bg-secondary px-1.5 py-0.5 rounded border border-border">
             <Keyboard className="w-3 h-3" />
             <span>/</span>
           </div>
@@ -210,10 +229,21 @@ export default function BillingTab() {
           {filteredProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center bg-card border border-border rounded-xl p-6">
               <Search className="w-10 h-10 text-muted-foreground mb-3 opacity-30 animate-bounce" />
-              <h3 className="text-sm font-bold text-foreground">No Products Found</h3>
+              <h3 className="text-sm font-bold text-foreground">
+                {products.length === 0 ? "No Inventory Found" : "No Products Found"}
+              </h3>
               <p className="text-xs text-muted-foreground mt-1 max-w-xs">
-                Could not find any items matching &quot;{searchQuery}&quot;. Check spelling or create a new SKU in the Inventory tab.
+                {products.length === 0
+                  ? "Your inventory is currently empty. Add products to start generating bills."
+                  : `Could not find any items matching "${searchQuery}". Check spelling or create a new SKU in the Inventory tab.`}
               </p>
+              <button
+                onClick={() => router.push("/inventory?add=true")}
+                className="mt-5 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-xs font-semibold rounded-lg hover:opacity-95 shadow transition-all active:scale-[0.99]"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{products.length === 0 ? "Go to Inventory & Add Product" : "Add New SKU"}</span>
+              </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -488,7 +518,7 @@ export default function BillingTab() {
                 <>
                   <span className="flex items-center gap-2">
                     <Check className="w-4 h-4 shrink-0" />
-                    <span>Checkout (Ctrl+Enter)</span>
+                    <span>Checkout <span className="hidden lg:inline text-xs opacity-80 font-normal ml-1">(Ctrl+Enter)</span></span>
                   </span>
                   <span className="font-bold text-base font-mono">
                     Rs. {totalAmount.toLocaleString()}

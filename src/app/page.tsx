@@ -32,7 +32,7 @@ export default function LoginPage() {
   // If user session is active, redirect to dashboard automatically
   useEffect(() => {
     if (user) {
-      router.push("/dashboard");
+      router.replace("/dashboard");
     }
   }, [user, router]);
 

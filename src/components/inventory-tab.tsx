@@ -28,6 +28,23 @@ export default function InventoryTab() {
   } = useAppStore();
 
   const [isOpen, setIsOpen] = useState(false);
+
+  // Auto-open Quick Product Wizard if redirected with ?add=true query param
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("add") === "true") {
+        // Defer updating state to avoid synchronous cascading renders inside effect
+        setTimeout(() => {
+          setIsOpen(true);
+        }, 0);
+        // Clear param from URL without reload for premium feel
+        const newUrl = window.location.pathname;
+        window.history.replaceState({ path: newUrl }, "", newUrl);
+      }
+    }
+  }, []);
+
   const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
 
   // Form Fields for new Product
