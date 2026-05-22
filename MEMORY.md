@@ -1,5 +1,17 @@
 # Memory
-> Last updated: 2026-05-22 17:11 NPT
+> Last updated: 2026-05-22 17:51 NPT
+
+## Production DB Migration, Connection Pooling & Deployment Verification (2026-05-22)
+
+**Observation:** The application and database schemas needed to be transitioned from local emulation to a production remote Supabase instance and Vercel hosting platform, incorporating connection pooling and active log archiving.
+
+**Action:**
+- **Database Migrations:** Pushed all outstanding migrations to the remote production database using `npx supabase db push`, sync verified via CLI (`npx supabase migration list`).
+- **pg_cron Verification:** Confirmed that the `daily-audit-log-archiving` job (running `CALL archive_and_purge_old_audit_logs()`) is successfully active (`active: true`) on the remote database.
+- **Connection Pooling:** Retrieved the Transaction Pooler connection string (`port 6543`) from the Supabase dashboard. Percent-encoded the database password containing `#` characters (`##` -> `%23%23`) to prevent URI parsing failures. Added `DATABASE_URL` to Vercel's environment variables.
+- **Git Push & Verification:** Staged and committed all outstanding files (theme toggles, input limits, print centering, and Zustand concurrency fixes) and ran `git push` to trigger the production build on Vercel. Verified that `npm run lint` and `npm run build` succeed locally with 0 errors.
+
+**Lesson:** Special characters like `#` in database passwords must always be percent-encoded to `%23` in SQL connection URIs to avoid parser syntax issues. Always verify the active status of `pg_cron` jobs via `cron.job` queries directly on the production instance to confirm migration triggers executed correctly.
 
 ## Global Theme Toggle System Implementation (2026-05-22)
 
