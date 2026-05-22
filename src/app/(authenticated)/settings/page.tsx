@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store/useAppStore";
 import { updateStoreAction, updateProfileAction } from "@/app/actions";
 import {
@@ -15,7 +15,12 @@ import {
 } from "lucide-react";
 
 export default function SettingsPage() {
-  const { store, user, signOut, initializeSession } = useAppStore();
+  const { store, user, signOut, initializeSession, setTab } = useAppStore();
+
+  // Sync active tab in global store on component mount
+  useEffect(() => {
+    setTab("settings");
+  }, [setTab]);
 
   // Store fields
   const [storeName, setStoreName] = useState(store?.name || "");

@@ -1,5 +1,5 @@
 # Memory
-> Last updated: 2026-05-22 11:47 NPT
+> Last updated: 2026-05-22 11:51 NPT
 
 ## Network Resilience, UI Hardening & Client Input Validation Audit (2026-05-22)
 
@@ -17,10 +17,11 @@
   - Wrapped dynamic content pages in an `<ErrorBoundary>` component in [layout.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/(authenticated)/layout.tsx).
   - Added a top slide-down connectivity warning banner and a global auto-dismissing glassmorphic toast for async database synchronization errors.
   - Added a live, pulse-animated cart badge to the sidebar billing route link.
+  - Synced the settings page active tab status by adding a `useEffect` calling `setTab("settings")` on mount to fix the sidebar highlight bug.
 - **Verification**:
   - Confirmed all **28 automated vitest cases** (CRUD, Row-Level Security, Stress/Concurrency) pass successfully.
 
-**Lesson:** Protecting client inputs at the interface level using `maxLength` and key blockers prevents validation check exceptions from bubbling up to server-side frameworks, and handling `navigator.onLine === false` strictly ensures runtime resilience without breaking global test contexts in simulated testing environments.
+**Lesson:** Protecting client inputs at the interface level using `maxLength` and key blockers prevents validation check exceptions from bubbling up to server-side frameworks, and handling `navigator.onLine === false` strictly ensures runtime resilience without breaking global test contexts in simulated testing environments. If routes are moved or created, always ensure their root page invokes the layout state tab updates to keep indicators highlighted.
 
 ## Vercel Staging Deploy & OS Documentation Sync (2026-05-22)
 
