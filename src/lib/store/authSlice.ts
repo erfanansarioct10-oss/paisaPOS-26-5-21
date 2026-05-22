@@ -214,11 +214,15 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
   // -----------------------------------------------------------------------
   // FETCH STORE DATA FROM SUPABASE
   // -----------------------------------------------------------------------
-  fetchStoreData: async () => {
-    const { store } = get();
+  fetchStoreData: async (options?: { forceLoading?: boolean }) => {
+    const { store, products } = get();
     if (!store) return;
 
-    set({ isLoading: true });
+    const showLoading = options?.forceLoading || products.length === 0;
+
+    if (showLoading) {
+      set({ isLoading: true });
+    }
     try {
       // 1. Fetch products
       const { data: dbProducts, error: prodError } = await supabase
@@ -301,7 +305,12 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       console.error("Error fetching store database:", errMsg);
       set({ errorMsg: "Failed to sync inventory: " + errMsg });
     } finally {
-      set({ isLoading: false });
+      if (showLoading) {
+        set({ isLoading: false });
+      }
     }
+  },
+  clearError: () => {
+    set({ errorMsg: null });
   },
 });

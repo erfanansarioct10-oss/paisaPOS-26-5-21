@@ -743,4 +743,57 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
       });
     });
   });
+
+  // =========================================================================
+  // 7. NETWORK RESILIENCE & ERROR HANDLING
+  // =========================================================================
+  describe("Network Resilience & Error Handling", () => {
+    test("should successfully clear errorMsg using clearError action", () => {
+      store.setState({ errorMsg: "Some test error" });
+      expect(store.getState().errorMsg).toBe("Some test error");
+      store.getState().clearError();
+      expect(store.getState().errorMsg).toBeNull();
+    });
+
+    test("should reject checkout when navigator.onLine is false", async () => {
+      // Mock window.navigator.onLine to be false
+      const originalNavigator = global.navigator;
+      Object.defineProperty(global, "navigator", {
+        value: { onLine: false },
+        configurable: true,
+      });
+
+      store.getState().addToCart("var-1-m");
+      const result = await store.getState().checkout();
+      expect(result).toBe(false);
+      expect(store.getState().errorMsg).toBe("Checkout failed: Internet connection is offline.");
+
+      // Restore
+      Object.defineProperty(global, "navigator", {
+        value: originalNavigator,
+        configurable: true,
+      });
+    });
+
+    test("should reject addProduct when navigator.onLine is false", async () => {
+      // Mock window.navigator.onLine to be false
+      const originalNavigator = global.navigator;
+      Object.defineProperty(global, "navigator", {
+        value: { onLine: false },
+        configurable: true,
+      });
+
+      const result = await store.getState().addProduct("Kurti Set", "Ethnic", 5, [
+        { size: "S", color: "Red", sku: "KURT-RED-S", price: 1500, stock: 10 }
+      ]);
+      expect(result).toBe(false);
+      expect(store.getState().errorMsg).toBe("Operation failed: Internet connection is offline.");
+
+      // Restore
+      Object.defineProperty(global, "navigator", {
+        value: originalNavigator,
+        configurable: true,
+      });
+    });
+  });
 });

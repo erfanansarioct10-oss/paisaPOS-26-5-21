@@ -437,6 +437,7 @@ export default function BillingTab() {
               <input
                 type="text"
                 placeholder="Customer Name"
+                maxLength={100}
                 value={customerName}
                 onChange={(e) => setCustomerDetails(e.target.value, customerPhone)}
                 className="block w-full pl-8 pr-2 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:outline-none text-white"
@@ -447,8 +448,12 @@ export default function BillingTab() {
               <input
                 type="text"
                 placeholder="Phone Number"
+                maxLength={20}
                 value={customerPhone}
-                onChange={(e) => setCustomerDetails(customerName, e.target.value)}
+                onChange={(e) => {
+                  const cleaned = e.target.value.replace(/[^0-9+\-\s]/g, "");
+                  setCustomerDetails(customerName, cleaned);
+                }}
                 className="block w-full pl-8 pr-2 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:outline-none text-white"
               />
             </div>
@@ -462,9 +467,19 @@ export default function BillingTab() {
               <input
                 type="number"
                 min={0}
+                max={subtotal}
                 placeholder="Discount Rs."
                 value={cartDiscount || ""}
-                onChange={(e) => setCartDiscount(Number(e.target.value))}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (val < 0) {
+                    setCartDiscount(0);
+                  } else if (val > subtotal) {
+                    setCartDiscount(subtotal);
+                  } else {
+                    setCartDiscount(val);
+                  }
+                }}
                 className="block w-full pl-8 pr-2 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:outline-none font-bold text-red-500"
               />
             </div>

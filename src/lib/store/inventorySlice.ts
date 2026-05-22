@@ -32,6 +32,11 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
     const { store } = get();
     if (!store) return false;
 
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      set({ errorMsg: "Operation failed: Internet connection is offline." });
+      return false;
+    }
+
     set({ isLoading: true, errorMsg: null });
 
     try {
@@ -57,8 +62,10 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
     } catch (e: unknown) {
       const errMsg = mapProductError(e);
       console.error("Error creating product:", e);
-      set({ errorMsg: errMsg, isLoading: false });
+      set({ errorMsg: errMsg });
       return false;
+    } finally {
+      set({ isLoading: false });
     }
   },
 
@@ -66,6 +73,11 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
   // DELETE PRODUCT
   // -----------------------------------------------------------------------
   deleteProduct: async (productId: string): Promise<boolean> => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      set({ errorMsg: "Operation failed: Internet connection is offline." });
+      return false;
+    }
+
     set({ isLoading: true, errorMsg: null });
 
     try {
@@ -77,8 +89,10 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
     } catch (e: unknown) {
       const errMsg = mapProductError(e);
       console.error("Error deleting product:", e);
-      set({ errorMsg: errMsg, isLoading: false });
+      set({ errorMsg: errMsg });
       return false;
+    } finally {
+      set({ isLoading: false });
     }
   },
 
@@ -100,6 +114,11 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
     }>,
     deletedVariantIds: string[]
   ): Promise<boolean> => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      set({ errorMsg: "Operation failed: Internet connection is offline." });
+      return false;
+    }
+
     set({ isLoading: true, errorMsg: null });
 
     try {
@@ -126,8 +145,10 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
     } catch (e: unknown) {
       const errMsg = mapProductError(e);
       console.error("Error updating product:", e);
-      set({ errorMsg: errMsg, isLoading: false });
+      set({ errorMsg: errMsg });
       return false;
+    } finally {
+      set({ isLoading: false });
     }
   },
 
@@ -135,6 +156,11 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
   // DIRECT STOCK ADJUSTMENT
   // -----------------------------------------------------------------------
   updateStockDirect: async (variantId: string, newStock: number): Promise<boolean> => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      set({ errorMsg: "Operation failed: Internet connection is offline." });
+      return false;
+    }
+
     set({ isLoading: true, errorMsg: null });
 
     try {
@@ -146,8 +172,10 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
     } catch (e: unknown) {
       const errMsg = mapProductError(e);
       console.error("Error updating stock directly:", e);
-      set({ errorMsg: "Failed to save stock adjustment: " + errMsg, isLoading: false });
+      set({ errorMsg: "Failed to save stock adjustment: " + errMsg });
       return false;
+    } finally {
+      set({ isLoading: false });
     }
   },
 });

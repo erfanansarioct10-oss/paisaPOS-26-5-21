@@ -537,6 +537,7 @@ export default function InventoryTab() {
                     <input
                       type="text"
                       required
+                      maxLength={150}
                       placeholder="e.g. Oversized Linen Shirt"
                       value={prodName}
                       onChange={(e) => setProdName(e.target.value)}
@@ -571,8 +572,15 @@ export default function InventoryTab() {
                     type="number"
                     required
                     min={1}
-                    value={lowStockThreshold}
-                    onChange={(e) => setLowStockThreshold(Number(e.target.value))}
+                    value={lowStockThreshold || ""}
+                    onKeyPress={(e) => { if (e.key === "." || e.key === "-") e.preventDefault(); }}
+                    onChange={(e) => {
+                      const val = e.target.value === "" ? 0 : Math.max(0, Math.floor(Number(e.target.value)));
+                      setLowStockThreshold(val);
+                    }}
+                    onBlur={() => {
+                      if (lowStockThreshold < 1) setLowStockThreshold(1);
+                    }}
                     className="block w-full px-3 h-11 bg-slate-950 border border-slate-800 rounded-lg text-sm focus:outline-none focus:border-primary text-white shadow-sm"
                   />
                 </div>
@@ -619,8 +627,12 @@ export default function InventoryTab() {
                       <input
                         type="number"
                         min={0}
-                        value={basePrice}
-                        onChange={(e) => setBasePrice(Number(e.target.value))}
+                        value={basePrice || ""}
+                        onKeyPress={(e) => { if (e.key === "-") e.preventDefault(); }}
+                        onChange={(e) => {
+                          const val = e.target.value === "" ? 0 : Math.max(0, Number(e.target.value));
+                          setBasePrice(val);
+                        }}
                         className="block w-full px-3 h-11 bg-slate-950 border border-slate-800 rounded-lg text-white text-sm shadow-sm font-bold"
                       />
                     </div>
@@ -631,8 +643,12 @@ export default function InventoryTab() {
                       <input
                         type="number"
                         min={0}
-                        value={baseStock}
-                        onChange={(e) => setBaseStock(Number(e.target.value))}
+                        value={baseStock || ""}
+                        onKeyPress={(e) => { if (e.key === "." || e.key === "-") e.preventDefault(); }}
+                        onChange={(e) => {
+                          const val = e.target.value === "" ? 0 : Math.max(0, Math.floor(Number(e.target.value)));
+                          setBaseStock(val);
+                        }}
                         className="block w-full px-3 h-11 bg-slate-950 border border-slate-800 rounded-lg text-white text-sm shadow-sm font-semibold"
                       />
                     </div>
@@ -664,6 +680,7 @@ export default function InventoryTab() {
                               <td className="px-3 py-1.5">
                                 <input
                                   type="text"
+                                  maxLength={100}
                                   value={item.sku}
                                   onChange={(e) => updateGeneratedCell(idx, "sku", e.target.value)}
                                   className="w-full px-2 h-9 bg-slate-900 border border-slate-800 rounded font-mono text-[11px] text-white shadow-inner"
@@ -673,8 +690,12 @@ export default function InventoryTab() {
                                 <input
                                   type="number"
                                   min={0}
-                                  value={item.price}
-                                  onChange={(e) => updateGeneratedCell(idx, "price", Number(e.target.value))}
+                                  value={item.price || ""}
+                                  onKeyPress={(e) => { if (e.key === "-") e.preventDefault(); }}
+                                  onChange={(e) => {
+                                    const val = e.target.value === "" ? 0 : Math.max(0, Number(e.target.value));
+                                    updateGeneratedCell(idx, "price", val);
+                                  }}
                                   className="w-full px-2 h-9 bg-slate-900 border border-slate-800 rounded font-bold text-white text-right shadow-inner"
                                 />
                               </td>
@@ -682,8 +703,12 @@ export default function InventoryTab() {
                                 <input
                                   type="number"
                                   min={0}
-                                  value={item.stock}
-                                  onChange={(e) => updateGeneratedCell(idx, "stock", Number(e.target.value))}
+                                  value={item.stock || ""}
+                                  onKeyPress={(e) => { if (e.key === "." || e.key === "-") e.preventDefault(); }}
+                                  onChange={(e) => {
+                                    const val = e.target.value === "" ? 0 : Math.max(0, Math.floor(Number(e.target.value)));
+                                    updateGeneratedCell(idx, "stock", val);
+                                  }}
                                   className="w-full px-2 h-9 bg-slate-900 border border-slate-800 rounded font-semibold text-white text-center shadow-inner"
                                 />
                               </td>
@@ -759,6 +784,7 @@ export default function InventoryTab() {
                     <input
                       type="text"
                       required
+                      maxLength={150}
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
                       className="block w-full px-3 h-11 bg-slate-950 border border-slate-800 rounded-lg text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-white shadow-sm"
@@ -792,8 +818,15 @@ export default function InventoryTab() {
                     type="number"
                     required
                     min={1}
-                    value={editLowStock}
-                    onChange={(e) => setEditLowStock(Number(e.target.value))}
+                    value={editLowStock || ""}
+                    onKeyPress={(e) => { if (e.key === "." || e.key === "-") e.preventDefault(); }}
+                    onChange={(e) => {
+                      const val = e.target.value === "" ? 0 : Math.max(0, Math.floor(Number(e.target.value)));
+                      setEditLowStock(val);
+                    }}
+                    onBlur={() => {
+                      if (editLowStock < 1) setEditLowStock(1);
+                    }}
                     className="block w-full px-3 h-11 bg-slate-950 border border-slate-800 rounded-lg text-sm focus:outline-none focus:border-primary text-white shadow-sm"
                   />
                 </div>
@@ -834,6 +867,7 @@ export default function InventoryTab() {
                               <input
                                 type="text"
                                 required
+                                maxLength={50}
                                 value={item.size}
                                 onChange={(e) => {
                                   const newVars = [...editVariants];
@@ -848,6 +882,7 @@ export default function InventoryTab() {
                               <input
                                 type="text"
                                 required
+                                maxLength={50}
                                 value={item.color}
                                 onChange={(e) => {
                                   const newVars = [...editVariants];
@@ -862,6 +897,7 @@ export default function InventoryTab() {
                               <input
                                 type="text"
                                 required
+                                maxLength={100}
                                 value={item.sku}
                                 onChange={(e) => {
                                   const newVars = [...editVariants];
@@ -877,10 +913,12 @@ export default function InventoryTab() {
                                 type="number"
                                 required
                                 min={0}
-                                value={item.price}
+                                value={item.price || ""}
+                                onKeyPress={(e) => { if (e.key === "-") e.preventDefault(); }}
                                 onChange={(e) => {
+                                  const val = e.target.value === "" ? 0 : Math.max(0, Number(e.target.value));
                                   const newVars = [...editVariants];
-                                  newVars[idx].price = Number(e.target.value);
+                                  newVars[idx].price = val;
                                   setEditVariants(newVars);
                                 }}
                                 className="w-full px-2 h-11 bg-slate-900 border border-slate-800 rounded font-bold text-white text-right text-xs shadow-inner"
@@ -892,10 +930,12 @@ export default function InventoryTab() {
                                 type="number"
                                 required
                                 min={0}
-                                value={item.stock}
+                                value={item.stock || ""}
+                                onKeyPress={(e) => { if (e.key === "." || e.key === "-") e.preventDefault(); }}
                                 onChange={(e) => {
+                                  const val = e.target.value === "" ? 0 : Math.max(0, Math.floor(Number(e.target.value)));
                                   const newVars = [...editVariants];
-                                  newVars[idx].stock = Number(e.target.value);
+                                  newVars[idx].stock = val;
                                   setEditVariants(newVars);
                                 }}
                                 className="w-full px-2 h-11 bg-slate-900 border border-slate-800 rounded font-semibold text-white text-center text-xs shadow-inner"

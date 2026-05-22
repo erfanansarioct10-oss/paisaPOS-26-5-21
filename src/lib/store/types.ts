@@ -120,7 +120,8 @@ export interface AppState {
   signOut: () => Promise<void>;
 
   // Synchronizers
-  fetchStoreData: () => Promise<void>;
+  fetchStoreData: (options?: { forceLoading?: boolean }) => Promise<void>;
+  clearError: () => void;
 
   // Products & Variants Management
   addProduct: (

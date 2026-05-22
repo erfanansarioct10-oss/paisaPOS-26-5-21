@@ -1,5 +1,26 @@
 # Memory
-> Last updated: 2026-05-22 11:18 NPT
+> Last updated: 2026-05-22 11:47 NPT
+
+## Network Resilience, UI Hardening & Client Input Validation Audit (2026-05-22)
+
+**Observation:** Audits of real-world operations required resilience against connection drops, safeguards against Zod schema validation overflows on text/numeric inputs, and layout crash boundaries.
+
+**Action:**
+- **Network Resilience & Node Test Compatibility**:
+  - Implemented strict `navigator.onLine === false` check on cart checkout and inventory mutations, failing immediately with clean client error messages if offline.
+  - Used strict checks (`=== false`) to keep the Node.js test environment (which defines `navigator` globally but sets `navigator.onLine` to `undefined`) fully compatible without breaking assertions.
+- **Client-Side Input Boundaries**:
+  - Added `maxLength={100}` on `customerName` and `maxLength={20}` on `customerPhone` (with character sanitization `/[^0-9+\-\s]/g`).
+  - Added `maxLength={150}` on product name inputs, `maxLength={50}` on variant size/colors, and `maxLength={100}` on SKUs to prevent DB/Zod schema size overflow exceptions.
+  - Blocked invalid keypresses (`.`, `-`) on stock and threshold numeric inputs, flooring all change events to non-negative integers.
+- **UI Hardening**:
+  - Wrapped dynamic content pages in an `<ErrorBoundary>` component in [layout.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/(authenticated)/layout.tsx).
+  - Added a top slide-down connectivity warning banner and a global auto-dismissing glassmorphic toast for async database synchronization errors.
+  - Added a live, pulse-animated cart badge to the sidebar billing route link.
+- **Verification**:
+  - Confirmed all **28 automated vitest cases** (CRUD, Row-Level Security, Stress/Concurrency) pass successfully.
+
+**Lesson:** Protecting client inputs at the interface level using `maxLength` and key blockers prevents validation check exceptions from bubbling up to server-side frameworks, and handling `navigator.onLine === false` strictly ensures runtime resilience without breaking global test contexts in simulated testing environments.
 
 ## Vercel Staging Deploy & OS Documentation Sync (2026-05-22)
 

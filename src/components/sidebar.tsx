@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 
 export default function Sidebar() {
-  const { activeTab, store, user, signOut } = useAppStore();
+  const { activeTab, store, user, signOut, cart } = useAppStore();
   const [isOpen, setIsOpen] = useState(false);
 
   const navItems = [
@@ -94,6 +94,10 @@ export default function Sidebar() {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
+            const cartItemsCount = item.id === "billing" && cart && cart.length > 0
+              ? cart.reduce((sum, i) => sum + i.quantity, 0)
+              : 0;
+
             return (
               <Link
                 key={item.id}
@@ -107,6 +111,11 @@ export default function Sidebar() {
               >
                 <Icon className="w-4 h-4 shrink-0" />
                 <span>{item.name}</span>
+                {cartItemsCount > 0 && (
+                  <span className="ml-auto px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-mono text-[9px] font-bold shrink-0 shadow-sm animate-pulse">
+                    {cartItemsCount}
+                  </span>
+                )}
               </Link>
             );
           })}

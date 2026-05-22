@@ -152,16 +152,21 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
 
     if (!store || cart.length === 0) return false;
 
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      set({ errorMsg: "Checkout failed: Internet connection is offline." });
+      return false;
+    }
+
     set({ isLoading: true, errorMsg: null });
 
-    const subtotalPrice = cart.reduce((sum, item) => sum + item.quantity * item.price, 0);
-    const totalAmount = Math.max(0, subtotalPrice - cartDiscount);
-
-    // Dynamic Invoice Number Generation
-    const invoiceNumStr = `INV-${new Date().getFullYear()}-${String(invoices.length + 1).padStart(4, "0")}`;
-
-    // Real Supabase checkout via Server Action (MEDIUM-09, MEDIUM-20)
     try {
+      const subtotalPrice = cart.reduce((sum, item) => sum + item.quantity * item.price, 0);
+      const totalAmount = Math.max(0, subtotalPrice - cartDiscount);
+
+      // Dynamic Invoice Number Generation
+      const invoiceNumStr = `INV-${new Date().getFullYear()}-${String(invoices.length + 1).padStart(4, "0")}`;
+
+      // Real Supabase checkout via Server Action (MEDIUM-09, MEDIUM-20)
       const itemsPayload = cart.map(item => ({
         variant_id: item.variant_id,
         quantity: item.quantity,
@@ -212,11 +217,10 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
     } catch (e: unknown) {
       const errMsg = mapCheckoutError(e);
       console.error("Checkout Transaction Failed, Rolled back:", errMsg);
-      set({
-        errorMsg: errMsg,
-        isLoading: false,
-      });
+      set({ errorMsg: errMsg });
       return false;
+    } finally {
+      set({ isLoading: false });
     }
   },
 });
