@@ -218,7 +218,7 @@ export default function DashboardTab() {
                 <p className="text-xs text-muted-foreground mt-0.5">Click &quot;New Sale&quot; to process your first bill.</p>
               </div>
             ) : (
-              <table className="w-full text-left text-sm border-collapse">
+              <table className="w-full min-w-[600px] text-left text-sm border-collapse">
                 <thead>
                   <tr className="border-b border-border bg-muted/20 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     <th className="px-5 py-3">Invoice No</th>

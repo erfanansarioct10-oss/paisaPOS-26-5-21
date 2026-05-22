@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store/useAppStore";
-import { supabase, hasSupabaseConfig } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 import { Store, Mail, Lock, User, AlertCircle, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
@@ -41,11 +41,6 @@ export default function LoginPage() {
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError(null);
-
-    if (!hasSupabaseConfig()) {
-      setLocalError("Supabase credentials are not configured in your environment variables.");
-      return;
-    }
 
     if (!email || !password) {
       setLocalError("Please fill in all standard credentials.");

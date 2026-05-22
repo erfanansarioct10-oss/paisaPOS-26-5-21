@@ -1,5 +1,28 @@
 # Memory
-> Last updated: 2026-05-22 09:17 NPT
+> Last updated: 2026-05-22 10:32 NPT
+
+## Technical Patch: ESLint Fix for Synchronous setState in Effect (2026-05-22)
+
+**Observation:** Running `npm run lint` threw a `react-hooks/set-state-in-effect` error in [history-tab.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/components/history-tab.tsx#L37):
+- `Avoid calling setState() directly within an effect` due to `setCurrentPage(1)` inside a `useEffect` that reset pagination when filters changed.
+- Additionally, `useEffect` itself was left imported but unused in the file once the hook was removed, triggering an unused variable warning.
+
+**Action:**
+- Removed the `useEffect` block completely and moved the `setCurrentPage(1)` reset logic directly into the user event handlers for searching, date presets, and payment channel filters. This avoids cascading render cycles in React 19.
+- Removed the unused `useEffect` import from [history-tab.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/components/history-tab.tsx#L3).
+- Verified: `npm run lint` now compiles with 0 errors and 0 warnings, `npm run test` passes with 24/24 successful specs, and `npm run build` succeeds.
+
+**Lesson:** To keep rendering behavior predictable and avoid performance issues (cascading renders) in React 19, synchronize state updates at the source (i.e. event handlers) rather than syncing them reactively via `useEffect` hooks.
+
+## Phase 1 Completion: Demo Mode Removal, Pagination & Settings Page (2026-05-22)
+
+**Observation:** Demo mode infrastructure (pre-seeded data, `hasSupabaseConfig` checks, fallback clients) was no longer needed. Invoice history lacked pagination for large datasets. No settings page existed for store profile management.
+**Action:**
+- **Demo Removal:** Stripped `hasSupabaseConfig()`, `isDummyConfig()`, placeholder URL/key fallback from [supabase.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/supabase.ts). Removed all `hasSupabaseConfig` imports and usage from [page.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/page.tsx), [authSlice.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/store/authSlice.ts), and demo comment from [cartSlice.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/store/cartSlice.ts). Supabase now strictly requires real credentials.
+- **Invoice Pagination:** Rewrote [history-tab.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/components/history-tab.tsx) with client-side pagination (20 items/page), Previous/Next controls, "Showing X–Y of Z" counter, and auto-reset to page 1 on filter changes.
+- **Settings Page:** Created [settings/page.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/(authenticated)/settings/page.tsx) with Store Information editing (name, phone, address, PAN/VAT) and Account Settings (display name). Added `updateStoreAction` and `updateProfileAction` server actions to [actions.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/actions.ts). Updated [sidebar.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/components/sidebar.tsx), [proxy.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/proxy.ts), and [types.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/store/types.ts) to include the new Settings route.
+- Verified: `npm run build` = compiled successfully with all 7 routes (/, /dashboard, /billing, /inventory, /invoices, /settings, /_not-found).
+**Lesson:** Demo mode served its purpose for initial development but adds unnecessary code paths and potential security surface in production. Settings pages should always include server-side auth verification before allowing store/profile mutations.
 
 ## Technical Patch: ESLint & TypeScript Lint Compliance (2026-05-22)
 
@@ -74,16 +97,12 @@
 - Executed unit, integration, and stress tests (24 passed).
 **Lesson:** Enforcing validations across all three tiers (middleware router guards -> zod schemas -> database RPCs) ensures robust protection against injection and tampering attempts.
 
-## Technical Patch: Explored Demo Store Button & Fallback (2026-05-22)
+## Technical Patch: Explored Demo Store Button & Fallback (2026-05-22) [ARCHIVED — Demo Mode Removed]
 
 
-**Observation:** The "Explore Demo Store" button on the login screen ([page.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/page.tsx)) allows users to bypass database connection requirements. Additionally, the system automatically falls back to Demo Mode if Supabase environment variables are missing.
-**Action:** Confirmed execution logic in [authSlice.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/store/authSlice.ts):
-- Checks if Supabase config is available (`hasSupabaseConfig()`).
-- If missing, logs `"Supabase config not found. Auto-booting in Demo Mode."` and boots local pre-seeded datasets (`DEMO_STORE`, `DEMO_PROFILE`, `DEMO_PRODUCTS`, etc.).
-- Persists demo status in `localStorage` (`paisapos_demo_mode`).
-- Tab state is synchronized in Demo Mode using `BroadcastChannel("paisapos-demo-sync")` combined with security token validation in [broadcast.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/broadcast.ts) to prevent data corruption.
-**Lesson:** Providing a full offline-simulated walkthrough path using pre-seeded local storage data ensures developer ergonomics and instant sales/onboarding demonstrations without immediate cloud infrastructure setup.
+**Observation:** The "Explore Demo Store" button on the login screen allowed users to bypass database connection requirements. The system automatically fell back to Demo Mode if Supabase environment variables were missing.
+**Action:** Demo mode was fully removed in the Phase 1 completion session (see above). All `hasSupabaseConfig` checks, pre-seeded demo data, `isDummyConfig`, and `paisapos_demo_mode` localStorage references have been stripped.
+**Status:** ARCHIVED — no longer applicable.
 
 ## Technical Patch: Transaction Hardening, Row Locking & Deadlock Prevention (2026-05-21)
 
@@ -95,18 +114,37 @@
 - **Transactional Audit Logging:** Failed checkouts are caught, and a failure entry is inserted into the `audit_logs` table outside of the main transaction block using an isolated connection to preserve audit trail visibility. Successful checkouts log a `SUCCESS` event.
 **Lesson:** High-concurrency retail transactions must never trust client computations. Always serialize updates deterministically (alphabetical ID sorting) to avoid Postgres deadlocks, lock updated records exclusively, and recalculate totals server-side.
 
+## Technical Patch: Responsive Typography & Mobile Layout Squeezing Fixes (2026-05-22)
+
+**Observation:** Text and buttons in various tables and footers were overlapping and squeezing on narrow mobile screens (specifically viewports down to 320px wide):
+1. In the Inventory tab, the product master row squeezed the name and category fields, forcing names to truncate severely (e.g., "T...") and categories to wrap word-by-word into messy vertical columns.
+2. The combination verification list in the Quick Product wizard and the variant list in the Edit Product modal squeezed their columns to fit the screen width, making the text/number inputs virtually unreadable and unusable.
+3. In the POS billing cart, the custom discount input and payment method options were side-by-side on mobile, reducing the width of each payment button to ~40px and causing label wrapping.
+4. The recent invoices list on the dashboard was squeezed.
+5. In the receipt modal, nested padding (`p-6` viewport + `p-4` print-area) reduced the printable width to 208px, causing receipt tables to wrap and look messy.
+
+**Action:**
+- **Inventory Tab Master Row:** Redesigned the master row to be fully mobile-optimized. Implemented a 3-row responsive stack on mobile viewports: Row 1 displays the chevron, truncated name, and mobile-only quick-actions (pencil/trash icons) side-by-side; Row 2 displays the Category and Alert limit using a `flex flex-wrap` layout with the pipe separator hidden on mobile (`hidden sm:inline`) to prevent word-by-word fragmentation; Row 3 holds the stock count and warning badges separated by a light border-t. On desktop screens, it seamlessly returns to a horizontal flex layout with desktop-only action triggers.
+- **Scrollable Tables in Modals:** Added `overflow-x-auto` wrappers and set minimum widths (`min-w-[500px]` / `min-w-[600px]`) for the tables in both the Quick Product wizard and the Edit Product modal. This allows smooth horizontal scroll without shrinking inputs on mobile.
+- **Cart Footer Optimization:** Modified the customer inputs and the discount/payment row in [billing-tab.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/components/billing-tab.tsx) to stack vertically on mobile (`flex-col sm:grid`) and use full width, giving each option ample tap targets (height `h-9` and custom padding) and label room.
+- **Recent Invoices Width:** Set `min-w-[600px]` on the dashboard invoices table inside its `overflow-x-auto` wrapper.
+- **Receipt Layout Tuning:** Optimized spacing in [receipt-modal.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/components/receipt-modal.tsx) by making margins and paddings responsive (`p-3 sm:p-6` and `p-3 sm:p-4`), expanding the print width to 240px. Simplified the "Item Description" header to "Item" to save horizontal space.
+- Verified: `npm run build` compiled successfully without errors.
+
+**Lesson:** Never squeeze complex multi-column layouts horizontally on mobile screen widths (320px–480px). Prefer clean vertical stacking for input fields and action blocks, and leverage scroll containers with absolute minimum widths (`min-w-[600px]`) for tables to maintain desktop-grade data layouts. Hide unnecessary separating characters (like pipe markers) on narrow screens to avoid wrapping artifacts.
+
 ## Current Project Status: Phase 1 (Core MVP) Active (2026-05-22)
 
-- **Phase 1 (Core POS MVP):** 90% Complete. Building operationally stable inventory + billing POS.
+- **Phase 1 (Core POS MVP):** 95% Complete. Building operationally stable inventory + billing POS.
 - **Primary Objectives:**
   - **Inventory System:** Products, variants, real-time stock levels, and automated low-stock warnings (threshold-based).
   - **Billing System:** Cart interactions, payment method tracking (Cash, eSewa, Khalti, Fonepay), invoice generation, and thermal receipt printing.
   - **Variant Matrix Generator:** Built-in bulk generation utility combining comma-separated sizes and colors.
   - **Multi-Tenant Isolation:** Multi-store SaaS readiness with secure RLS policies.
 - **Current Priorities:**
-  - **Priority 1:** Finalize Row Level Security (RLS) policy validation and run unauthorized access checks.
-  - **Priority 2:** Mobile UX stress testing on lower-end Android/tablet hardware to ensure smooth touch targets and fast list renders.
-  - **Priority 3:** Spacing and formatting refinements for thermal printer browser sheets (`window.print()`).
+  - **Priority 1:** Mobile UX stress testing on lower-end Android/tablet hardware to ensure smooth touch targets and fast list renders.
+  - **Priority 2:** Spacing and formatting refinements for thermal printer browser sheets (`window.print()`).
+  - **Priority 3:** End-to-end testing of new Settings page store/profile update flows.
 
 ## PaisaPOS Target Market & Niche Intelligence (2026-05-22)
 
@@ -129,7 +167,7 @@
 - **Zero Trust Client:** The React client is an interface, not an authority. Client-reported item prices, total math, and stock validation are entirely recalculated and enforced server-side.
 - **Store-Scoped RLS:** All database rows are restricted by store ownership using the optimized SQL helper function `get_user_store_id()`. No direct tables are queried without store context.
 - **Zustand Scope:** The frontend store ([useAppStore](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/store/useAppStore.ts)) handles UI flags, active tab routing, and the active billing cart. All transactional and write logic goes through Next.js Server Actions or direct Supabase RPC calls.
-- **Realtime Sync:** Real-time updates are enabled via Postgres Changes subscriptions debounced to 100ms. Demo mode tabs coordinate state updates using `BroadcastChannel` with cryptographic sync tokens to prevent drift.
+- **Realtime Sync:** Real-time updates are enabled via Postgres Changes subscriptions debounced to 100ms.
 
 ## Database Schema Gotchas
 

@@ -8,6 +8,7 @@ import {
   Calculator,
   Package,
   History,
+  Settings,
   LogOut,
   Store,
   Menu,
@@ -24,6 +25,7 @@ export default function Sidebar() {
     { id: "billing", name: "Billing POS", icon: Calculator, path: "/billing" },
     { id: "inventory", name: "Inventory", icon: Package, path: "/inventory" },
     { id: "history", name: "Invoices", icon: History, path: "/invoices" },
+    { id: "settings", name: "Settings", icon: Settings, path: "/settings" },
   ] as const;
 
   return (

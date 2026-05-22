@@ -431,33 +431,33 @@ export default function BillingTab() {
         <div className="px-5 py-4 border-t border-border space-y-4 shrink-0 bg-muted/10">
           
           {/* Customer Meta Row */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="relative">
+          <div className="flex flex-col sm:grid sm:grid-cols-2 gap-3">
+            <div className="relative w-full">
               <User className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Customer Name"
                 value={customerName}
                 onChange={(e) => setCustomerDetails(e.target.value, customerPhone)}
-                className="block w-full pl-8 pr-2 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:outline-none text-white"
+                className="block w-full pl-8 pr-2 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:outline-none text-white"
               />
             </div>
-            <div className="relative">
+            <div className="relative w-full">
               <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Phone Number"
                 value={customerPhone}
                 onChange={(e) => setCustomerDetails(customerName, e.target.value)}
-                className="block w-full pl-8 pr-2 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:outline-none text-white"
+                className="block w-full pl-8 pr-2 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:outline-none text-white"
               />
             </div>
           </div>
 
           {/* Discount & Payment Row */}
-          <div className="grid grid-cols-12 gap-3 items-center">
+          <div className="flex flex-col sm:grid sm:grid-cols-12 gap-3 items-center">
             {/* Custom Discount Input */}
-            <div className="col-span-5 relative">
+            <div className="w-full sm:col-span-5 relative">
               <Percent className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input
                 type="number"
@@ -465,12 +465,12 @@ export default function BillingTab() {
                 placeholder="Discount Rs."
                 value={cartDiscount || ""}
                 onChange={(e) => setCartDiscount(Number(e.target.value))}
-                className="block w-full pl-8 pr-2 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:outline-none font-bold text-red-500"
+                className="block w-full pl-8 pr-2 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:outline-none font-bold text-red-500"
               />
             </div>
 
             {/* Payment Method Selector Grid */}
-            <div className="col-span-7 flex gap-1 justify-between">
+            <div className="w-full sm:col-span-7 flex gap-1 justify-between">
               {paymentOptions.map((opt) => {
                 const isSel = paymentMethod === opt;
                 return (
@@ -478,7 +478,7 @@ export default function BillingTab() {
                     key={opt}
                     type="button"
                     onClick={() => setPaymentMethod(opt)}
-                    className={`flex-1 text-[10px] font-bold py-1.5 rounded-lg border text-center transition-all ${
+                    className={`flex-1 text-[10px] font-bold py-2 rounded-lg border text-center transition-all h-9 flex items-center justify-center ${
                       isSel
                         ? "bg-primary border-primary text-primary-foreground shadow-sm"
                         : "bg-slate-950 border-slate-800 text-muted-foreground hover:text-foreground"

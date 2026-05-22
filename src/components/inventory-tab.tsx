@@ -300,65 +300,102 @@ export default function InventoryTab() {
                   {/* PRODUCT MASTER ROW */}
                   <div
                     onClick={() => toggleRow(p.id)}
-                    className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-muted/10 transition-colors"
+                    className="px-4 py-3.5 sm:px-5 sm:py-4 cursor-pointer hover:bg-muted/10 transition-colors"
                   >
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <div className="p-1 text-muted-foreground hover:bg-secondary rounded">
-                        {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+                      {/* LEFT/TOP: PRODUCT INFO */}
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <div className="p-1 text-muted-foreground hover:bg-secondary rounded shrink-0 mt-0.5">
+                          {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                        </div>
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-sm sm:text-base text-foreground leading-tight truncate block">
+                              {p.name}
+                            </span>
+                            
+                            {/* Mobile-only Action Buttons */}
+                            <div className="flex sm:hidden items-center gap-1 shrink-0">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenEdit(p, productVariants);
+                                }}
+                                className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-all"
+                                title="Edit Product & Variants"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (confirm(`Are you sure you want to delete ${p.name}?`)) {
+                                    deleteProduct(p.id);
+                                  }
+                                }}
+                                className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                                title="Delete Product"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          
+                          <div className="text-[10px] sm:text-xs text-muted-foreground font-mono flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            <span>Category: <strong className="text-foreground font-medium">{p.category}</strong></span>
+                            <span className="text-slate-700 hidden sm:inline">|</span>
+                            <span>Alert limit: <strong className="text-foreground font-medium">{p.low_stock_threshold}</strong></span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="font-semibold text-sm sm:text-base text-foreground leading-tight truncate">
-                          {p.name}
-                        </span>
-                        <span className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 font-mono">
-                          Category: {p.category} | Alert limit: {p.low_stock_threshold}
-                        </span>
+
+                      {/* RIGHT/BOTTOM: STOCK & ACTIONS */}
+                      <div className="flex items-center justify-between sm:justify-end gap-4 border-t border-border/40 sm:border-0 pt-2.5 sm:pt-0">
+                        {/* STOCK LEVEL INDICATOR */}
+                        <div className="text-left sm:text-right shrink-0">
+                          <span className="font-bold text-foreground text-xs sm:text-sm">
+                            {totalStock} items
+                          </span>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            across {productVariants.length} variants
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {/* WARNING BADGES */}
+                          {activeLowStock > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-500 border border-amber-500/10">
+                              {activeLowStock} Warning{activeLowStock > 1 ? "s" : ""}
+                            </span>
+                          )}
+
+                          {/* Desktop-only Action Buttons */}
+                          <div className="hidden sm:flex items-center gap-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenEdit(p, productVariants);
+                              }}
+                              className="p-2 border border-transparent hover:border-slate-500/20 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-all"
+                              title="Edit Product & Variants"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`Are you sure you want to delete ${p.name}?`)) {
+                                  deleteProduct(p.id);
+                                }
+                              }}
+                              className="p-2 border border-transparent hover:border-red-500/20 text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                              title="Delete Product"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-
-                    <div className="flex items-center gap-5 shrink-0 text-xs sm:text-sm">
-                      {/* STOCK LEVEL INDICATOR */}
-                      <div className="text-right">
-                        <span className="font-bold text-foreground">
-                          {totalStock} items
-                        </span>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">
-                          across {productVariants.length} variants
-                        </p>
-                      </div>
-
-                      {/* WARNING BADGES */}
-                      {activeLowStock > 0 && (
-                        <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-xs font-semibold bg-amber-500/10 text-amber-500 border border-amber-500/10">
-                          {activeLowStock} Warnings
-                        </span>
-                      )}
-
-                      {/* QUICK EDIT */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenEdit(p, productVariants);
-                        }}
-                        className="p-2 border border-transparent hover:border-slate-500/20 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-all"
-                        title="Edit Product & Variants"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-
-                      {/* QUICK DELETE */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (confirm(`Are you sure you want to delete ${p.name}?`)) {
-                            deleteProduct(p.id);
-                          }
-                        }}
-                        className="p-2 border border-transparent hover:border-red-500/20 text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
-                        title="Delete Product"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
                     </div>
                   </div>
 
@@ -608,8 +645,8 @@ export default function InventoryTab() {
                     <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                       Verify Generated Combinations ({generatedVariants.length})
                     </p>
-                    <div className="border border-border rounded-lg overflow-hidden max-h-[190px] overflow-y-auto bg-slate-950 overscroll-contain">
-                      <table className="w-full text-left text-xs">
+                    <div className="border border-border rounded-lg overflow-hidden max-h-[190px] overflow-y-auto overflow-x-auto bg-slate-950 overscroll-contain">
+                      <table className="w-full min-w-[500px] text-left text-xs">
                         <thead>
                           <tr className="border-b border-border/80 bg-slate-900 text-slate-500 font-semibold uppercase tracking-wider sticky top-0 z-10">
                             <th className="px-3 py-2">Combination</th>
@@ -777,8 +814,8 @@ export default function InventoryTab() {
                     </button>
                   </div>
 
-                  <div className="border border-border rounded-lg overflow-hidden max-h-[300px] overflow-y-auto bg-slate-950 overscroll-contain">
-                    <table className="w-full text-left text-xs border-collapse">
+                  <div className="border border-border rounded-lg overflow-hidden max-h-[300px] overflow-y-auto overflow-x-auto bg-slate-950 overscroll-contain">
+                    <table className="w-full min-w-[600px] text-left text-xs border-collapse">
                       <thead>
                         <tr className="border-b border-border/80 bg-slate-900 text-slate-500 font-semibold uppercase tracking-wider sticky top-0 z-10">
                           <th className="px-3 py-2.5">Size</th>

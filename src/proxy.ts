@@ -25,7 +25,7 @@ export async function proxy(request: NextRequest) {
 
   if (!supabaseUrl || !supabaseAnonKey) {
     const { pathname } = request.nextUrl
-    const protectedRoutes = ['/dashboard', '/billing', '/inventory', '/invoices']
+    const protectedRoutes = ['/dashboard', '/billing', '/inventory', '/invoices', '/settings']
     const isProtectedRoute = protectedRoutes.some(
       route => pathname === route || pathname.startsWith(route + '/')
     )
@@ -79,7 +79,7 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Protect all authenticated paths
-  const protectedRoutes = ['/dashboard', '/billing', '/inventory', '/invoices']
+  const protectedRoutes = ['/dashboard', '/billing', '/inventory', '/invoices', '/settings']
   const isProtectedRoute = protectedRoutes.some(
     route => pathname === route || pathname.startsWith(route + '/')
   )

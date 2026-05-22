@@ -2,13 +2,16 @@
 
 import React, { useState } from "react";
 import { useAppStore, Invoice } from "@/lib/store/useAppStore";
-import { Search, Eye, History, Calendar, CreditCard, DollarSign, Layers, Sparkles } from "lucide-react";
+import { Search, Eye, History, Calendar, CreditCard, DollarSign, Layers, Sparkles, ChevronLeft, ChevronRight } from "lucide-react";
+
+const PAGE_SIZE = 20;
 
 export default function HistoryTab() {
   const { invoices, products, variants, invoiceItems, setActiveInvoice } = useAppStore();
   const [searchQuery, setSearchQuery] = useState("");
   const [paymentMethodFilter, setPaymentMethodFilter] = useState("All");
   const [dateFilter, setDateFilter] = useState("All Time");
+  const [currentPage, setCurrentPage] = useState(1);
 
   const formatCurrency = (amount: number) => {
     return `Rs. ${amount.toLocaleString()}`;
@@ -29,9 +32,10 @@ export default function HistoryTab() {
     }
   };
 
+  // Page is reset to 1 in the respective filter change handlers to avoid effect-based cascading renders
+
   // Filter invoices based on customer details, invoice number, payment method, and date boundaries
   const filteredInvoices = invoices.filter((inv) => {
-    // 1. Search Query filter
     const query = searchQuery.toLowerCase();
     const matchesNumber = inv.invoice_number.toLowerCase().includes(query);
     const matchesName = inv.customer_name?.toLowerCase().includes(query) ?? false;
@@ -39,12 +43,10 @@ export default function HistoryTab() {
     const matchesMethod = inv.payment_method.toLowerCase().includes(query);
     const matchesSearch = searchQuery === "" || matchesNumber || matchesName || matchesPhone || matchesMethod;
 
-    // 2. Payment Method filter
     const matchesPaymentMethod =
       paymentMethodFilter === "All" ||
       inv.payment_method.toLowerCase() === paymentMethodFilter.toLowerCase();
 
-    // 3. Date boundary filter (local timezone)
     let matchesDate = true;
     if (dateFilter !== "All Time") {
       const invDate = new Date(inv.created_at);
@@ -62,7 +64,7 @@ export default function HistoryTab() {
         matchesDate = invDate >= startOfYesterday && invDate <= endOfYesterday;
       } else if (dateFilter === "This Week") {
         const startOfWeek = new Date(startOfToday);
-        const day = startOfWeek.getDay(); // 0 is Sunday
+        const day = startOfWeek.getDay();
         startOfWeek.setDate(startOfWeek.getDate() - day);
         matchesDate = invDate >= startOfWeek && invDate <= endOfToday;
       }
@@ -71,10 +73,16 @@ export default function HistoryTab() {
     return matchesSearch && matchesPaymentMethod && matchesDate;
   });
 
+  // Pagination calculations
+  const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedInvoices = filteredInvoices.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE
+  );
+
   const handleReprint = (invoice: Invoice) => {
     const items = invoiceItems[invoice.id] || [];
-
-    // Map dynamic description fields
     const filledItems = items.map(item => {
       const v = variants.find(vr => vr.id === item.variant_id);
       const p = products.find(pr => pr.id === v?.product_id);
@@ -85,7 +93,6 @@ export default function HistoryTab() {
         color: v?.color ?? "-",
       };
     });
-
     setActiveInvoice(invoice, filledItems);
   };
 
@@ -130,7 +137,10 @@ export default function HistoryTab() {
                 type="text"
                 placeholder="Search No, Name, Phone or Method..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="block w-full pl-10 pr-4 h-11 bg-slate-950 border border-slate-800 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-white placeholder-slate-600 transition-all shadow-sm"
               />
             </div>
@@ -145,7 +155,10 @@ export default function HistoryTab() {
               <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
               <select
                 value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
+                onChange={(e) => {
+                  setDateFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="block w-full pl-10 pr-4 h-11 bg-slate-950 border border-slate-800 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-white appearance-none cursor-pointer shadow-sm transition-all"
               >
                 <option value="All Time">All Time</option>
@@ -168,7 +181,10 @@ export default function HistoryTab() {
                   <button
                     key={method}
                     type="button"
-                    onClick={() => setPaymentMethodFilter(method)}
+                    onClick={() => {
+                      setPaymentMethodFilter(method);
+                      setCurrentPage(1);
+                    }}
                     className={`h-11 px-4 text-xs font-semibold rounded-xl border transition-all ${
                       isActive
                         ? "bg-primary border-primary text-primary-foreground shadow-sm"
@@ -186,33 +202,21 @@ export default function HistoryTab() {
 
       {/* RECONCILIATION SUMMARY STATS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* TOTAL SALES */}
         <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between shadow-sm">
           <div className="space-y-1">
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-              Total Revenue
-            </p>
-            <h3 className="text-xl sm:text-2xl font-black text-foreground font-mono">
-              {formatCurrency(totalSales)}
-            </h3>
-            <p className="text-[10px] text-muted-foreground">
-              For currently filtered view
-            </p>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total Revenue</p>
+            <h3 className="text-xl sm:text-2xl font-black text-foreground font-mono">{formatCurrency(totalSales)}</h3>
+            <p className="text-[10px] text-muted-foreground">For currently filtered view</p>
           </div>
           <div className="p-3 rounded-lg bg-emerald-500/10 text-emerald-500 border border-emerald-500/10">
             <DollarSign className="w-5 h-5" />
           </div>
         </div>
 
-        {/* RECEIPT COUNT */}
         <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between shadow-sm">
           <div className="space-y-1">
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-              Total Receipts
-            </p>
-            <h3 className="text-xl sm:text-2xl font-black text-foreground font-mono">
-              {totalCount} bills
-            </h3>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total Receipts</p>
+            <h3 className="text-xl sm:text-2xl font-black text-foreground font-mono">{totalCount} bills</h3>
             <p className="text-[10px] text-muted-foreground">
               {filteredInvoices.length === invoices.length ? "All transactions" : "Filtered subset"}
             </p>
@@ -222,40 +226,24 @@ export default function HistoryTab() {
           </div>
         </div>
 
-        {/* CASH DRAWER */}
         <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between shadow-sm">
           <div className="space-y-1">
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-              Cash Drawer
-            </p>
-            <h3 className="text-xl sm:text-2xl font-black text-amber-500 font-mono">
-              {formatCurrency(methodBreakdown["Cash"] || 0)}
-            </h3>
-            <p className="text-[10px] text-muted-foreground">
-              Collected in hand
-            </p>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Cash Drawer</p>
+            <h3 className="text-xl sm:text-2xl font-black text-amber-500 font-mono">{formatCurrency(methodBreakdown["Cash"] || 0)}</h3>
+            <p className="text-[10px] text-muted-foreground">Collected in hand</p>
           </div>
           <div className="p-3 rounded-lg bg-amber-500/10 text-amber-500 border border-amber-500/10">
             <CreditCard className="w-5 h-5" />
           </div>
         </div>
 
-        {/* DIGITAL PAYMENTS */}
         <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between shadow-sm">
           <div className="space-y-1">
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-              Digital Channels
-            </p>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Digital Channels</p>
             <h3 className="text-xl sm:text-2xl font-black text-indigo-400 font-mono">
-              {formatCurrency(
-                (methodBreakdown["eSewa"] || 0) +
-                (methodBreakdown["Khalti"] || 0) +
-                (methodBreakdown["Fonepay"] || 0)
-              )}
+              {formatCurrency((methodBreakdown["eSewa"] || 0) + (methodBreakdown["Khalti"] || 0) + (methodBreakdown["Fonepay"] || 0))}
             </h3>
-            <p className="text-[10px] text-muted-foreground">
-              eSewa, Khalti, Fonepay sum
-            </p>
+            <p className="text-[10px] text-muted-foreground">eSewa, Khalti, Fonepay sum</p>
           </div>
           <div className="p-3 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/10">
             <Sparkles className="w-5 h-5" />
@@ -290,40 +278,23 @@ export default function HistoryTab() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {filteredInvoices.map((inv) => (
+                  {paginatedInvoices.map((inv) => (
                     <tr key={inv.id} className="hover:bg-muted/10 transition-colors">
-                      <td className="px-5 py-4 font-mono text-xs font-bold text-foreground">
-                        {inv.invoice_number}
-                      </td>
+                      <td className="px-5 py-4 font-mono text-xs font-bold text-foreground">{inv.invoice_number}</td>
                       <td className="px-5 py-4">
-                        <p className="text-sm font-semibold text-foreground leading-normal">
-                          {inv.customer_name || "General Customer"}
-                        </p>
-                        {inv.customer_phone && (
-                          <p className="text-xs text-muted-foreground mt-0.5 font-mono">
-                            {inv.customer_phone}
-                          </p>
-                        )}
+                        <p className="text-sm font-semibold text-foreground leading-normal">{inv.customer_name || "General Customer"}</p>
+                        {inv.customer_phone && <p className="text-xs text-muted-foreground mt-0.5 font-mono">{inv.customer_phone}</p>}
                       </td>
-                      <td className="px-5 py-4 text-xs text-muted-foreground">
-                        {formatDate(inv.created_at)}
-                      </td>
+                      <td className="px-5 py-4 text-xs text-muted-foreground">{formatDate(inv.created_at)}</td>
                       <td className="px-5 py-4 text-right font-mono text-xs text-red-500 font-bold">
                         {inv.discount_amount > 0 ? `- Rs. ${inv.discount_amount.toLocaleString()}` : "Rs. 0"}
                       </td>
-                      <td className="px-5 py-4 text-right font-bold text-foreground">
-                        {formatCurrency(inv.total_amount)}
-                      </td>
+                      <td className="px-5 py-4 text-right font-bold text-foreground">{formatCurrency(inv.total_amount)}</td>
                       <td className="px-5 py-4 text-center">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-semibold bg-primary/10 text-primary border border-primary/10">
-                          {inv.payment_method}
-                        </span>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-semibold bg-primary/10 text-primary border border-primary/10">{inv.payment_method}</span>
                       </td>
                       <td className="px-5 py-4 text-right">
-                        <button
-                          onClick={() => handleReprint(inv)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-border hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground transition-all"
-                        >
+                        <button onClick={() => handleReprint(inv)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-border hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground transition-all">
                           <Eye className="w-3.5 h-3.5" />
                           <span>View & Reprint</span>
                         </button>
@@ -336,61 +307,35 @@ export default function HistoryTab() {
 
             {/* Mobile Card Stack View */}
             <div className="block md:hidden divide-y divide-border">
-              {filteredInvoices.map((inv) => (
+              {paginatedInvoices.map((inv) => (
                 <div key={inv.id} className="p-4 space-y-3 hover:bg-muted/5 transition-colors">
-                  {/* Card Header: Invoice No & Method */}
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-bold text-foreground">
-                      {inv.invoice_number}
-                    </span>
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-primary/10 text-primary border border-primary/10">
-                      {inv.payment_method}
-                    </span>
+                    <span className="font-mono text-xs font-bold text-foreground">{inv.invoice_number}</span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-primary/10 text-primary border border-primary/10">{inv.payment_method}</span>
                   </div>
-
-                  {/* Customer and Date Details */}
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div>
                       <p className="text-muted-foreground font-medium">Customer</p>
-                      <p className="font-semibold text-foreground truncate">
-                        {inv.customer_name || "General Customer"}
-                      </p>
-                      {inv.customer_phone && (
-                        <p className="font-mono text-[10px] text-muted-foreground mt-0.5">
-                          {inv.customer_phone}
-                        </p>
-                      )}
+                      <p className="font-semibold text-foreground truncate">{inv.customer_name || "General Customer"}</p>
+                      {inv.customer_phone && <p className="font-mono text-[10px] text-muted-foreground mt-0.5">{inv.customer_phone}</p>}
                     </div>
                     <div>
                       <p className="text-muted-foreground font-medium">Date & Time</p>
-                      <p className="text-foreground mt-0.5">
-                        {formatDate(inv.created_at)}
-                      </p>
+                      <p className="text-foreground mt-0.5">{formatDate(inv.created_at)}</p>
                     </div>
                   </div>
-
-                  {/* Financial Details */}
                   <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-border/50">
                     <div>
                       <p className="text-muted-foreground font-medium">Discount</p>
-                      <p className="font-mono text-red-500 font-bold mt-0.5">
-                        {inv.discount_amount > 0 ? `- Rs. ${inv.discount_amount.toLocaleString()}` : "Rs. 0"}
-                      </p>
+                      <p className="font-mono text-red-500 font-bold mt-0.5">{inv.discount_amount > 0 ? `- Rs. ${inv.discount_amount.toLocaleString()}` : "Rs. 0"}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground font-medium">Net Total</p>
-                      <p className="font-bold text-foreground text-sm mt-0.5">
-                        {formatCurrency(inv.total_amount)}
-                      </p>
+                      <p className="font-bold text-foreground text-sm mt-0.5">{formatCurrency(inv.total_amount)}</p>
                     </div>
                   </div>
-
-                  {/* Touch Action Target */}
                   <div className="pt-1">
-                    <button
-                      onClick={() => handleReprint(inv)}
-                      className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold border border-border hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground transition-all h-10"
-                    >
+                    <button onClick={() => handleReprint(inv)} className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold border border-border hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground transition-all h-10">
                       <Eye className="w-4 h-4" />
                       <span>View & Reprint Receipt</span>
                     </button>
@@ -398,6 +343,36 @@ export default function HistoryTab() {
                 </div>
               ))}
             </div>
+
+            {/* PAGINATION CONTROLS */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-5 py-3 border-t border-border bg-muted/10">
+                <p className="text-xs text-muted-foreground">
+                  Showing {((safePage - 1) * PAGE_SIZE) + 1}–{Math.min(safePage * PAGE_SIZE, filteredInvoices.length)} of {filteredInvoices.length} invoices
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={safePage <= 1}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold border border-border rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-all disabled:opacity-30 disabled:pointer-events-none h-9"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Previous</span>
+                  </button>
+                  <span className="text-xs font-bold text-foreground tabular-nums min-w-[4rem] text-center">
+                    {safePage} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={safePage >= totalPages}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold border border-border rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-all disabled:opacity-30 disabled:pointer-events-none h-9"
+                  >
+                    <span className="hidden sm:inline">Next</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

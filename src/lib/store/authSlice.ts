@@ -2,7 +2,7 @@
 // PaisaPOS — Auth, Navigation & Data Synchronization Slice
 // =========================================================================
 
-import { supabase, hasSupabaseConfig } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 import type { AppState, ProductVariant, Invoice, InvoiceItem } from "./types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -91,27 +91,12 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
   initializeSession: async () => {
     if (typeof window !== "undefined") {
       const savedTab = localStorage.getItem("paisapos_active_tab") as AppState["activeTab"];
-      if (savedTab && ["dashboard", "billing", "inventory", "history"].includes(savedTab)) {
+      if (savedTab && ["dashboard", "billing", "inventory", "history", "settings"].includes(savedTab)) {
         set({ activeTab: savedTab });
       }
     }
 
     set({ isLoading: true, errorMsg: null });
-    const isSupabaseReady = hasSupabaseConfig();
-
-    if (!isSupabaseReady) {
-      set({
-        user: null,
-        store: null,
-        products: [],
-        variants: [],
-        invoices: [],
-        invoiceItems: {},
-        errorMsg: "Supabase credentials are not configured in your environment variables.",
-        isLoading: false,
-      });
-      return;
-    }
 
     try {
       // 1. Get current auth user (getUser() validates JWT against the auth server,

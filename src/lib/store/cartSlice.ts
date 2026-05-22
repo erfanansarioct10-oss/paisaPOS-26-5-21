@@ -135,7 +135,7 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
   },
 
   // -----------------------------------------------------------------------
-  // CHECKOUT (Atomic Supabase RPC or local demo equivalent)
+  // CHECKOUT (Atomic Supabase RPC)
   // -----------------------------------------------------------------------
   checkout: async (): Promise<boolean> => {
     const {

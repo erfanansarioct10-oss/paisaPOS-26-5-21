@@ -89,7 +89,7 @@ export interface InvoiceItem {
 
 export interface AppState {
   // Navigation & Core UI
-  activeTab: "dashboard" | "billing" | "inventory" | "history";
+  activeTab: "dashboard" | "billing" | "inventory" | "history" | "settings";
   user: Profile | null;
   store: StoreMetadata | null;
   isLoading: boolean;
@@ -115,7 +115,7 @@ export interface AppState {
   isQuickBillingOpen: boolean;
 
   // ACTIONS
-  setTab: (tab: "dashboard" | "billing" | "inventory" | "history") => void;
+  setTab: (tab: "dashboard" | "billing" | "inventory" | "history" | "settings") => void;
   initializeSession: () => Promise<void>;
   signOut: () => Promise<void>;
 

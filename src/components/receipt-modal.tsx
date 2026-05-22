@@ -62,9 +62,9 @@ export default function ReceiptModal() {
         </div>
 
         {/* RECEIPT VIEWPORT */}
-        <div className="flex-1 overflow-y-auto p-6 font-sans">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6 font-sans">
           {/* Printable Container */}
-          <div className="print-area bg-white text-black p-4 border border-slate-100 rounded-md max-w-[80mm] mx-auto shadow-sm print:border-none print:shadow-none print:p-0 print:rounded-none print:mx-0">
+          <div className="print-area bg-white text-black p-3 sm:p-4 border border-slate-100 rounded-md max-w-[80mm] mx-auto shadow-sm print:border-none print:shadow-none print:p-0 print:rounded-none print:mx-0">
             {/* Store branding info */}
             <div className="text-center pb-4 border-b border-dashed border-slate-300">
               <h2 className="font-outfit font-extrabold text-xl tracking-tight uppercase">
@@ -113,7 +113,7 @@ export default function ReceiptModal() {
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="text-slate-500 border-b border-dashed border-slate-200">
-                    <th className="pb-2 font-medium">Item Description</th>
+                    <th className="pb-2 font-medium">Item</th>
                     <th className="pb-2 text-center font-medium">Qty</th>
                     <th className="pb-2 text-right font-medium">Price</th>
                     <th className="pb-2 text-right font-medium">Total</th>

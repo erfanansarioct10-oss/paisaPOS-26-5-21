@@ -243,3 +243,46 @@ export async function adjustStockAction(variantId: string, newStock: number) {
 
   return true;
 }
+
+export async function updateStoreAction(data: { name: string; phone: string; address: string; panVat: string }) {
+  const supabase = await getSupabaseServerClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthenticated");
+
+  const { data: profile } = await supabase
+    .from("users")
+    .select("store_id")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.store_id) throw new Error("Store profile not found");
+
+  const { error } = await supabase
+    .from("stores")
+    .update({
+      name: data.name,
+      phone: data.phone || null,
+      address: data.address || null,
+      pan_vat: data.panVat || null,
+    })
+    .eq("id", profile.store_id);
+
+  if (error) throw new Error(error.message);
+  return true;
+}
+
+export async function updateProfileAction(data: { name: string }) {
+  const supabase = await getSupabaseServerClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthenticated");
+
+  const { error } = await supabase
+    .from("users")
+    .update({ name: data.name })
+    .eq("id", user.id);
+
+  if (error) throw new Error(error.message);
+  return true;
+}
