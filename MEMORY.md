@@ -1,5 +1,17 @@
 # Memory
-> Last updated: 2026-05-22 17:51 NPT
+> Last updated: 2026-05-22 21:48 NPT
+
+## Favicon Logo Customization & Cleanup (2026-05-22)
+
+**Observation:** The application favicon was using the default Next.js/Vercel logo. A custom favicon matching the PaisaPOS branding was needed to make the interface feel premium and consistent.
+
+**Action:**
+- **Custom Brand SVG Icon:** Created [icon.svg](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/icon.svg) featuring a custom-designed logo using the app's theme-aligned linear gradient (`#6366f1` to `#4f46e5`), the Lucide `Store` branding icon paths, and a subtle drop-shadow filter (`feDropShadow`).
+- **Legacy Cleanup:** Deleted the default Vercel favicon file (`src/app/favicon.ico`) to ensure browsers don't fallback to the old logo.
+- **Verification:** Ran `npm run build` and confirmed that the Next.js Turbopack compiler successfully detected and generated the `/icon.svg` route for standard header integration.
+- **Git Sync:** Committed and pushed changes to the remote Git repository (`main` branch).
+
+**Lesson:** Next.js automatically supports file-based metadata icons like `icon.svg` in the `app` directory. Removing the legacy `favicon.ico` ensures browsers properly use the high-quality vector SVG logo at all resolutions.
 
 ## Production DB Migration, Connection Pooling & Deployment Verification (2026-05-22)
 
