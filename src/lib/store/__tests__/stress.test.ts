@@ -5,6 +5,7 @@ import { AppState } from "../types";
 import { createAuthSlice } from "../authSlice";
 import { createInventorySlice } from "../inventorySlice";
 import { createCartSlice } from "../cartSlice";
+import { adjustStockAction } from "@/app/actions";
 
 let currentStore: any = null;
 
@@ -350,5 +351,160 @@ describe("PaisaPOS — Master Concurrency, Performance, & Security Stress Tests"
     // Client A's cart is safely preserved for editing
     expect(store.getState().cart.length).toBe(1);
     expect(store.getState().cart[0].quantity).toBe(2);
+  });
+
+  // =========================================================================
+  // 4. RAPID CLICK FLICKERING PREVENTION & CONCURRENCY RACE
+  // =========================================================================
+  test("Stress Test 4: Rapid Stock Updates Concurrency Race (Flickering Prevention)", async () => {
+    // Seed test product and variant
+    await store.getState().addProduct("Flicker Test Shirt", "Tops", 5, [
+      { size: "L", color: "Blue", sku: "FLK-BLU-L", price: 1000, stock: 10 }
+    ]);
+    const variant = store.getState().variants.find(v => v.sku === "FLK-BLU-L")!;
+    expect(variant.stock).toBe(10);
+
+    const mockDbStock = { val: 10 };
+
+    // Implement custom mock for fetchStoreData to simulate db state retrieval and sync override mapping
+    vi.spyOn(store.getState(), "fetchStoreData").mockImplementation(async () => {
+      const state = store.getState();
+      const mappedVariants = state.variants.map((v) => {
+        if (v.id === variant.id) {
+          const pendingStock = state.pendingStockUpdates[v.id];
+          return {
+            ...v,
+            stock: pendingStock !== undefined ? pendingStock : mockDbStock.val,
+          };
+        }
+        return v;
+      });
+      store.setState({ variants: mappedVariants });
+    });
+
+    // Capture adjustStockAction calls and control their resolution timing
+    const adjustResolvers: Array<(ok: boolean) => void> = [];
+    vi.mocked(adjustStockAction).mockImplementation((variantId, newStock) => {
+      return new Promise<boolean>((resolve) => {
+        adjustResolvers.push((ok: boolean) => {
+          if (ok) {
+            mockDbStock.val = newStock;
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        });
+      });
+    });
+
+    // 1. Simulate rapid clicks: update 10 -> 11, then 11 -> 12
+    const p1 = store.getState().updateStockDirect(variant.id, 11);
+    const p2 = store.getState().updateStockDirect(variant.id, 12);
+
+    // Immediately check UI state: should be 12 (latest optimistic update)
+    expect(store.getState().variants.find(v => v.id === variant.id)!.stock).toBe(12);
+    expect(store.getState().pendingStockRequests[variant.id]).toBe(2);
+    expect(store.getState().pendingStockUpdates[variant.id]).toBe(12);
+    expect(store.getState().originalStockLevels[variant.id]).toBe(10);
+
+    // 2. Simulate background Realtime sync fetching stale DB state (10) while requests are in flight
+    await store.getState().fetchStoreData();
+    // UI stock must NOT flicker down; it should stay at 12 because requests are pending
+    expect(store.getState().variants.find(v => v.id === variant.id)!.stock).toBe(12);
+
+    // 3. Resolve the first click update (10 -> 11)
+    adjustResolvers[0](true);
+    await p1;
+
+    // After p1 completes, request count should drop to 1, target stock is still 12
+    expect(store.getState().pendingStockRequests[variant.id]).toBe(1);
+    expect(store.getState().pendingStockUpdates[variant.id]).toBe(12);
+    // UI stock remains at 12
+    expect(store.getState().variants.find(v => v.id === variant.id)!.stock).toBe(12);
+
+    // 4. Simulate another background sync fetching now-updated DB state (11)
+    await store.getState().fetchStoreData();
+    // UI stock must still remain at 12
+    expect(store.getState().variants.find(v => v.id === variant.id)!.stock).toBe(12);
+
+    // 5. Resolve the second click update (11 -> 12)
+    adjustResolvers[1](true);
+    await p2;
+
+    // After all updates finish, state is cleaned up
+    expect(store.getState().pendingStockRequests[variant.id]).toBeUndefined();
+    expect(store.getState().pendingStockUpdates[variant.id]).toBeUndefined();
+    expect(store.getState().originalStockLevels[variant.id]).toBeUndefined();
+    expect(store.getState().variants.find(v => v.id === variant.id)!.stock).toBe(12);
+
+    // Final database sync should keep it at 12
+    await store.getState().fetchStoreData();
+    expect(store.getState().variants.find(v => v.id === variant.id)!.stock).toBe(12);
+  });
+
+  // =========================================================================
+  // 5. RAPID STOCK UPDATES FAILURE & CORRECT BASE ROLLBACK
+  // =========================================================================
+  test("Stress Test 5: Rapid Stock Updates Failure & Correct Base Rollback", async () => {
+    await store.getState().addProduct("Rollback Test Shirt", "Tops", 5, [
+      { size: "M", color: "Red", sku: "FLK-RED-M", price: 1000, stock: 20 }
+    ]);
+    const variant = store.getState().variants.find(v => v.sku === "FLK-RED-M")!;
+
+    const mockDbStock = { val: 20 };
+
+    vi.spyOn(store.getState(), "fetchStoreData").mockImplementation(async () => {
+      const state = store.getState();
+      const mappedVariants = state.variants.map((v) => {
+        if (v.id === variant.id) {
+          const pendingStock = state.pendingStockUpdates[v.id];
+          return {
+            ...v,
+            stock: pendingStock !== undefined ? pendingStock : mockDbStock.val,
+          };
+        }
+        return v;
+      });
+      store.setState({ variants: mappedVariants });
+    });
+
+    const adjustResolvers: Array<(ok: boolean) => void> = [];
+    vi.mocked(adjustStockAction).mockImplementation((variantId, newStock) => {
+      return new Promise<boolean>((resolve, reject) => {
+        adjustResolvers.push((ok: boolean) => {
+          if (ok) {
+            mockDbStock.val = newStock;
+            resolve(true);
+          } else {
+            reject(new Error("Database error"));
+          }
+        });
+      });
+    });
+
+    // Start 2 concurrent requests: 20 -> 21, then 21 -> 22
+    const p1 = store.getState().updateStockDirect(variant.id, 21);
+    const p2 = store.getState().updateStockDirect(variant.id, 22);
+
+    expect(store.getState().variants.find(v => v.id === variant.id)!.stock).toBe(22);
+
+    // Reject the first update (fails)
+    adjustResolvers[0](false);
+    try {
+      await p1;
+    } catch {}
+
+    // Since the second request (22) is still in flight, UI should NOT rollback to 20 yet!
+    expect(store.getState().variants.find(v => v.id === variant.id)!.stock).toBe(22);
+
+    // Reject the second update (fails)
+    adjustResolvers[1](false);
+    try {
+      await p2;
+    } catch {}
+
+    // Both failed, and all requests are finished. UI should correctly rollback to the original base value (20)!
+    expect(store.getState().variants.find(v => v.id === variant.id)!.stock).toBe(20);
+    expect(store.getState().pendingStockRequests[variant.id]).toBeUndefined();
   });
 });

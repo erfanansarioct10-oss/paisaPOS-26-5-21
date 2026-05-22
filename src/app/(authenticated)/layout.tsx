@@ -63,20 +63,20 @@ export default function AuthenticatedLayout({
   // Loading Screen Layout
   if (isLoading && !user) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-center p-6">
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#0f172a_1px,transparent_1px),linear-gradient(to_bottom,#0f172a_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-30 pointer-events-none" />
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center text-center p-6">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,var(--border)_1px,transparent_1px),linear-gradient(to_bottom,var(--border)_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-50 dark:opacity-20 pointer-events-none" />
         
         <div className="relative z-10 space-y-4">
           <div className="mx-auto h-12 w-12 rounded-xl bg-primary flex items-center justify-center shadow-lg border border-primary/20 animate-pulse">
             <Store className="w-6 h-6 text-primary-foreground" />
           </div>
           
-          <div className="flex items-center justify-center gap-2 text-white">
+          <div className="flex items-center justify-center gap-2 text-foreground">
             <Loader2 className="w-5 h-5 animate-spin text-primary" />
             <span className="font-semibold text-sm">Syncing PaisaPOS database...</span>
           </div>
           
-          <p className="text-xs text-slate-500 max-w-xs leading-normal">
+          <p className="text-xs text-muted-foreground max-w-xs leading-normal">
             Verifying store session credentials and downloading real-time variant stock balances.
           </p>
         </div>
@@ -119,15 +119,15 @@ export default function AuthenticatedLayout({
 
       {/* 4. GLOBAL ERROR FLOATING TOAST */}
       {errorMsg && (
-        <div className="fixed top-4 right-4 z-[9999] max-w-sm w-full bg-slate-900/95 backdrop-blur-md border border-rose-500/20 text-rose-200 rounded-xl p-4 shadow-2xl flex items-start gap-3 transition-all duration-300 animate-slide-down">
+        <div className="fixed top-4 right-4 z-[9999] max-w-sm w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-rose-200 dark:border-rose-500/20 text-rose-800 dark:text-rose-200 rounded-xl p-4 shadow-2xl flex items-start gap-3 transition-all duration-300 animate-slide-down">
           <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
           <div className="flex-1 space-y-1">
-            <h4 className="text-xs font-bold text-rose-400">System Error Alert</h4>
-            <p className="text-xs leading-normal">{errorMsg}</p>
+            <h4 className="text-xs font-bold text-rose-600 dark:text-rose-400">System Error Alert</h4>
+            <p className="text-xs leading-normal text-rose-700 dark:text-rose-200/90">{errorMsg}</p>
           </div>
           <button 
             onClick={clearError}
-            className="p-1 rounded-lg hover:bg-rose-500/10 text-rose-400 hover:text-rose-200 transition-colors cursor-pointer"
+            className="p-1 rounded-lg hover:bg-rose-500/10 text-rose-500 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-200 transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>

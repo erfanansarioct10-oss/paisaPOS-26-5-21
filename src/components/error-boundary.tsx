@@ -35,7 +35,7 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="flex-1 flex items-center justify-center p-6 min-h-[400px]">
-          <div className="relative overflow-hidden w-full max-w-lg rounded-2xl border border-rose-500/20 bg-slate-900/80 backdrop-blur-md p-8 text-center shadow-2xl">
+          <div className="relative overflow-hidden w-full max-w-lg rounded-2xl border border-rose-200 dark:border-rose-500/20 bg-card/90 dark:bg-slate-900/80 backdrop-blur-md p-8 text-center shadow-2xl">
             <div className="absolute inset-0 bg-rose-500/5 pointer-events-none" />
             
             <div className="relative z-10 flex flex-col items-center space-y-4">
@@ -43,16 +43,16 @@ export class ErrorBoundary extends Component<Props, State> {
                 <AlertTriangle className="w-7 h-7" />
               </div>
 
-              <h2 className="text-xl font-bold text-white tracking-tight">
+              <h2 className="text-xl font-bold text-foreground tracking-tight">
                 {this.props.fallbackName || "Workspace"} Error Detected
               </h2>
 
-              <p className="text-sm text-slate-400 max-w-md leading-relaxed">
+              <p className="text-sm text-muted-foreground max-w-md leading-relaxed">
                 An unexpected error occurred while rendering this interface. This might be due to a state mismatch or network desynchronization.
               </p>
 
               {this.state.error && (
-                <div className="w-full text-left bg-slate-950/80 border border-slate-800 rounded-lg p-4 font-mono text-xs text-rose-400 overflow-x-auto max-h-32">
+                <div className="w-full text-left bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-lg p-4 font-mono text-xs text-rose-600 dark:text-rose-400 overflow-x-auto max-h-32">
                   {this.state.error.stack || this.state.error.message}
                 </div>
               )}

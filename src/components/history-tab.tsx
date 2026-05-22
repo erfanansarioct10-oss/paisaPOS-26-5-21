@@ -141,7 +141,7 @@ export default function HistoryTab() {
                   setSearchQuery(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="block w-full pl-10 pr-4 h-11 bg-slate-950 border border-slate-800 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-white placeholder-slate-600 transition-all shadow-sm"
+                className="block w-full pl-10 pr-4 h-11 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 transition-all shadow-sm"
               />
             </div>
           </div>
@@ -159,7 +159,7 @@ export default function HistoryTab() {
                   setDateFilter(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="block w-full pl-10 pr-4 h-11 bg-slate-950 border border-slate-800 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-white appearance-none cursor-pointer shadow-sm transition-all"
+                className="block w-full pl-10 pr-4 h-11 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-slate-900 dark:text-white appearance-none cursor-pointer shadow-sm transition-all"
               >
                 <option value="All Time">All Time</option>
                 <option value="Today">Today (Nepal local time)</option>
@@ -188,7 +188,7 @@ export default function HistoryTab() {
                     className={`h-11 px-4 text-xs font-semibold rounded-xl border transition-all ${
                       isActive
                         ? "bg-primary border-primary text-primary-foreground shadow-sm"
-                        : "bg-slate-950 border-slate-800 text-muted-foreground hover:text-foreground hover:bg-slate-900"
+                        : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-muted-foreground hover:text-foreground hover:bg-slate-100 dark:hover:bg-slate-900"
                     }`}
                   >
                     {method}

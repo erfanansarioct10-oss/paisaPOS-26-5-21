@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store/useAppStore";
 import { updateStoreAction, updateProfileAction } from "@/app/actions";
+import { useTheme } from "@/components/theme-provider";
 import {
   Settings,
   Store,
@@ -12,10 +13,21 @@ import {
   Loader2,
   CheckCircle,
   AlertCircle,
+  Sun,
+  Moon,
+  Monitor,
 } from "lucide-react";
 
 export default function SettingsPage() {
   const { store, user, signOut, initializeSession, setTab } = useAppStore();
+  const { theme, setTheme } = useTheme();
+  const [themeMounted, setThemeMounted] = useState(false);
+
+  useEffect(() => {
+    setTimeout(() => setThemeMounted(true), 0);
+  }, []);
+
+  const isActive = (t: typeof theme) => themeMounted && theme === t;
 
   // Sync active tab in global store on component mount
   useEffect(() => {
@@ -127,22 +139,22 @@ export default function SettingsPage() {
 
           <div>
             <label htmlFor="store-name" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Store Name *</label>
-            <input id="store-name" type="text" required value={storeName} onChange={(e) => setStoreName(e.target.value)} placeholder="e.g. KTM Boutique Hub" className="block w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
+            <input id="store-name" type="text" required value={storeName} onChange={(e) => setStoreName(e.target.value)} placeholder="e.g. KTM Boutique Hub" className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
           </div>
 
           <div>
             <label htmlFor="store-phone" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Phone Number</label>
-            <input id="store-phone" type="text" value={storePhone} onChange={(e) => setStorePhone(e.target.value)} placeholder="e.g. +977-9812345678" className="block w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
+            <input id="store-phone" type="text" value={storePhone} onChange={(e) => setStorePhone(e.target.value)} placeholder="e.g. +977-9812345678" className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
           </div>
 
           <div>
             <label htmlFor="store-address" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Address</label>
-            <input id="store-address" type="text" value={storeAddress} onChange={(e) => setStoreAddress(e.target.value)} placeholder="e.g. New Road, Kathmandu" className="block w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
+            <input id="store-address" type="text" value={storeAddress} onChange={(e) => setStoreAddress(e.target.value)} placeholder="e.g. New Road, Kathmandu" className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
           </div>
 
           <div>
             <label htmlFor="store-panvat" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">PAN / VAT Number</label>
-            <input id="store-panvat" type="text" value={storePanVat} onChange={(e) => setStorePanVat(e.target.value)} placeholder="e.g. 123456789" className="block w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
+            <input id="store-panvat" type="text" value={storePanVat} onChange={(e) => setStorePanVat(e.target.value)} placeholder="e.g. 123456789" className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
           </div>
 
           <button type="submit" disabled={storeSaving} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:opacity-95 shadow transition-all disabled:opacity-50">
@@ -175,12 +187,12 @@ export default function SettingsPage() {
 
           <div>
             <label htmlFor="profile-name" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Display Name *</label>
-            <input id="profile-name" type="text" required value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="e.g. Sunil Shrestha" className="block w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
+            <input id="profile-name" type="text" required value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="e.g. Sunil Shrestha" className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
           </div>
 
           <div>
             <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Email Address</label>
-            <div className="px-4 py-2.5 bg-slate-950/50 border border-slate-800/50 rounded-lg text-sm text-slate-500">{user?.email || "—"}</div>
+            <div className="px-4 py-2.5 bg-slate-100 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800/50 rounded-lg text-sm text-slate-500 dark:text-slate-400">{user?.email || "—"}</div>
             <p className="text-[10px] text-muted-foreground mt-1">Email cannot be changed from settings.</p>
           </div>
 
@@ -189,6 +201,64 @@ export default function SettingsPage() {
             <span>{profileSaving ? "Saving..." : "Save Profile"}</span>
           </button>
         </form>
+
+        {/* THEME SETTINGS CARD */}
+        <div className="bg-card border border-border rounded-xl p-5 sm:p-6 shadow-sm space-y-5 h-fit">
+          <div className="flex items-center gap-2.5 pb-3 border-b border-border">
+            <div className="p-2 bg-primary/10 text-primary rounded-lg">
+              <Sun className="w-4 h-4" />
+            </div>
+            <h2 className="font-semibold text-foreground">Theme Preferences</h2>
+          </div>
+
+          <p className="text-xs text-muted-foreground leading-normal">
+            Choose how PaisaPOS looks on your device. This preference is saved locally on this browser.
+          </p>
+
+          <div className="grid grid-cols-3 gap-3">
+            {/* Light Mode Option */}
+            <button
+              type="button"
+              onClick={() => setTheme("light")}
+              className={`flex flex-col items-center gap-2.5 p-3.5 rounded-xl border text-center transition-all cursor-pointer ${
+                isActive("light")
+                  ? "border-primary bg-primary/5 text-primary ring-1 ring-primary"
+                  : "border-border bg-slate-50 dark:bg-slate-950/40 hover:bg-slate-100 dark:hover:bg-slate-950/80 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Sun className={`w-5 h-5 ${isActive("light") ? "text-primary" : "text-slate-400"}`} />
+              <span className="text-xs font-semibold">Light</span>
+            </button>
+
+            {/* Dark Mode Option */}
+            <button
+              type="button"
+              onClick={() => setTheme("dark")}
+              className={`flex flex-col items-center gap-2.5 p-3.5 rounded-xl border text-center transition-all cursor-pointer ${
+                isActive("dark")
+                  ? "border-primary bg-primary/5 text-primary ring-1 ring-primary"
+                  : "border-border bg-slate-50 dark:bg-slate-950/40 hover:bg-slate-100 dark:hover:bg-slate-950/80 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Moon className={`w-5 h-5 ${isActive("dark") ? "text-primary" : "text-slate-400"}`} />
+              <span className="text-xs font-semibold">Dark</span>
+            </button>
+
+            {/* System Preference Option */}
+            <button
+              type="button"
+              onClick={() => setTheme("system")}
+              className={`flex flex-col items-center gap-2.5 p-3.5 rounded-xl border text-center transition-all cursor-pointer ${
+                isActive("system")
+                  ? "border-primary bg-primary/5 text-primary ring-1 ring-primary"
+                  : "border-border bg-slate-50 dark:bg-slate-950/40 hover:bg-slate-100 dark:hover:bg-slate-950/80 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Monitor className={`w-5 h-5 ${isActive("system") ? "text-primary" : "text-slate-400"}`} />
+              <span className="text-xs font-semibold">System</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* DANGER ZONE */}

@@ -78,21 +78,35 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
       return false;
     }
 
-    set({ isLoading: true, errorMsg: null });
+    set({ errorMsg: null });
+
+    const previousProducts = get().products;
+    const previousVariants = get().variants;
+
+    // Optimistic Update: instantly filter out product & variants from UI
+    set({
+      products: previousProducts.filter(p => p.id !== productId),
+      variants: previousVariants.filter(v => v.product_id !== productId),
+    });
 
     try {
       await deleteProductAction(productId);
 
-      await get().fetchStoreData();
+      // Background sync to verify/refresh cache
+      get().fetchStoreData();
 
       return true;
     } catch (e: unknown) {
       const errMsg = mapProductError(e);
       console.error("Error deleting product:", e);
-      set({ errorMsg: errMsg });
+      
+      // Rollback to original state on failure
+      set({
+        products: previousProducts,
+        variants: previousVariants,
+        errorMsg: errMsg,
+      });
       return false;
-    } finally {
-      set({ isLoading: false });
     }
   },
 
@@ -161,21 +175,83 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
       return false;
     }
 
-    set({ isLoading: true, errorMsg: null });
+    set({ errorMsg: null });
+
+    const previousVariants = get().variants;
+
+    // Optimistic Update: instantly update stock count for this variant in UI
+    set({
+      variants: previousVariants.map(v =>
+        v.id === variantId ? { ...v, stock: newStock } : v
+      ),
+    });
+
+    // Track pending updates & requests
+    const currentRequests = get().pendingStockRequests[variantId] ?? 0;
+    const nextOriginals = { ...get().originalStockLevels };
+    if (currentRequests === 0) {
+      const currentVariant = previousVariants.find(v => v.id === variantId);
+      nextOriginals[variantId] = currentVariant?.stock ?? 0;
+    }
+
+    set({
+      pendingStockRequests: {
+        ...get().pendingStockRequests,
+        [variantId]: currentRequests + 1,
+      },
+      pendingStockUpdates: {
+        ...get().pendingStockUpdates,
+        [variantId]: newStock,
+      },
+      originalStockLevels: nextOriginals,
+    });
 
     try {
       await adjustStockAction(variantId, newStock);
 
-      await get().fetchStoreData();
+      // Background sync to verify/refresh cache
+      get().fetchStoreData();
 
       return true;
     } catch (e: unknown) {
       const errMsg = mapProductError(e);
       console.error("Error updating stock directly:", e);
-      set({ errorMsg: "Failed to save stock adjustment: " + errMsg });
+      
+      // Revert stock level of this variant to the original stock level only if it is the last pending request
+      const activeReqs = get().pendingStockRequests[variantId] ?? 0;
+      if (activeReqs <= 1) {
+        const origStock = get().originalStockLevels[variantId] ?? newStock;
+        set({
+          variants: get().variants.map(v =>
+            v.id === variantId ? { ...v, stock: origStock } : v
+          ),
+          errorMsg: "Failed to save stock adjustment: " + errMsg,
+        });
+      } else {
+        set({
+          errorMsg: "Failed to save stock adjustment: " + errMsg,
+        });
+      }
       return false;
     } finally {
-      set({ isLoading: false });
+      const currentReqs = get().pendingStockRequests[variantId] ?? 1;
+      const nextRequests = { ...get().pendingStockRequests };
+      const nextUpdates = { ...get().pendingStockUpdates };
+      const nextOriginalsFinal = { ...get().originalStockLevels };
+
+      if (currentReqs <= 1) {
+        delete nextRequests[variantId];
+        delete nextUpdates[variantId];
+        delete nextOriginalsFinal[variantId];
+      } else {
+        nextRequests[variantId] = currentReqs - 1;
+      }
+
+      set({
+        pendingStockRequests: nextRequests,
+        pendingStockUpdates: nextUpdates,
+        originalStockLevels: nextOriginalsFinal,
+      });
     }
   },
 });

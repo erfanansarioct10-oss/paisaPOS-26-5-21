@@ -370,6 +370,13 @@ Potential additions:
 - analytics
 - advanced reporting
 
+### High-Priority Operational Micro-Features
+Planned for incremental rollout during/after the pilot validation phase:
+1. **WhatsApp/Viber Restock Draft (Quick Supplier Orders)**: Formats and copies a plain-text restock order list of low-stock items directly to clipboard for fast messaging to Kathmandu wholesalers.
+2. **Ad-hoc Custom Cart Item (Fast Checkout)**: Quick input in POS billing cart sidebar to add custom item names/pricing (e.g., custom alterations, unlisted stock) without leaving the billing workflow.
+3. **Quick-Access Favorite Chips**: Tap-friendly shortcut chips below the billing search bar for high-frequency items (bags, gift wraps, top-selling seasonal variants) for 1-tap addition.
+4. **Inline Stock Bumpers**: Tactical `+` and `-` clickers next to quantities in the main Inventory variant list view to perform instant quantity updates.
+
 Only after:
 - strong pilot validation
 - stable operations

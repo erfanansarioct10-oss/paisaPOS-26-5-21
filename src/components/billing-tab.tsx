@@ -164,7 +164,7 @@ export default function BillingTab() {
     <div className="flex flex-col flex-1 min-h-0 w-full overflow-hidden">
       
       {/* MOBILE SUB-TAB SWITCHER */}
-      <div className="flex lg:hidden bg-slate-950 p-1.5 rounded-xl border border-slate-800 mb-4 shrink-0">
+      <div className="flex lg:hidden bg-slate-100 dark:bg-slate-950 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 mb-4 shrink-0">
         <button
           type="button"
           onClick={() => setActiveSubTab("products")}
@@ -216,7 +216,7 @@ export default function BillingTab() {
               // Clear product selection when search text is edited
               if (selectedProductId) setSelectedProductId(null);
             }}
-            className="block w-full pl-10 pr-4 md:pr-12 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-white placeholder-slate-600 transition-all shadow-sm"
+            className="block w-full pl-10 pr-4 md:pr-12 py-3 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 transition-all shadow-sm"
           />
           <div className="hidden md:flex absolute right-3.5 top-1/2 -translate-y-1/2 items-center gap-1 text-[10px] text-muted-foreground font-mono bg-secondary px-1.5 py-0.5 rounded border border-border">
             <Keyboard className="w-3 h-3" />
@@ -300,12 +300,12 @@ export default function BillingTab() {
                                   }}
                                   className={`w-full flex items-center justify-between p-2 rounded-lg border text-left text-xs font-medium transition-all ${
                                     isOutOfStock
-                                      ? "bg-slate-900/50 border-slate-950 text-slate-600 cursor-not-allowed"
-                                      : "bg-slate-950 border-slate-800 hover:border-primary hover:bg-slate-900 text-white"
+                                      ? "bg-slate-100/50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-950 text-slate-400 dark:text-slate-600 cursor-not-allowed"
+                                      : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 hover:border-primary hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-900 dark:text-white"
                                   }`}
                                 >
                                   <div className="flex flex-col">
-                                    <span className="font-bold text-white">
+                                    <span className="font-bold text-slate-900 dark:text-white">
                                       Size {v.size} / {v.color}
                                     </span>
                                     <span className="text-[9px] text-slate-500 font-mono mt-0.5">
@@ -315,7 +315,7 @@ export default function BillingTab() {
 
                                   <div className="text-right flex items-center gap-2">
                                     <div className="mr-1">
-                                      <p className="font-bold text-white">Rs. {v.price.toLocaleString()}</p>
+                                      <p className="font-bold text-slate-900 dark:text-white">Rs. {v.price.toLocaleString()}</p>
                                       <p className={`text-[9px] ${v.stock && v.stock <= p.low_stock_threshold ? "text-amber-500 font-bold" : "text-slate-500"}`}>
                                         {isOutOfStock ? "Sold Out" : `${v.stock} left`}
                                       </p>
@@ -388,19 +388,19 @@ export default function BillingTab() {
 
                 <div className="flex items-center gap-3 shrink-0">
                   {/* Quantity adjustment buttons (44x44px target compliant) */}
-                  <div className="flex items-center border border-border bg-slate-950 rounded-lg shadow-sm">
+                  <div className="flex items-center border border-border bg-slate-50 dark:bg-slate-950 rounded-lg shadow-sm">
                     <button
                       onClick={() => updateCartQuantity(item.variant_id, item.quantity - 1)}
-                      className="w-11 h-11 flex items-center justify-center hover:bg-slate-900 text-muted-foreground hover:text-foreground font-extrabold text-sm focus:outline-none transition-colors border-r border-border"
+                      className="w-11 h-11 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-900 text-muted-foreground hover:text-foreground font-extrabold text-sm focus:outline-none transition-colors border-r border-border"
                     >
                       -
                     </button>
-                    <span className="w-10 text-center font-bold font-mono text-xs text-white">
+                    <span className="w-10 text-center font-bold font-mono text-xs text-slate-900 dark:text-white">
                       {item.quantity}
                     </span>
                     <button
                       onClick={() => updateCartQuantity(item.variant_id, item.quantity + 1)}
-                      className="w-11 h-11 flex items-center justify-center hover:bg-slate-900 text-muted-foreground hover:text-foreground font-extrabold text-sm focus:outline-none transition-colors border-l border-border"
+                      className="w-11 h-11 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-900 text-muted-foreground hover:text-foreground font-extrabold text-sm focus:outline-none transition-colors border-l border-border"
                     >
                       +
                     </button>
@@ -440,7 +440,7 @@ export default function BillingTab() {
                 maxLength={100}
                 value={customerName}
                 onChange={(e) => setCustomerDetails(e.target.value, customerPhone)}
-                className="block w-full pl-8 pr-2 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:outline-none text-white"
+                className="block w-full pl-8 pr-2 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600"
               />
             </div>
             <div className="relative w-full">
@@ -454,7 +454,7 @@ export default function BillingTab() {
                   const cleaned = e.target.value.replace(/[^0-9+\-\s]/g, "");
                   setCustomerDetails(customerName, cleaned);
                 }}
-                className="block w-full pl-8 pr-2 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:outline-none text-white"
+                className="block w-full pl-8 pr-2 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600"
               />
             </div>
           </div>
@@ -480,7 +480,7 @@ export default function BillingTab() {
                     setCartDiscount(val);
                   }
                 }}
-                className="block w-full pl-8 pr-2 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs focus:outline-none font-bold text-red-500"
+                className="block w-full pl-8 pr-2 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none font-bold text-red-500 placeholder-slate-400 dark:placeholder-slate-600"
               />
             </div>
 
@@ -496,7 +496,7 @@ export default function BillingTab() {
                     className={`flex-1 text-[10px] font-bold py-2 rounded-lg border text-center transition-all h-9 flex items-center justify-center ${
                       isSel
                         ? "bg-primary border-primary text-primary-foreground shadow-sm"
-                        : "bg-slate-950 border-slate-800 text-muted-foreground hover:text-foreground"
+                        : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-muted-foreground hover:text-foreground hover:bg-slate-100 dark:hover:bg-slate-900"
                     }`}
                   >
                     {opt}

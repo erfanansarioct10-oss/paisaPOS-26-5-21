@@ -29,6 +29,42 @@ export default function InventoryTab() {
 
   const [isOpen, setIsOpen] = useState(false);
 
+  // Custom Confirm/Alert Dialog State
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    type: "info" | "warning" | "danger";
+    confirmText?: string;
+    cancelText?: string;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+    type: "warning",
+  });
+
+  const handleShowConfirm = (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    type: "info" | "warning" | "danger" = "warning",
+    confirmText = "Confirm",
+    cancelText?: string
+  ) => {
+    setConfirmDialog({
+      isOpen: true,
+      title,
+      message,
+      onConfirm,
+      type,
+      confirmText,
+      cancelText,
+    });
+  };
+
   // Auto-open Quick Product Wizard if redirected with ?add=true query param
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -222,7 +258,13 @@ export default function InventoryTab() {
       (v) => !v.size || !v.color || !v.sku || v.price < 0 || v.stock < 0
     );
     if (invalid) {
-      alert("All variants must have size, color, sku, and non-negative price/stock values.");
+      handleShowConfirm(
+        "Validation Error",
+        "All variants must have size, color, sku, and non-negative price/stock values.",
+        () => {},
+        "warning",
+        "OK"
+      );
       return;
     }
 
@@ -329,9 +371,14 @@ export default function InventoryTab() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (confirm(`Are you sure you want to delete ${p.name}?`)) {
-                                    deleteProduct(p.id);
-                                  }
+                                  handleShowConfirm(
+                                    "Delete Product",
+                                    `Are you sure you want to delete ${p.name}? This will also delete all its variants and inventory stock levels.`,
+                                    () => deleteProduct(p.id),
+                                    "danger",
+                                    "Delete",
+                                    "Cancel"
+                                  );
                                 }}
                                 className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
                                 title="Delete Product"
@@ -384,9 +431,14 @@ export default function InventoryTab() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (confirm(`Are you sure you want to delete ${p.name}?`)) {
-                                  deleteProduct(p.id);
-                                }
+                                handleShowConfirm(
+                                  "Delete Product",
+                                  `Are you sure you want to delete ${p.name}? This will also delete all its variants and inventory stock levels.`,
+                                  () => deleteProduct(p.id),
+                                  "danger",
+                                  "Delete",
+                                  "Cancel"
+                                );
                               }}
                               className="p-2 border border-transparent hover:border-red-500/20 text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
                               title="Delete Product"
@@ -471,19 +523,19 @@ export default function InventoryTab() {
                                 <span className="font-bold text-foreground">Rs. {v.price.toLocaleString()}</span>
                                 
                                 {/* 44x44px Touch Target Compliant Adjustment Strip */}
-                                <div className="inline-flex items-center border border-border bg-slate-950 rounded-lg shadow-sm">
+                                <div className="inline-flex items-center border border-border bg-slate-50 dark:bg-slate-950 rounded-lg shadow-sm">
                                   <button
                                     onClick={() => updateStockDirect(v.id, Math.max(0, (v.stock ?? 0) - 1))}
-                                    className="w-11 h-11 flex items-center justify-center hover:bg-slate-900 text-muted-foreground hover:text-foreground font-extrabold text-sm focus:outline-none transition-colors border-r border-border"
+                                    className="w-11 h-11 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-900 text-muted-foreground hover:text-foreground font-extrabold text-sm focus:outline-none transition-colors border-r border-border"
                                   >
                                     -
                                   </button>
-                                  <span className={`w-10 text-center font-bold font-mono text-xs ${isLowStock ? "text-amber-500 font-extrabold" : "text-white"}`}>
+                                  <span className={`w-10 text-center font-bold font-mono text-xs ${isLowStock ? "text-amber-500 font-extrabold" : "text-slate-900 dark:text-white"}`}>
                                     {v.stock ?? 0}
                                   </span>
                                   <button
                                     onClick={() => updateStockDirect(v.id, (v.stock ?? 0) + 1)}
-                                    className="w-11 h-11 flex items-center justify-center hover:bg-slate-900 text-muted-foreground hover:text-foreground font-extrabold text-sm focus:outline-none transition-colors border-l border-border"
+                                    className="w-11 h-11 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-900 text-muted-foreground hover:text-foreground font-extrabold text-sm focus:outline-none transition-colors border-l border-border"
                                   >
                                     +
                                   </button>
@@ -541,7 +593,7 @@ export default function InventoryTab() {
                       placeholder="e.g. Oversized Linen Shirt"
                       value={prodName}
                       onChange={(e) => setProdName(e.target.value)}
-                      className="block w-full px-3 h-11 bg-slate-950 border border-slate-800 rounded-lg text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-white placeholder-slate-600 shadow-sm"
+                      className="block w-full px-3 h-11 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 shadow-sm"
                     />
                   </div>
 
@@ -552,7 +604,7 @@ export default function InventoryTab() {
                     <select
                       value={category}
                       onChange={(e) => setCategory(e.target.value)}
-                      className="block w-full px-3 h-11 bg-slate-950 border border-slate-800 rounded-lg text-sm focus:outline-none focus:border-primary text-white cursor-pointer shadow-sm"
+                      className="block w-full px-3 h-11 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:border-primary text-slate-900 dark:text-white cursor-pointer shadow-sm"
                     >
                       <option value="Outerwear">Outerwear</option>
                       <option value="Bottoms">Bottoms</option>
@@ -581,7 +633,7 @@ export default function InventoryTab() {
                     onBlur={() => {
                       if (lowStockThreshold < 1) setLowStockThreshold(1);
                     }}
-                    className="block w-full px-3 h-11 bg-slate-950 border border-slate-800 rounded-lg text-sm focus:outline-none focus:border-primary text-white shadow-sm"
+                    className="block w-full px-3 h-11 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:border-primary text-slate-900 dark:text-white shadow-sm"
                   />
                 </div>
 
@@ -602,7 +654,7 @@ export default function InventoryTab() {
                         placeholder="e.g. S, M, L"
                         value={sizeInput}
                         onChange={(e) => setSizeInput(e.target.value)}
-                        className="block w-full px-3 h-11 bg-slate-950 border border-slate-800 rounded-lg text-white text-sm shadow-sm"
+                        className="block w-full px-3 h-11 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 text-sm shadow-sm"
                       />
                     </div>
                     <div>
@@ -614,7 +666,7 @@ export default function InventoryTab() {
                         placeholder="e.g. Blue, Black"
                         value={colorInput}
                         onChange={(e) => setColorInput(e.target.value)}
-                        className="block w-full px-3 h-11 bg-slate-950 border border-slate-800 rounded-lg text-white text-sm shadow-sm"
+                        className="block w-full px-3 h-11 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 text-sm shadow-sm"
                       />
                     </div>
                   </div>
@@ -633,7 +685,7 @@ export default function InventoryTab() {
                           const val = e.target.value === "" ? 0 : Math.max(0, Number(e.target.value));
                           setBasePrice(val);
                         }}
-                        className="block w-full px-3 h-11 bg-slate-950 border border-slate-800 rounded-lg text-white text-sm shadow-sm font-bold"
+                        className="block w-full px-3 h-11 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white text-sm shadow-sm font-bold"
                       />
                     </div>
                     <div>
@@ -649,7 +701,7 @@ export default function InventoryTab() {
                           const val = e.target.value === "" ? 0 : Math.max(0, Math.floor(Number(e.target.value)));
                           setBaseStock(val);
                         }}
-                        className="block w-full px-3 h-11 bg-slate-950 border border-slate-800 rounded-lg text-white text-sm shadow-sm font-semibold"
+                        className="block w-full px-3 h-11 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white text-sm shadow-sm font-semibold"
                       />
                     </div>
                   </div>
@@ -661,20 +713,20 @@ export default function InventoryTab() {
                     <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                       Verify Generated Combinations ({generatedVariants.length})
                     </p>
-                    <div className="border border-border rounded-lg overflow-hidden max-h-[190px] overflow-y-auto overflow-x-auto bg-slate-950 overscroll-contain">
+                    <div className="border border-border rounded-lg overflow-hidden max-h-[190px] overflow-y-auto overflow-x-auto bg-white dark:bg-slate-950 overscroll-contain">
                       <table className="w-full min-w-[500px] text-left text-xs">
                         <thead>
-                          <tr className="border-b border-border/80 bg-slate-900 text-slate-500 font-semibold uppercase tracking-wider sticky top-0 z-10">
+                          <tr className="border-b border-border/80 bg-slate-100 dark:bg-slate-900 text-slate-500 font-semibold uppercase tracking-wider sticky top-0 z-10">
                             <th className="px-3 py-2">Combination</th>
                             <th className="px-3 py-2">SKU (Auto-Generated)</th>
                             <th className="px-3 py-2" style={{ width: "110px" }}>Price (Rs.)</th>
                             <th className="px-3 py-2 text-center" style={{ width: "90px" }}>Stock</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-900">
+                        <tbody className="divide-y divide-slate-200 dark:divide-slate-900">
                           {generatedVariants.map((item, idx) => (
-                            <tr key={idx} className="hover:bg-slate-900/40">
-                              <td className="px-3 py-1.5 font-medium text-white">
+                            <tr key={idx} className="hover:bg-slate-100/50 dark:hover:bg-slate-900/40">
+                              <td className="px-3 py-1.5 font-medium text-slate-900 dark:text-white">
                                 {item.size} / {item.color}
                               </td>
                               <td className="px-3 py-1.5">
@@ -683,7 +735,7 @@ export default function InventoryTab() {
                                   maxLength={100}
                                   value={item.sku}
                                   onChange={(e) => updateGeneratedCell(idx, "sku", e.target.value)}
-                                  className="w-full px-2 h-9 bg-slate-900 border border-slate-800 rounded font-mono text-[11px] text-white shadow-inner"
+                                  className="w-full px-2 h-9 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded font-mono text-[11px] text-slate-900 dark:text-white shadow-inner"
                                 />
                               </td>
                               <td className="px-3 py-1.5">
@@ -696,7 +748,7 @@ export default function InventoryTab() {
                                     const val = e.target.value === "" ? 0 : Math.max(0, Number(e.target.value));
                                     updateGeneratedCell(idx, "price", val);
                                   }}
-                                  className="w-full px-2 h-9 bg-slate-900 border border-slate-800 rounded font-bold text-white text-right shadow-inner"
+                                  className="w-full px-2 h-9 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded font-bold text-slate-900 dark:text-white text-right shadow-inner"
                                 />
                               </td>
                               <td className="px-3 py-1.5 text-center">
@@ -709,7 +761,7 @@ export default function InventoryTab() {
                                     const val = e.target.value === "" ? 0 : Math.max(0, Math.floor(Number(e.target.value)));
                                     updateGeneratedCell(idx, "stock", val);
                                   }}
-                                  className="w-full px-2 h-9 bg-slate-900 border border-slate-800 rounded font-semibold text-white text-center shadow-inner"
+                                  className="w-full px-2 h-9 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded font-semibold text-slate-900 dark:text-white text-center shadow-inner"
                                 />
                               </td>
                             </tr>
@@ -787,7 +839,7 @@ export default function InventoryTab() {
                       maxLength={150}
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
-                      className="block w-full px-3 h-11 bg-slate-950 border border-slate-800 rounded-lg text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-white shadow-sm"
+                      className="block w-full px-3 h-11 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-slate-900 dark:text-white shadow-sm"
                     />
                   </div>
 
@@ -798,7 +850,7 @@ export default function InventoryTab() {
                     <select
                       value={editCategory}
                       onChange={(e) => setEditCategory(e.target.value)}
-                      className="block w-full px-3 h-11 bg-slate-950 border border-slate-800 rounded-lg text-sm focus:outline-none focus:border-primary text-white cursor-pointer shadow-sm"
+                      className="block w-full px-3 h-11 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:border-primary text-slate-900 dark:text-white cursor-pointer shadow-sm"
                     >
                       <option value="Outerwear">Outerwear</option>
                       <option value="Bottoms">Bottoms</option>
@@ -827,7 +879,7 @@ export default function InventoryTab() {
                     onBlur={() => {
                       if (editLowStock < 1) setEditLowStock(1);
                     }}
-                    className="block w-full px-3 h-11 bg-slate-950 border border-slate-800 rounded-lg text-sm focus:outline-none focus:border-primary text-white shadow-sm"
+                    className="block w-full px-3 h-11 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:outline-none focus:border-primary text-slate-900 dark:text-white shadow-sm"
                   />
                 </div>
 
@@ -847,10 +899,10 @@ export default function InventoryTab() {
                     </button>
                   </div>
 
-                  <div className="border border-border rounded-lg overflow-hidden max-h-[300px] overflow-y-auto overflow-x-auto bg-slate-950 overscroll-contain">
+                  <div className="border border-border rounded-lg overflow-hidden max-h-[300px] overflow-y-auto overflow-x-auto bg-white dark:bg-slate-950 overscroll-contain">
                     <table className="w-full min-w-[600px] text-left text-xs border-collapse">
                       <thead>
-                        <tr className="border-b border-border/80 bg-slate-900 text-slate-500 font-semibold uppercase tracking-wider sticky top-0 z-10">
+                        <tr className="border-b border-border/80 bg-slate-100 dark:bg-slate-900 text-slate-500 font-semibold uppercase tracking-wider sticky top-0 z-10">
                           <th className="px-3 py-2.5">Size</th>
                           <th className="px-3 py-2.5">Color</th>
                           <th className="px-3 py-2.5">SKU</th>
@@ -859,9 +911,9 @@ export default function InventoryTab() {
                           <th className="px-3 py-2.5 text-center" style={{ width: "60px" }}></th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-900">
+                      <tbody className="divide-y divide-slate-200 dark:divide-slate-900">
                         {editVariants.map((item, idx) => (
-                          <tr key={idx} className="hover:bg-slate-900/40">
+                          <tr key={idx} className="hover:bg-slate-100/50 dark:hover:bg-slate-900/40">
                             {/* Size */}
                             <td className="px-2 py-2">
                               <input
@@ -874,7 +926,7 @@ export default function InventoryTab() {
                                   newVars[idx].size = e.target.value;
                                   setEditVariants(newVars);
                                 }}
-                                className="w-full px-2 h-11 bg-slate-900 border border-slate-800 rounded font-medium text-white text-xs shadow-inner"
+                                className="w-full px-2 h-11 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded font-medium text-slate-900 dark:text-white text-xs shadow-inner"
                               />
                             </td>
                             {/* Color */}
@@ -889,7 +941,7 @@ export default function InventoryTab() {
                                   newVars[idx].color = e.target.value;
                                   setEditVariants(newVars);
                                 }}
-                                className="w-full px-2 h-11 bg-slate-900 border border-slate-800 rounded font-medium text-white text-xs shadow-inner"
+                                className="w-full px-2 h-11 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded font-medium text-slate-900 dark:text-white text-xs shadow-inner"
                               />
                             </td>
                             {/* SKU */}
@@ -904,7 +956,7 @@ export default function InventoryTab() {
                                   newVars[idx].sku = e.target.value;
                                   setEditVariants(newVars);
                                 }}
-                                className="w-full px-2 h-11 bg-slate-900 border border-slate-800 rounded font-mono text-[11px] text-white shadow-inner"
+                                className="w-full px-2 h-11 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded font-mono text-[11px] text-slate-900 dark:text-white shadow-inner"
                               />
                             </td>
                             {/* Price */}
@@ -921,7 +973,7 @@ export default function InventoryTab() {
                                   newVars[idx].price = val;
                                   setEditVariants(newVars);
                                 }}
-                                className="w-full px-2 h-11 bg-slate-900 border border-slate-800 rounded font-bold text-white text-right text-xs shadow-inner"
+                                className="w-full px-2 h-11 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded font-bold text-slate-900 dark:text-white text-right text-xs shadow-inner"
                               />
                             </td>
                             {/* Stock */}
@@ -938,7 +990,7 @@ export default function InventoryTab() {
                                   newVars[idx].stock = val;
                                   setEditVariants(newVars);
                                 }}
-                                className="w-full px-2 h-11 bg-slate-900 border border-slate-800 rounded font-semibold text-white text-center text-xs shadow-inner"
+                                className="w-full px-2 h-11 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded font-semibold text-slate-900 dark:text-white text-center text-xs shadow-inner"
                               />
                             </td>
                             {/* Trash / Delete Row */}
@@ -991,6 +1043,67 @@ export default function InventoryTab() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* CUSTOM CONFIRM/ALERT DIALOG MODAL */}
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/90 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="bg-card border border-border rounded-xl w-full max-w-md flex flex-col shadow-2xl overflow-hidden scale-in-95 duration-200 animate-in zoom-in-95">
+            {/* Modal Header/Icon */}
+            <div className="flex items-center gap-3 px-5 py-4 border-b border-border bg-slate-100/40 dark:bg-slate-900/30">
+              {confirmDialog.type === "danger" ? (
+                <div className="p-2 bg-red-500/10 rounded-lg text-red-500 shrink-0">
+                  <Trash2 className="w-5 h-5 animate-bounce" />
+                </div>
+              ) : confirmDialog.type === "warning" ? (
+                <div className="p-2 bg-amber-500/10 rounded-lg text-amber-500 shrink-0">
+                  <AlertTriangle className="w-5 h-5 animate-pulse" />
+                </div>
+              ) : (
+                <div className="p-2 bg-primary/10 rounded-lg text-primary shrink-0">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+              )}
+              <h3 className="font-outfit font-extrabold text-base text-foreground">
+                {confirmDialog.title}
+              </h3>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-5 text-sm text-muted-foreground leading-relaxed">
+              {confirmDialog.message}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex gap-3 px-5 py-4 border-t border-border bg-slate-50/50 dark:bg-slate-950/20">
+              {confirmDialog.cancelText && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+                  className="flex-1 h-11 flex items-center justify-center border border-border text-sm font-semibold rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition-all active:scale-[0.98]"
+                >
+                  {confirmDialog.cancelText}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                  confirmDialog.onConfirm();
+                }}
+                className={`flex-1 h-11 flex items-center justify-center text-sm font-semibold rounded-lg transition-all active:scale-[0.98] ${
+                  confirmDialog.type === "danger"
+                    ? "bg-red-600 text-white hover:bg-red-500"
+                    : confirmDialog.type === "warning"
+                    ? "bg-amber-600 text-white hover:bg-amber-500"
+                    : "bg-primary text-primary-foreground hover:bg-primary/90"
+                }`}
+              >
+                {confirmDialog.confirmText || "Confirm"}
+              </button>
+            </div>
           </div>
         </div>
       )}

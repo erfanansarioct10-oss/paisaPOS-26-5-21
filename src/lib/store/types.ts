@@ -114,6 +114,12 @@ export interface AppState {
   isProductModalOpen: boolean;
   isQuickBillingOpen: boolean;
 
+  // In-flight concurrency tracking for stock updates
+  pendingStockUpdates: Record<string, number>;
+  pendingStockRequests: Record<string, number>;
+  originalStockLevels: Record<string, number>;
+
+
   // ACTIONS
   setTab: (tab: "dashboard" | "billing" | "inventory" | "history" | "settings") => void;
   initializeSession: () => Promise<void>;

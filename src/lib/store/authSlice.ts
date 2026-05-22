@@ -75,6 +75,11 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
   isProductModalOpen: false,
   isQuickBillingOpen: false,
 
+  // Concurrency tracking for stock updates
+  pendingStockUpdates: {} as Record<string, number>,
+  pendingStockRequests: {} as Record<string, number>,
+  originalStockLevels: {} as Record<string, number>,
+
   // -----------------------------------------------------------------------
   // SIMPLE SETTERS
   // -----------------------------------------------------------------------
@@ -262,6 +267,10 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
           inventory?: { quantity: number }[] | { quantity: number } | null;
           created_at: string;
         };
+        const pendingStock = get().pendingStockUpdates[item.id];
+        const dbStock = Array.isArray(item.inventory)
+          ? (item.inventory[0]?.quantity ?? 0)
+          : (item.inventory?.quantity ?? 0);
         return {
           id: item.id,
           product_id: item.product_id,
@@ -269,9 +278,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
           color: item.color,
           sku: item.sku,
           price: Number(item.price),
-          stock: Array.isArray(item.inventory)
-            ? (item.inventory[0]?.quantity ?? 0)
-            : (item.inventory?.quantity ?? 0),
+          stock: pendingStock !== undefined ? pendingStock : dbStock,
           created_at: item.created_at,
         };
       });

@@ -1,5 +1,49 @@
 # Memory
-> Last updated: 2026-05-22 11:51 NPT
+> Last updated: 2026-05-22 17:11 NPT
+
+## Global Theme Toggle System Implementation (2026-05-22)
+
+**Observation:** The application required a cohesive global dark/light/system theme toggling mechanism. In addition, initial light mode rendering had residual hardcoded dark classes on authentication forms, inputs, settings elements, and layout boundaries, causing unreadable fields and visual flashes.
+
+**Action:**
+- **Core Theme Infrastructure:** Created [theme-provider.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/components/theme-provider.tsx) to manage state (`"light" | "dark" | "system"`), persist selection to `localStorage`, and update the resolved theme dynamically via system media queries when in system mode.
+- **Mitigation of Hydration Flash:** Injected an IIFE script inside the `<head>` tag in [layout.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/layout.tsx) that synchronously reads `localStorage` / system preferences and applies the `.dark` class to `document.documentElement` prior to DOM paint. Added `suppressHydrationWarning` to the `<html>` tag to bypass React hydration diff warnings.
+- **Sidebar & Settings Controls:**
+  - Added a responsive quick-toggle Sun/Moon button for mobile, and a horizontal segmented theme switcher (Sun, Moon, Monitor icons) in the desktop [sidebar.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/components/sidebar.tsx) footer.
+  - Added a dedicated "Theme Preferences" card to the settings layout [page.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/(authenticated)/settings/page.tsx) with three selectable visual state buttons.
+- **Hydration & Lint Guard:** Handled ESLint client state synchronization in [theme-provider.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/components/theme-provider.tsx), [sidebar.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/components/sidebar.tsx), and settings page by wrapping mounting triggers in `setTimeout(..., 0)` to defer state updates out of the synchronous render cycle.
+- **Residual Theme Color Auditing:**
+  - Audited and updated [page.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/page.tsx) (credentials forms/inputs), [error-boundary.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/components/error-boundary.tsx), and dynamic database syncing load screen overlay inside [layout.tsx](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/app/(authenticated)/layout.tsx).
+  - Replaced all hardcoded dark styling rules (such as `bg-zinc-900`, `text-white`, `bg-zinc-950`) with flexible utility classes (`bg-background`, `text-foreground`, `border-border`) to ensure text inputs, focus rings, border lines, and form fields automatically match the selected theme.
+- **Verification:** Verified `npm run lint` yields 0 warnings/errors, `npm run build` succeeds, and `npm run test` passes all 30 test cases.
+
+**Lesson:** To construct a seamless theme toggling experience in Next.js, always use an inline `<head>` script to pre-apply classes before hydration to eliminate white flashes. Never hardcode colors like absolute dark/light classes on core input elements or layout containers; use semantic design system classes (`bg-background`, `text-foreground`) to enable seamless, automatic theme inversion. Defer client mounting state updates with a micro-timeout to respect Next.js/React hydration boundaries.
+
+## Zustand Concurrency & Stock Update Flickering Fix (2026-05-22)
+
+**Observation:** Rapidly clicking the stock adjustment (+/-) buttons triggered concurrent database update requests. During these in-flight requests, Supabase Realtime synchronization triggered a background `fetchStoreData` fetch. Since the database state lags behind the latest client-side optimistic actions, the sync response would write stale stock values to Zustand and overwrite the newer optimistic values, causing the display number to flicker (jump up and down).
+
+**Action:**
+- **In-flight Request Tracking**: Extended `AppState` in [types.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/store/types.ts) and initialized `pendingStockRequests` (in-flight update counts per variant ID) and `pendingStockUpdates` (latest optimistic stock targets) as empty records in [authSlice.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/store/authSlice.ts).
+- **First-Click Base Stock Backup**: Added `originalStockLevels` to capture the true original database stock level before a series of rapid clicks begins.
+- **Sync Overrides**: Updated the mapping logic inside `fetchStoreData` in [authSlice.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/store/authSlice.ts) to override the fetched database value with the client's local optimistic target if there are active updates in-flight (`pendingStockUpdates[variantId] !== undefined`).
+- **Atomic Rollbacks**: Hardened `updateStockDirect` inside [inventorySlice.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/store/inventorySlice.ts) to increment requests on click, run the server action, and decrement the request counter in a `finally` block. If the final in-flight request fails, it rolls back only the failed variant's stock to its pre-transaction value (`originalStockLevels[variantId]`), avoiding full-list resets. If subsequent requests are still pending, rollback is bypassed to keep the UI responsive.
+- **Automated Verification**: Created two new tests (`Stress Test 4` and `Stress Test 5`) in [stress.test.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/store/__tests__/stress.test.ts) to validate concurrency handling and error rollbacks under rapid clicks. All **30 automated tests** passed successfully.
+
+**Lesson:** Optimistic UI updates must be backed by request tracking when paired with real-time reactive sync. Ignoring incoming database updates during active transaction blocks prevents layout flickering and race-condition state corruptions.
+
+## Documentation: Added High-Priority Micro-Features to Roadmap (2026-05-22)
+
+**Observation:** The user wants to capture four micro-features that solve immediate retail pain points for implementation in the next phases, bypassing the physical printer/hardware testing checklist for now.
+
+**Action:**
+- Updated [DEVELOPMENT_ROADMAP.md](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/PaisaPOS_OS/DEVELOPMENT_ROADMAP.md) to record the four high-priority operational micro-features under Phase 3:
+  1. WhatsApp/Viber Restock Draft
+  2. Ad-hoc Custom Cart Item (Fast Checkout)
+  3. Quick-Access Favorite Chips
+  4. Inline Stock Bumpers
+
+**Lesson:** Capturing high-value micro-features in the roadmap helps retain product scope alignment while remaining ready to resume the next phase of deployment validation.
 
 ## Network Resilience, UI Hardening & Client Input Validation Audit (2026-05-22)
 
