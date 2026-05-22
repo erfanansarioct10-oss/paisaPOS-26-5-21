@@ -1,5 +1,17 @@
 # Memory
-> Last updated: 2026-05-22 22:05 NPT
+> Last updated: 2026-05-22 22:50 NPT
+
+## Vercel Build Cache & Config Format Transition Resolution (2026-05-22)
+
+**Observation:** Switching Next.js configuration files from `.ts` to `.mjs` to `.js` caused Vercel's automated git-triggered build to fail with `TypeError: The "path" argument must be of type string. Received undefined` in the Vercel-specific `modifyConfig` hook. This happened because Vercel's restored build cache retained outdated configuration paths resolving to `undefined`. Additionally, ESLint runs on local/remote builds failed because Vercel's `.vercel/output/` directory build files were being linted.
+
+**Action:**
+- **Build Cache Bypass**: Linked the local directory to the correct Vercel project (`paisa-pos-26-5-21` instead of the local name `billing-system-26-5-21`) by configuring `.vercel/repo.json`.
+- **Force Cache Override**: Ran `npx vercel --force` to deploy directly to Vercel, bypassing the build cache. This populated the cache with a fresh successful build and resolved the configuration path resolution issues.
+- **ESLint Ignores Update**: Added `.vercel/**` to the `globalIgnores` block in [eslint.config.mjs](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/eslint.config.mjs#L12) to prevent ESLint checking Vercel output files, which successfully resolved all local and remote linter checks.
+- **Verification**: Verified that both `npm run lint` and `npm run build` succeed locally, and the forced deployment builds successfully on Vercel. Pushed the changes (commit `c343f8c`) to remote branch `v2`.
+
+**Lesson:** Changing file extensions or config shapes (like `next.config`) can leave stale path pointers in the Vercel remote build cache. Deploying from the Vercel CLI with the `--force` flag completely overrides the build cache and initializes a clean configuration resolver context. Furthermore, ensure build environment output folders like `.vercel` are ignored by static analysis / linters.
 
 ## Store Settings Validation, CRUD Synchronization & Dynamic Printing (2026-05-22)
 
