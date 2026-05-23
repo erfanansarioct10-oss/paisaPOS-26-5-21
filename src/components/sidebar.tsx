@@ -52,7 +52,7 @@ export default function Sidebar() {
           {/* Mobile Quick Theme Toggle */}
           <button
             onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-            className="p-1.5 text-muted-foreground hover:text-foreground focus:outline-none rounded-lg bg-secondary/50 border border-border/50 transition-colors"
+            className="p-2 w-11 h-11 flex items-center justify-center text-muted-foreground hover:text-foreground focus:outline-none rounded-lg bg-secondary/50 border border-border/50 transition-colors"
             aria-label="Toggle Theme"
           >
             {mounted ? (
@@ -67,7 +67,7 @@ export default function Sidebar() {
           </button>
           <button
             onClick={() => setIsOpen(!isOpen)}
-            className="p-1 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-1 focus:ring-primary rounded"
+            className="p-2.5 w-11 h-11 flex items-center justify-center text-muted-foreground hover:text-foreground focus:outline-none focus:ring-1 focus:ring-primary rounded"
             aria-label="Toggle Menu"
           >
             {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -133,7 +133,7 @@ export default function Sidebar() {
                 key={item.id}
                 href={item.path}
                 onClick={() => setIsOpen(false)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all ${
                   isActive
                     ? "bg-primary text-primary-foreground font-semibold shadow-sm"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground"
@@ -156,7 +156,7 @@ export default function Sidebar() {
           <div className="flex items-center justify-between bg-secondary/60 rounded-lg p-1 border border-border/50">
             <button
               onClick={() => setTheme("light")}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-xs font-medium rounded-md transition-all cursor-pointer ${
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 text-xs font-medium rounded-md transition-all cursor-pointer ${
                 isActive("light")
                   ? "bg-card text-foreground shadow-sm border border-border/60"
                   : "text-muted-foreground hover:text-foreground"
@@ -168,7 +168,7 @@ export default function Sidebar() {
             </button>
             <button
               onClick={() => setTheme("dark")}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-xs font-medium rounded-md transition-all cursor-pointer ${
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 text-xs font-medium rounded-md transition-all cursor-pointer ${
                 isActive("dark")
                   ? "bg-card text-foreground shadow-sm border border-border/60"
                   : "text-muted-foreground hover:text-foreground"
@@ -180,7 +180,7 @@ export default function Sidebar() {
             </button>
             <button
               onClick={() => setTheme("system")}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-xs font-medium rounded-md transition-all cursor-pointer ${
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 text-xs font-medium rounded-md transition-all cursor-pointer ${
                 isActive("system")
                   ? "bg-card text-foreground shadow-sm border border-border/60"
                   : "text-muted-foreground hover:text-foreground"
@@ -197,7 +197,7 @@ export default function Sidebar() {
         <div className="p-4 border-t border-border">
           <button
             onClick={signOut}
-            className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-lg text-red-500 hover:bg-red-500/10 transition-all border border-transparent hover:border-red-500/20"
+            className="w-full flex items-center justify-between px-3 py-3 h-11 text-xs font-semibold rounded-lg text-red-500 hover:bg-red-500/10 transition-all border border-transparent hover:border-red-500/20"
           >
             <span className="flex items-center gap-2">
               <LogOut className="w-3.5 h-3.5" />

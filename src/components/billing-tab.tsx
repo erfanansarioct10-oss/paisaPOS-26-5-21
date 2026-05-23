@@ -82,8 +82,10 @@ export default function BillingTab() {
   const checkScroll = useCallback(() => {
     const el = favScrollRef.current;
     if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 2);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+    requestAnimationFrame(() => {
+      setCanScrollLeft(el.scrollLeft > 2);
+      setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+    });
   }, []);
 
   useEffect(() => {
@@ -102,9 +104,10 @@ export default function BillingTab() {
     };
   }, [products, checkScroll]);
 
-  // Auto-focus search input on tab mount
+  // Auto-focus search input on tab mount (bypass on mobile touch devices)
   useEffect(() => {
-    if (searchInputRef.current) {
+    const isMobileTouch = window.matchMedia("(pointer: coarse)").matches;
+    if (searchInputRef.current && !isMobileTouch) {
       searchInputRef.current.focus();
     }
   }, []);
@@ -159,7 +162,8 @@ export default function BillingTab() {
       }
 
       // 'Ctrl+Enter' triggers checkout
-      if (e.ctrlKey && e.key === "Enter" && cart.length > 0 && !isLoading) {
+      const state = useAppStore.getState();
+      if (e.ctrlKey && e.key === "Enter" && state.cart.length > 0 && !state.isLoading) {
         e.preventDefault();
         handleCheckoutSubmit();
       }
@@ -167,7 +171,7 @@ export default function BillingTab() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [cart, isLoading, handleCheckoutSubmit]);
+  }, [handleCheckoutSubmit]);
 
   // -------------------------------------------------------------------------
   // FILTER PRODUCTS BY SEARCH QUERY
@@ -310,7 +314,7 @@ export default function BillingTab() {
                     key={p.id}
                     type="button"
                     onClick={() => handleFavoriteClick(p)}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 hover:border-amber-500 rounded-full text-slate-900 dark:text-white text-xs font-semibold shadow-sm transition-all active:scale-[0.98] shrink-0 whitespace-nowrap"
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 min-h-[44px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 hover:border-amber-500 rounded-full text-slate-900 dark:text-white text-xs font-semibold shadow-sm transition-all active:scale-[0.98] shrink-0 whitespace-nowrap"
                   >
                     <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500 shrink-0" />
                     <span>{p.name}</span>
@@ -529,7 +533,7 @@ export default function BillingTab() {
 
                   <button
                     onClick={() => removeFromCart(item.variant_id)}
-                    className="p-2 text-red-500 border border-transparent hover:border-red-500/20 hover:bg-red-500/10 rounded-lg transition-all"
+                    className="p-3 min-w-[44px] min-h-[44px] flex items-center justify-center text-red-500 border border-transparent hover:border-red-500/20 hover:bg-red-500/10 rounded-lg transition-all"
                     title="Remove Item"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -561,7 +565,7 @@ export default function BillingTab() {
                 maxLength={100}
                 value={customerName}
                 onChange={(e) => setCustomerDetails(e.target.value, customerPhone)}
-                className="block w-full pl-8 pr-2 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600"
+                className="block w-full pl-8 pr-2 py-3 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 h-11"
               />
             </div>
             <div className="relative w-full">
@@ -575,7 +579,7 @@ export default function BillingTab() {
                   const cleaned = e.target.value.replace(/[^0-9+\-\s]/g, "");
                   setCustomerDetails(customerName, cleaned);
                 }}
-                className="block w-full pl-8 pr-2 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600"
+                className="block w-full pl-8 pr-2 py-3 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 h-11"
               />
             </div>
           </div>
@@ -601,7 +605,7 @@ export default function BillingTab() {
                     setCartDiscount(val);
                   }
                 }}
-                className="block w-full pl-8 pr-2 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none font-bold text-red-500 placeholder-slate-400 dark:placeholder-slate-600"
+                className="block w-full pl-8 pr-2 py-3 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none font-bold text-red-500 placeholder-slate-400 dark:placeholder-slate-600 h-11"
               />
             </div>
 
@@ -614,7 +618,7 @@ export default function BillingTab() {
                     key={opt}
                     type="button"
                     onClick={() => setPaymentMethod(opt)}
-                    className={`flex-1 text-[10px] font-bold py-2 rounded-lg border text-center transition-all h-9 flex items-center justify-center ${
+                    className={`flex-1 text-xs font-bold py-2 rounded-lg border text-center transition-all h-11 min-h-[44px] flex items-center justify-center ${
                       isSel
                         ? "bg-primary border-primary text-primary-foreground shadow-sm"
                         : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-muted-foreground hover:text-foreground hover:bg-slate-100 dark:hover:bg-slate-900"
