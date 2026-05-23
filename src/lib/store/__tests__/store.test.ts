@@ -167,6 +167,17 @@ vi.mock("@/app/actions", () => {
         invoice_items: newInvoiceItems,
       };
     }),
+
+    toggleProductFavoriteAction: vi.fn(async (productId, isFavorite) => {
+      if (!currentStore) throw new Error("No active store");
+      const state = currentStore.getState();
+      currentStore.setState({
+        products: state.products.map((p: any) =>
+          p.id === productId ? { ...p, is_favorite: isFavorite } : p
+        ),
+      });
+      return true;
+    }),
   };
 });
 
@@ -343,6 +354,42 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
 
       const variant = store.getState().variants.find(v => v.id === "var-2-l");
       expect(variant?.stock).toBe(15);
+    });
+
+    test("should support toggling product favorite status", async () => {
+      const p1Before = store.getState().products.find(p => p.id === "prod-1");
+      expect(p1Before?.is_favorite).toBeFalsy();
+
+      const res1 = await store.getState().toggleProductFavorite("prod-1", true);
+      expect(res1).toBe(true);
+
+      const p1AfterTrue = store.getState().products.find(p => p.id === "prod-1");
+      expect(p1AfterTrue?.is_favorite).toBe(true);
+
+      const res2 = await store.getState().toggleProductFavorite("prod-1", false);
+      expect(res2).toBe(true);
+
+      const p1AfterFalse = store.getState().products.find(p => p.id === "prod-1");
+      expect(p1AfterFalse?.is_favorite).toBe(false);
+    });
+
+    test("should rollback favorite status and set error message on toggle failure", async () => {
+      const p2Before = store.getState().products.find(p => p.id === "prod-2");
+      expect(p2Before?.is_favorite).toBeFalsy();
+
+      const mockToggleAction = vi.spyOn(actions, "toggleProductFavoriteAction").mockRejectedValue(
+        new Error("Database error")
+      );
+
+      const res = await store.getState().toggleProductFavorite("prod-2", true);
+      expect(res).toBe(false);
+
+      const p2AfterFail = store.getState().products.find(p => p.id === "prod-2");
+      expect(p2AfterFail?.is_favorite).toBeFalsy();
+
+      expect(store.getState().errorMsg).toContain("Failed to update favorite status");
+
+      mockToggleAction.mockRestore();
     });
   });
 

@@ -80,6 +80,11 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
   pendingStockRequests: {} as Record<string, number>,
   originalStockLevels: {} as Record<string, number>,
 
+  // Concurrency tracking for favorite updates
+  pendingFavoriteUpdates: {} as Record<string, boolean>,
+  pendingFavoriteRequests: {} as Record<string, number>,
+  originalFavoriteLevels: {} as Record<string, boolean>,
+
   // -----------------------------------------------------------------------
   // SIMPLE SETTERS
   // -----------------------------------------------------------------------
@@ -301,8 +306,16 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
         });
       }
 
+      const mappedProducts = (dbProducts || []).map((p) => {
+        const pendingFav = get().pendingFavoriteUpdates[p.id];
+        return {
+          ...p,
+          is_favorite: pendingFav !== undefined ? pendingFav : p.is_favorite,
+        };
+      });
+
       set({
-        products: dbProducts || [],
+        products: mappedProducts,
         variants: mappedVariants,
         invoices: dbInvoices || [],
         invoiceItems: invoiceItemsMap,

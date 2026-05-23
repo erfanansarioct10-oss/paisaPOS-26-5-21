@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAppStore } from "@/lib/store/useAppStore";
 import Sidebar from "@/components/sidebar";
 import ReceiptModal from "@/components/receipt-modal";
-import { Loader2, Store, WifiOff, AlertCircle, X } from "lucide-react";
+import { Loader2, Store, WifiOff } from "lucide-react";
 import { ErrorBoundary } from "@/components/error-boundary";
 
 export default function AuthenticatedLayout({
@@ -116,23 +116,6 @@ export default function AuthenticatedLayout({
 
       {/* 3. GLOBAL RECEIPT OVERLAY MODAL */}
       <ReceiptModal />
-
-      {/* 4. GLOBAL ERROR FLOATING TOAST */}
-      {errorMsg && (
-        <div className="fixed top-4 right-4 z-[9999] max-w-sm w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-rose-200 dark:border-rose-500/20 text-rose-800 dark:text-rose-200 rounded-xl p-4 shadow-2xl flex items-start gap-3 transition-all duration-300 animate-slide-down">
-          <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
-          <div className="flex-1 space-y-1">
-            <h4 className="text-xs font-bold text-rose-600 dark:text-rose-400">System Error Alert</h4>
-            <p className="text-xs leading-normal text-rose-700 dark:text-rose-200/90">{errorMsg}</p>
-          </div>
-          <button 
-            onClick={clearError}
-            className="p-1 rounded-lg hover:bg-rose-500/10 text-rose-500 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-200 transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
     </div>
   );
 }

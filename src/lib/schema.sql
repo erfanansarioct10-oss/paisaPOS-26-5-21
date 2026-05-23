@@ -42,6 +42,7 @@ create table products (
   category text not null,
   image_url text,
   low_stock_threshold integer default 5 not null,
+  is_favorite boolean not null default false,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -49,12 +50,32 @@ create table products (
 create table product_variants (
   id uuid primary key default gen_random_uuid(),
   product_id uuid references products(id) on delete cascade not null,
+  store_id uuid references stores(id) on delete cascade not null,
   size text not null,  -- e.g., 'S', '32', 'Free Size'
   color text not null, -- e.g., 'Black', 'Blue', 'Pink'
-  sku text unique not null,
+  sku text not null,
   price numeric(10,2) not null check (price >= 0),
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique (store_id, sku)
 );
+
+-- Auto-populate product_variants.store_id from parent products table if omitted
+create or replace function set_product_variant_store_id()
+returns trigger as $$
+begin
+  if new.store_id is null then
+    select store_id into new.store_id
+    from products
+    where id = new.product_id;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+create trigger trg_set_product_variant_store_id
+  before insert on product_variants
+  for each row
+  execute function set_product_variant_store_id();
 
 -- 5. INVENTORY TABLE (Tracks real-time stock levels for variants)
 create table inventory (

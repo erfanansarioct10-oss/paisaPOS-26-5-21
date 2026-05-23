@@ -3,14 +3,35 @@
 // =========================================================================
 
 import type { AppState } from "./types";
-import { upsertProductAction, deleteProductAction, adjustStockAction } from "@/app/actions";
+import { upsertProductAction, deleteProductAction, adjustStockAction, toggleProductFavoriteAction } from "@/app/actions";
 
 function mapProductError(e: unknown): string {
-  const msg = e instanceof Error ? e.message : String(e);
-  if (msg.includes("duplicate key value violates unique constraint") || msg.toLowerCase().includes("sku already exists") || msg.toLowerCase().includes("unique constraint")) {
+  let msg = "";
+  if (e instanceof Error) {
+    msg = e.message;
+  } else if (e && typeof e === "object") {
+    if ("message" in e && typeof e.message === "string") {
+      msg = e.message;
+    } else if ("error" in e && typeof e.error === "string") {
+      msg = e.error;
+    } else {
+      msg = String(e);
+    }
+  } else {
+    msg = String(e);
+  }
+
+  const lowercaseMsg = msg.toLowerCase();
+  if (
+    lowercaseMsg.includes("duplicate key") ||
+    lowercaseMsg.includes("sku already exists") ||
+    lowercaseMsg.includes("unique constraint") ||
+    lowercaseMsg.includes("product_variants_store_sku_key") ||
+    lowercaseMsg.includes("product_variants_sku_key")
+  ) {
     return "Failed to save product: A variant with this SKU already exists.";
   }
-  if (msg.toLowerCase().includes("unauthorized") || msg.toLowerCase().includes("unauthenticated")) {
+  if (lowercaseMsg.includes("unauthorized") || lowercaseMsg.includes("unauthenticated")) {
     return "Failed to save product: Unauthorized action.";
   }
   return "Failed to save product. Please check the inputs and try again.";
@@ -251,6 +272,92 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
         pendingStockRequests: nextRequests,
         pendingStockUpdates: nextUpdates,
         originalStockLevels: nextOriginalsFinal,
+      });
+    }
+  },
+
+  toggleProductFavorite: async (productId: string, isFavorite: boolean): Promise<boolean> => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      set({ errorMsg: "Operation failed: Internet connection is offline." });
+      return false;
+    }
+
+    set({ errorMsg: null });
+
+    const previousProducts = get().products;
+
+    // Optimistic Update: instantly update favorite status for this product in UI
+    set({
+      products: previousProducts.map(p =>
+        p.id === productId ? { ...p, is_favorite: isFavorite } : p
+      ),
+    });
+
+    // Track pending updates & requests
+    const currentRequests = get().pendingFavoriteRequests[productId] ?? 0;
+    const nextOriginals = { ...get().originalFavoriteLevels };
+    if (currentRequests === 0) {
+      const currentProduct = previousProducts.find(p => p.id === productId);
+      nextOriginals[productId] = currentProduct?.is_favorite ?? false;
+    }
+
+    set({
+      pendingFavoriteRequests: {
+        ...get().pendingFavoriteRequests,
+        [productId]: currentRequests + 1,
+      },
+      pendingFavoriteUpdates: {
+        ...get().pendingFavoriteUpdates,
+        [productId]: isFavorite,
+      },
+      originalFavoriteLevels: nextOriginals,
+    });
+
+    try {
+      await toggleProductFavoriteAction(productId, isFavorite);
+
+      // Background sync to verify/refresh cache
+      await get().fetchStoreData();
+
+      return true;
+    } catch (e: unknown) {
+      const errMsg = mapProductError(e);
+      console.error("Error toggling product favorite:", e);
+      
+      // Revert favorite status only if it is the last pending request
+      const activeReqs = get().pendingFavoriteRequests[productId] ?? 0;
+      if (activeReqs <= 1) {
+        const origFav = get().originalFavoriteLevels[productId] ?? isFavorite;
+        set({
+          products: get().products.map(p =>
+            p.id === productId ? { ...p, is_favorite: origFav } : p
+          ),
+          errorMsg: "Failed to update favorite status: " + errMsg,
+        });
+      } else {
+        set({
+          errorMsg: "Failed to update favorite status: " + errMsg,
+        });
+      }
+      return false;
+    } finally {
+      const currentReqs = get().pendingFavoriteRequests[productId] ?? 1;
+      const nextRequests = { ...get().pendingFavoriteRequests };
+      const nextUpdates = { ...get().pendingFavoriteUpdates };
+      const nextOriginalsFinal = { ...get().originalFavoriteLevels };
+
+      if (currentReqs <= 1) {
+        delete nextRequests[productId];
+        delete nextUpdates[productId];
+        delete nextOriginalsFinal[productId];
+      } else {
+        nextRequests[productId] = currentReqs - 1;
+      }
+
+      set({
+        pendingFavoriteRequests: nextRequests,
+        pendingFavoriteUpdates: nextUpdates,
+        originalFavoriteLevels: nextOriginalsFinal,
       });
     }
   },

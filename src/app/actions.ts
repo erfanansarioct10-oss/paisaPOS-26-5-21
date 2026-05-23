@@ -157,6 +157,15 @@ export async function upsertProductAction(rawParams: unknown) {
   );
 
   if (error) {
+    const msg = error.message.toLowerCase();
+    if (
+      msg.includes("product_variants_store_sku_key") ||
+      msg.includes("product_variants_sku_key") ||
+      msg.includes("duplicate key") ||
+      msg.includes("unique constraint")
+    ) {
+      throw new Error("Failed to save product: A variant with this SKU already exists.");
+    }
     throw new Error(error.message);
   }
 
@@ -242,6 +251,51 @@ export async function adjustStockAction(variantId: string, newStock: number) {
     .from("inventory")
     .update({ quantity: newStock, updated_at: new Date().toISOString() })
     .eq("variant_id", variantId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return true;
+}
+
+export async function toggleProductFavoriteAction(productId: string, isFavorite: boolean) {
+  const supabase = await getSupabaseServerClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    throw new Error("Unauthenticated");
+  }
+
+  const { data: profile } = await supabase
+    .from("users")
+    .select("store_id")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.store_id) {
+    throw new Error("Store profile not found");
+  }
+
+  // Verify product ownership before updating to prevent cross-tenant parameter spoofing (BOLA)
+  const { data: product, error: prodError } = await supabase
+    .from("products")
+    .select("id, store_id")
+    .eq("id", productId)
+    .single();
+
+  if (prodError || !product) {
+    throw new Error("Product not found");
+  }
+
+  if (product.store_id !== profile.store_id) {
+    throw new Error("Unauthorized");
+  }
+
+  const { error } = await supabase
+    .from("products")
+    .update({ is_favorite: isFavorite })
+    .eq("id", productId);
 
   if (error) {
     throw new Error(error.message);

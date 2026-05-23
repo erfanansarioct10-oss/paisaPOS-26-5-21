@@ -13,6 +13,7 @@ import {
   Loader2,
   AlertTriangle,
   Pencil,
+  Star,
 } from "lucide-react";
 
 export default function InventoryTab() {
@@ -23,8 +24,10 @@ export default function InventoryTab() {
     deleteProduct,
     updateProduct,
     updateStockDirect,
+    toggleProductFavorite,
     isLoading,
     errorMsg,
+    clearError,
   } = useAppStore();
 
   const [isOpen, setIsOpen] = useState(false);
@@ -94,6 +97,11 @@ export default function InventoryTab() {
   const [editName, setEditName] = useState("");
   const [editCategory, setEditCategory] = useState("Tops");
   const [editLowStock, setEditLowStock] = useState(5);
+
+  // Automatically clear any active errors when opening/closing product modals
+  useEffect(() => {
+    clearError();
+  }, [isOpen, isEditOpen, clearError]);
 
   interface EditVariant {
     id?: string;
@@ -352,9 +360,28 @@ export default function InventoryTab() {
                         </div>
                         <div className="flex-1 min-w-0 space-y-1">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-semibold text-sm sm:text-base text-foreground leading-tight truncate block">
-                              {p.name}
-                            </span>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="font-semibold text-sm sm:text-base text-foreground leading-tight truncate block">
+                                {p.name}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleProductFavorite(p.id, !p.is_favorite);
+                                }}
+                                className="p-1 text-slate-400 dark:text-slate-600 hover:text-amber-500 rounded-md transition-all active:scale-95 shrink-0"
+                                title={p.is_favorite ? "Remove from Favorites" : "Add to Favorites"}
+                              >
+                                <Star
+                                  className={`w-3.5 h-3.5 ${
+                                    p.is_favorite
+                                      ? "fill-amber-500 text-amber-500"
+                                      : "text-slate-400 dark:text-slate-600 hover:text-amber-500"
+                                  }`}
+                                />
+                              </button>
+                            </div>
                             
                             {/* Mobile-only Action Buttons */}
                             <div className="flex sm:hidden items-center gap-1 shrink-0">
@@ -580,6 +607,14 @@ export default function InventoryTab() {
             <form onSubmit={handleSave} className="flex-grow flex flex-col overflow-hidden min-h-0">
               {/* Scrollable body with keyboard boundaries */}
               <div className="flex-1 overflow-y-auto p-5 space-y-4 overscroll-contain">
+                {/* Modal Error Strip */}
+                {errorMsg && (
+                  <div className="bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg p-3.5 text-xs flex items-start gap-2.5 shrink-0 animate-shake">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
+
                 {/* Product Info Section */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="sm:col-span-2">
@@ -827,6 +862,14 @@ export default function InventoryTab() {
             <form onSubmit={handleSaveEdit} className="flex-grow flex flex-col overflow-hidden min-h-0">
               {/* Scrollable body with keyboard boundaries */}
               <div className="flex-1 overflow-y-auto p-5 space-y-4 overscroll-contain">
+                {/* Modal Error Strip */}
+                {errorMsg && (
+                  <div className="bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg p-3.5 text-xs flex items-start gap-2.5 shrink-0 animate-shake">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
+
                 {/* Product Info Section */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="sm:col-span-2">

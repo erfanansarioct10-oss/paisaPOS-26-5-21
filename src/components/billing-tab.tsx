@@ -16,6 +16,7 @@ import {
   Keyboard,
   Plus,
   X,
+  Star,
 } from "lucide-react";
 
 export default function BillingTab() {
@@ -73,6 +74,34 @@ export default function BillingTab() {
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  // Favorites horizontal scroll tracking states
+  const favScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkScroll = useCallback(() => {
+    const el = favScrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 2);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+  }, []);
+
+  useEffect(() => {
+    const el = favScrollRef.current;
+    if (!el) return;
+    
+    // Initial check
+    checkScroll();
+    
+    el.addEventListener("scroll", checkScroll);
+    window.addEventListener("resize", checkScroll);
+    
+    return () => {
+      el.removeEventListener("scroll", checkScroll);
+      window.removeEventListener("resize", checkScroll);
+    };
+  }, [products, checkScroll]);
+
   // Auto-focus search input on tab mount
   useEffect(() => {
     if (searchInputRef.current) {
@@ -89,6 +118,30 @@ export default function BillingTab() {
       }, 300);
     }
   }, [checkout]);
+
+  const handleFavoriteClick = useCallback((p: typeof products[0]) => {
+    const productVariants = variants.filter((v) => v.product_id === p.id);
+    if (productVariants.length === 0) return;
+
+    if (productVariants.length === 1) {
+      // 1-tap addition if single variant and in stock
+      const variant = productVariants[0];
+      if ((variant.stock ?? 0) > 0) {
+        addToCart(variant.id);
+      } else {
+        setSelectedProductId(p.id);
+        setTimeout(() => {
+          document.getElementById(`prod-card-${p.id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }, 100);
+      }
+    } else {
+      // Expand product variants list
+      setSelectedProductId(p.id);
+      setTimeout(() => {
+        document.getElementById(`prod-card-${p.id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }, 100);
+    }
+  }, [variants, addToCart]);
 
   // Keyboard navigation & hotkeys
   useEffect(() => {
@@ -152,6 +205,7 @@ export default function BillingTab() {
   const subtotal = cart.reduce((sum, item) => sum + item.quantity * item.price, 0);
   const totalAmount = Math.max(0, subtotal - cartDiscount);
   const totalItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const favoriteProducts = products.filter((p) => p.is_favorite);
 
   // Pulse micro-animation for cart updates on mobile switcher
   useEffect(() => {
@@ -231,6 +285,49 @@ export default function BillingTab() {
           </div>
         </div>
 
+        {/* Favorite Chips */}
+        {favoriteProducts.length > 0 && (
+          <div className="flex items-center gap-2 mb-4 shrink-0 select-none w-full overflow-hidden">
+            <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider shrink-0 mr-1 py-1 px-2.5 bg-slate-200 dark:bg-slate-800 rounded-lg">
+              Favorites
+            </span>
+            <div className="relative flex-1 overflow-hidden flex items-center">
+              {/* Left Fade Overlay */}
+              <div 
+                className={`absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-white to-transparent dark:from-slate-950 pointer-events-none z-10 transition-opacity duration-300 ${
+                  canScrollLeft ? "opacity-100" : "opacity-0"
+                }`} 
+              />
+              
+              {/* Scrollable List */}
+              <div
+                ref={favScrollRef}
+                onScroll={checkScroll}
+                className="flex-1 flex items-center gap-1.5 overflow-x-auto scrollbar-none py-1 w-full"
+              >
+                {favoriteProducts.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handleFavoriteClick(p)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 hover:border-amber-500 rounded-full text-slate-900 dark:text-white text-xs font-semibold shadow-sm transition-all active:scale-[0.98] shrink-0 whitespace-nowrap"
+                  >
+                    <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500 shrink-0" />
+                    <span>{p.name}</span>
+                  </button>
+                ))}
+              </div>
+              
+              {/* Right Fade Overlay */}
+              <div 
+                className={`absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white to-transparent dark:from-slate-950 pointer-events-none z-10 transition-opacity duration-300 ${
+                  canScrollRight ? "opacity-100" : "opacity-0"
+                }`} 
+              />
+            </div>
+          </div>
+        )}
+
         {/* Dynamic Display Grid */}
         <div className="flex-1 overflow-y-auto pb-6">
           {filteredProducts.length === 0 ? (
@@ -262,6 +359,7 @@ export default function BillingTab() {
                 return (
                   <div
                     key={p.id}
+                    id={`prod-card-${p.id}`}
                     onClick={() => setSelectedProductId(isSelected ? null : p.id)}
                     className={`bg-card border rounded-xl p-4 transition-all duration-150 cursor-pointer flex flex-col justify-between ${
                       isSelected
