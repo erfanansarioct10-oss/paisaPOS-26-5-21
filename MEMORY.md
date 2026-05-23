@@ -1,5 +1,15 @@
 # Memory
-> Last updated: 2026-05-22 22:50 NPT
+> Last updated: 2026-05-23 07:55 NPT
+
+## Supabase Client Build-Time Prerendering Resolution (2026-05-23)
+
+**Observation:** During `npm run build`, Next.js attempts to statically prerender client pages (such as `/billing`). Because client pages transitively import the module-level Supabase client initialized in [supabase.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/supabase.ts), the module was evaluated in the build-time Node.js environment. Since `typeof window === "undefined"` was true, it triggered the fallback `createClient(supabaseUrl, supabaseAnonKey)` branch. Because the build environment lacked configured credentials, the client initialization crashed the compiler with `Error: supabaseKey is required`.
+
+**Action:**
+- **Dynamic Fallbacks**: Modified [supabase.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/supabase.ts#L4-L5) to fall back to dummy/placeholder credentials (`"https://placeholder-project.supabase.co"` and `"placeholder-anon-key"`) if `process.env.NEXT_PUBLIC_SUPABASE_URL` or `process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY` are not set.
+- **Verification**: Verified that `npm run build` compiles with 0 errors and all 30 Vitest tests pass cleanly. Committed and pushed changes to `origin/v2`.
+
+**Lesson:** Any module-level service client that initializes at compile time (like Supabase, Firebase, or external API drivers) must provide default/fallback structures when environment credentials are not present, ensuring that Next.js static prerendering processes do not crash. Real configuration keys will safely take precedence at runtime.
 
 ## Vercel Build Cache & Config Format Transition Resolution (2026-05-22)
 
