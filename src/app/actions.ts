@@ -15,7 +15,8 @@ const checkoutSchema = z.object({
   paymentMethod: z.enum(["Cash", "eSewa", "Khalti", "Fonepay"]),
   items: z.array(
     z.object({
-      variant_id: z.string().uuid(),
+      variant_id: z.string().uuid().nullable(),
+      custom_name: z.string().min(1).max(200).nullable().optional(),
       quantity: z.number().int().positive(),
       unit_price: z.number().nonnegative(),
       subtotal: z.number().nonnegative(),
@@ -81,7 +82,12 @@ export async function checkoutAction(rawParams: unknown) {
   const supabase = await getSupabaseServerClient();
   
   // Sort items alphabetically by variant_id UUID to eliminate deadlock vulnerability under concurrent checkout
-  const sortedItems = [...params.items].sort((a, b) => a.variant_id.localeCompare(b.variant_id));
+  const sortedItems = [...params.items].sort((a, b) => {
+    if (!a.variant_id && !b.variant_id) return 0;
+    if (!a.variant_id) return 1;
+    if (!b.variant_id) return -1;
+    return a.variant_id.localeCompare(b.variant_id);
+  });
 
   // Call the atomic checkout RPC in the database
   const { data: returnedInvoiceId, error: rpcError } = await supabase.rpc(

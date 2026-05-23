@@ -84,6 +84,14 @@ export default function HistoryTab() {
   const handleReprint = (invoice: Invoice) => {
     const items = invoiceItems[invoice.id] || [];
     const filledItems = items.map(item => {
+      if (!item.variant_id) {
+        return {
+          ...item,
+          product_name: item.custom_name ?? "Custom Item",
+          size: "-",
+          color: "-",
+        };
+      }
       const v = variants.find(vr => vr.id === item.variant_id);
       const p = products.find(pr => pr.id === v?.product_id);
       return {

@@ -83,7 +83,8 @@ create table invoices (
 create table invoice_items (
   id uuid primary key default gen_random_uuid(),
   invoice_id uuid references invoices(id) on delete cascade not null,
-  variant_id uuid references product_variants(id) on delete cascade not null,
+  variant_id uuid references product_variants(id) on delete cascade,
+  custom_name text,
   quantity integer not null check (quantity > 0),
   unit_price numeric(10,2) not null check (unit_price >= 0),
   subtotal numeric(10,2) not null check (subtotal >= 0)
@@ -113,7 +114,7 @@ create or replace function create_invoice_and_deduct_stock(
   p_discount_amount numeric,
   p_paid_amount numeric,
   p_payment_method text,
-  p_items jsonb -- Array of {variant_id: uuid, quantity: int, unit_price: numeric, subtotal: numeric}
+  p_items jsonb -- Array of {variant_id: uuid, custom_name: text, quantity: int, unit_price: numeric, subtotal: numeric}
 ) returns uuid as $$
 declare
   v_invoice_id uuid;
@@ -169,66 +170,96 @@ begin
   ) returning id into v_invoice_id;
 
   -- 2. Iterate invoice line items, perform atomic stock checks & reductions
-  -- Items are ordered alphabetically by variant_id UUID to eliminate deadlock vulnerability under concurrent checkout
+  -- Items are ordered alphabetically by variant_id UUID (nulls last) to eliminate deadlock vulnerability under concurrent checkout
   for v_item in 
     select x.val 
     from jsonb_array_elements(p_items) as x(val) 
-    order by (x.val->>'variant_id') 
+    order by (x.val->>'variant_id') asc nulls last
   loop
-    -- Verify variant ownership (the variant must belong to the user's store)
-    if not exists (
-      select 1 from product_variants pv
-      join products p on pv.product_id = p.id
-      where pv.id = (v_item->>'variant_id')::uuid and p.store_id = p_store_id
-    ) then
-      raise exception 'Variant with ID % does not belong to your store', (v_item->>'variant_id');
+    -- Determine if this is an ad-hoc custom item (variant_id is null)
+    if (v_item->>'variant_id') is null then
+      -- Set custom name as description
+      v_sku := coalesce(v_item->>'custom_name', 'Custom Item');
+      v_db_price := (v_item->>'unit_price')::numeric;
+
+      -- Explicit validation to prevent negative/zero/non-positive quantities
+      if (v_item->>'quantity')::int <= 0 then
+        raise exception 'Invalid quantity % for custom item %', (v_item->>'quantity')::int, v_sku;
+      end if;
+
+      -- Recalculate subtotal using reported price
+      v_item_subtotal := v_db_price * (v_item->>'quantity')::int;
+      v_calculated_subtotal := v_calculated_subtotal + v_item_subtotal;
+
+      -- Record Invoice Item with null variant_id and custom_name set
+      insert into invoice_items (
+        invoice_id, variant_id, custom_name, quantity, unit_price, subtotal
+      ) values (
+        v_invoice_id,
+        null,
+        v_sku,
+        (v_item->>'quantity')::int,
+        v_db_price,
+        v_item_subtotal
+      );
+    else
+      -- Regular variant item
+      -- Verify variant ownership (the variant must belong to the user's store)
+      if not exists (
+        select 1 from product_variants pv
+        join products p on pv.product_id = p.id
+        where pv.id = (v_item->>'variant_id')::uuid and p.store_id = p_store_id
+      ) then
+        raise exception 'Variant with ID % does not belong to your store', (v_item->>'variant_id');
+      end if;
+
+      -- Resolve variant details and lock matching inventory row to prevent concurrent race conditions
+      select quantity into v_current_stock
+      from inventory
+      where variant_id = (v_item->>'variant_id')::uuid
+      for update; 
+
+      select price, sku into v_db_price, v_sku
+      from product_variants
+      where id = (v_item->>'variant_id')::uuid;
+
+      if v_current_stock is null then
+        raise exception 'Variant with SKU % does not exist in inventory', v_sku;
+      end if;
+
+      -- Explicit validation to prevent negative/zero/non-positive quantities
+      if (v_item->>'quantity')::int <= 0 then
+        raise exception 'Invalid quantity % for SKU %', (v_item->>'quantity')::int, v_sku;
+      end if;
+
+      -- Atomic safety check
+      if v_current_stock < (v_item->>'quantity')::int then
+        raise exception 'Insufficient stock for SKU %. Available: %, Requested: %', 
+          v_sku, v_current_stock, (v_item->>'quantity')::int;
+      end if;
+
+      -- Decrement matching stock level
+      update inventory
+      set quantity = quantity - (v_item->>'quantity')::int,
+          updated_at = now()
+      where variant_id = (v_item->>'variant_id')::uuid;
+
+      -- Recalculate subtotal using authentic database price
+      v_item_subtotal := v_db_price * (v_item->>'quantity')::int;
+      v_calculated_subtotal := v_calculated_subtotal + v_item_subtotal;
+
+      -- Record Invoice Item using server-verified values
+      insert into invoice_items (
+        invoice_id, variant_id, custom_name, quantity, unit_price, subtotal
+      ) values (
+        v_invoice_id,
+        (v_item->>'variant_id')::uuid,
+        null,
+        (v_item->>'quantity')::int,
+        v_db_price,
+        v_item_subtotal
+      );
     end if;
-
-    -- Resolve variant details and lock matching inventory row to prevent concurrent race conditions
-    select quantity into v_current_stock
-    from inventory
-    where variant_id = (v_item->>'variant_id')::uuid
-    for update; 
-
-    select price, sku into v_db_price, v_sku
-    from product_variants
-    where id = (v_item->>'variant_id')::uuid;
-
-    if v_current_stock is null then
-      raise exception 'Variant with SKU % does not exist in inventory', v_sku;
-    end if;
-
-    -- Explicit validation to prevent negative/zero/non-positive quantities
-    if (v_item->>'quantity')::int <= 0 then
-      raise exception 'Invalid quantity % for SKU %', (v_item->>'quantity')::int, v_sku;
-    end if;
-
-    -- Atomic safety check
-    if v_current_stock < (v_item->>'quantity')::int then
-      raise exception 'Insufficient stock for SKU %. Available: %, Requested: %', 
-        v_sku, v_current_stock, (v_item->>'quantity')::int;
-    end if;
-
-    -- Decrement matching stock level
-    update inventory
-    set quantity = quantity - (v_item->>'quantity')::int,
-        updated_at = now()
-    where variant_id = (v_item->>'variant_id')::uuid;
-
-    -- Recalculate subtotal using authentic database price
-    v_item_subtotal := v_db_price * (v_item->>'quantity')::int;
-    v_calculated_subtotal := v_calculated_subtotal + v_item_subtotal;
-
-    -- Record Invoice Item using server-verified values
-    insert into invoice_items (
-      invoice_id, variant_id, quantity, unit_price, subtotal
-    ) values (
-      v_invoice_id,
-      (v_item->>'variant_id')::uuid,
-      (v_item->>'quantity')::int,
-      v_db_price,
-      v_item_subtotal
-    );
   end loop;
 
   -- 3. Price Tampering Integrity Verification
