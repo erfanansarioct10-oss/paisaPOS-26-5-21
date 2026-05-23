@@ -1,6 +1,19 @@
 # Memory
 > Last updated: 2026-05-23 07:55 NPT
 
+## Database RLS Caching Optimization & Foreign Key Indexing (2026-05-23)
+
+**Observation:** The database Row-Level Security (RLS) policies called custom functions (like `get_user_store_id()`) and auth checks (`auth.uid()`) directly, causing PostgreSQL to re-evaluate the function row-by-row on queries, degrading performance on large tables. Additionally, missing foreign key indexes on `users(store_id)`, `invoice_items(variant_id)`, and `audit_logs(store_id)` risked slow table scans.
+
+**Action:**
+- **RLS Query Optimization:** Rewrote all 9 RLS policies in [schema.sql](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/schema.sql#L283-L311) to wrap function evaluations in a `SELECT` statement (e.g. `(SELECT get_user_store_id())` and `(SELECT auth.uid())`) to enable planner-level caching and avoid per-row re-evaluation.
+- **Index Reinforcement:** Added indexes on foreign key columns used in joins and policies (`users.store_id`, `invoice_items.variant_id`, and `audit_logs.store_id`).
+- **Idempotent Migration:** Compiled these improvements into database migration [20260523074500_rls_optimizations_and_indexes.sql](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/supabase/migrations/20260523074500_rls_optimizations_and_indexes.sql).
+- **Agent Skills Sync:** Installed/Updated Supabase and Vercel Next.js best practice agent skills locally into [.\.agents\skills\](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/.agents/skills) for workspace compliance.
+- **Verification:** Validated that local production compilation (`npm run build`), test suite (`npm run test`), and linter (`npm run lint`) pass cleanly with 0 compilation and style warnings/failures.
+
+**Lesson:** Wrapping function calls in a `(SELECT ...)` subquery within RLS policy statements forces PostgreSQL to evaluate them once and reuse the value, protecting search execution speed. Keep all foreign keys referenced in policies indexed.
+
 ## Supabase Client Build-Time Prerendering Resolution (2026-05-23)
 
 **Observation:** During `npm run build`, Next.js attempts to statically prerender client pages (such as `/billing`). Because client pages transitively import the module-level Supabase client initialized in [supabase.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/supabase.ts), the module was evaluated in the build-time Node.js environment. Since `typeof window === "undefined"` was true, it triggered the fallback `createClient(supabaseUrl, supabaseAnonKey)` branch. Because the build environment lacked configured credentials, the client initialization crashed the compiler with `Error: supabaseKey is required`.
