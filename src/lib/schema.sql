@@ -281,33 +281,33 @@ $$ language sql stable security definer;
 
 -- 2. Core Tenant Isolation Policies
 create policy "Users can manage their own store record" on stores 
-  for all using (id = get_user_store_id());
+  for all using (id = (select get_user_store_id()));
 
 create policy "Users can manage their own user record" on users 
-  for all using (id = auth.uid());
+  for all using (id = (select auth.uid()));
 
 create policy "Users can manage products in their store" on products 
-  for all using (store_id = get_user_store_id());
+  for all using (store_id = (select get_user_store_id()));
 
 create policy "Users can manage product variants" on product_variants 
-  for all using (product_id in (select id from products where store_id = get_user_store_id()));
+  for all using (product_id in (select id from products where store_id = (select get_user_store_id())));
 
 create policy "Users can manage inventory" on inventory 
-  for all using (variant_id in (select id from product_variants where product_id in (select id from products where store_id = get_user_store_id())));
+  for all using (variant_id in (select id from product_variants where product_id in (select id from products where store_id = (select get_user_store_id()))));
 
 create policy "Users can manage invoices" on invoices 
-  for all using (store_id = get_user_store_id());
+  for all using (store_id = (select get_user_store_id()));
 
 create policy "Users can manage invoice items" on invoice_items 
-  for all using (invoice_id in (select id from invoices where store_id = get_user_store_id()));
+  for all using (invoice_id in (select id from invoices where store_id = (select get_user_store_id())));
 
 -- Audit logs are IMMUTABLE: users can read and insert, but never update or delete.
 -- This ensures a tamper-proof audit trail as required by SECURITY_SYSTEM.md.
 create policy "Users can read audit logs of their store" on audit_logs 
-  for select using (store_id = get_user_store_id());
+  for select using (store_id = (select get_user_store_id()));
 
 create policy "Users can insert audit logs for their store" on audit_logs 
-  for insert with check (store_id = get_user_store_id());
+  for insert with check (store_id = (select get_user_store_id()));
 
 -- =========================================================================
 -- ONBOARDING TRANSACTIONAL REGISTRATION RPC (P0 DEADLOCK REMEDIATION)
@@ -356,3 +356,8 @@ create index if not exists idx_product_variants_sku on product_variants(sku);
 create index if not exists idx_inventory_variant_id on inventory(variant_id);
 create index if not exists idx_invoices_store_created on invoices(store_id, created_at desc);
 create index if not exists idx_invoice_items_invoice_id on invoice_items(invoice_id);
+
+-- Extra indexes for foreign keys used in RLS policies and joins
+create index if not exists idx_users_store_id on users(store_id);
+create index if not exists idx_invoice_items_variant_id on invoice_items(variant_id);
+create index if not exists idx_audit_logs_store_id on audit_logs(store_id);
