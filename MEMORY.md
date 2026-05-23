@@ -1,5 +1,32 @@
 # Memory
-> Last updated: 2026-05-23 09:30 NPT
+> Last updated: 2026-05-23 11:30 NPT
+
+## Multi-Tenant Store-Scoped SKU & Database Trigger (2026-05-23)
+
+**Observation:** The global unique SKU constraint (`product_variants_sku_key`) prevented operators in different tenant stores from creating identical product SKUs, resulting in `500 (Internal Server Error)` database conflicts. Additionally, making the new `store_id` field `NOT NULL` in `product_variants` broke direct client-side insertions and unit test suites that omit `store_id` from their payloads.
+
+**Action:**
+- **Store-Scoped Composite SKU Key:** Dropped the global constraint and created a composite constraint `UNIQUE (store_id, sku)` to permit SKU duplication across different stores while maintaining strict inner-store uniqueness.
+- **Auto-Populating Database Trigger:** Created migration `20260523110000_add_product_variants_store_id_trigger.sql` establishing a `BEFORE INSERT` trigger function (`set_product_variant_store_id()`). It automatically resolves and populates `store_id` from the parent `products` table if omitted, preserving full backward compatibility.
+- **Graceful SKU Error Mapping:** Intercepted database constraint violations in `upsertProductAction` on the server before network transmission, mapping them to the clean string `"Failed to save product: A variant with this SKU already exists."`.
+- **Defensive Client Parsing:** Hardened `mapProductError` in `inventorySlice.ts` to defensively parse native `Error` instances, string fallbacks, and serialized network error objects (extracting nested `.message` and `.error` properties) to render modal alerts cleanly instead of breaking the browser layout.
+
+**Lesson:** Multi-tenant catalog systems should never enforce global SKU constraints; scoping keys composites with a tenant ID is the correct design. When retrofitting a required tenant ID column onto a child table, utilizing a `BEFORE INSERT` trigger to automatically look up and resolve it from parent records ensures zero disruption to existing client-side logic, API endpoints, or test coverage.
+
+---
+
+## Quick-Access Favorite Chips with Momentum Scroll (2026-05-23)
+
+**Observation:** Standard wrapping chips below the POS search bar become visually cluttered and block dynamic card rows on narrow mobile viewports, especially when catalog configurations have up to 200 favorite items.
+
+**Action:**
+- **Horizontal Momentum Scroll:** Engineered a single-row momentum scrollable layout (`overflow-x-auto whitespace-nowrap scrollbar-none`) next to a statically pinned, `shrink-0` `"Favorites"` badge anchor.
+- **Dynamic Glassmorphic Fades:** Created `canScrollLeft` and `canScrollRight` boundary states and attached a lightweight scroll/resize tracker. Added absolute-positioned gradient overlays (`bg-gradient-to-r` and `bg-gradient-to-l` from white/slate-950) that smoothly fade in/out (`transition-opacity duration-300`) to signal scrollable area boundaries.
+- **UX Modals Integration:** Placed the `errorMsg` strip directly inside both the `Quick Product Wizard` and `Edit Product` modal scrollable form wrappers to guarantee instant error visibility, and added a unified state effect to automatically clear active warnings when opening/closing product dialogs.
+
+**Lesson:** In dense mobile POS workspaces, list containers should scroll horizontally with pinned textual headers to maintain visual anchoring. Edge gradient overlays enhance responsiveness on low-end tablets, and modal dialog forms must encapsulate their own dynamic error states internally rather than relying on parent page indicators which get visually masked by overlays.
+
+---
 
 ## Ad-hoc Custom Cart Item (Fast Checkout) (2026-05-23)
 
