@@ -1,5 +1,21 @@
 # Memory
-> Last updated: 2026-05-23 11:30 NPT
+> Last updated: 2026-05-23 12:15 NPT
+
+## Production Deployment & Security/UX Hardening (2026-05-23)
+
+**Observation:** Prior to production launch, we resolved critical multi-tenant security vulnerabilities, mobile layout scrolling dead-ends, keyboard listener memory leaks, and compilation requirements.
+
+**Action:**
+- **PostgreSQL Policy Split:** Discovered that PostgreSQL `CREATE POLICY` syntax does not support comma-separated action qualifiers (such as `FOR SELECT, UPDATE`). Split the unified policy in `20260523120000_database_hardening.sql` into two distinct policies (`FOR SELECT` and `FOR UPDATE` respectively) to allow remote deployment via Supabase CLI.
+- **Android Viewport Collapse Rescue:** Replaced fixed `h-screen` container constraints with dynamic dynamic viewport height `h-dvh` combined with scrollable mobile viewports (`overflow-y-auto` while keeping desktop locked in `md:overflow-hidden`) in `layout.tsx`. This successfully prevents virtual keyboard collapses from pushing totals and the Checkout button off-screen.
+- **Auto-Focus and Memory Leak Patches:** Restricted search programmatic auto-focus in `billing-tab.tsx` to physical pointers (`pointer: fine`) so that mobile touch screen keyboards are not programmatically popped. Refactored the `keydown` listener to fetch Zustand store values on-the-fly (`useAppStore.getState()`), allowing an empty dependency array (`[]`) to completely halt event listener teardown cycles on every cart change.
+- **44px Touch Target Expansion:** Expanded vertical paddings and heights on quick theme toggles, hamburger menus, theme segmented options, customer/discount inputs, cart deletions, and pagination controls to a minimum height of `h-11` (44px) to fit coarse Android tablet targets.
+- **Clean Compiler Checkouts:** Successfully verified 100% linter completeness (`npm run lint` returned 0 errors) and Turbopack compiler generation (`npm run build` compiled all routes statically).
+- **Production Pipeline Execution:** Successfully applied the database security hardening migration remote (`supabase db push`) and merged features/hardening changes into the production `main` branch, pushing it to `origin main` to trigger automatic Vercel builds on the linked production project `paisa-pos-26-5-21`.
+
+**Lesson:** Always test migrations against the remote production PostgreSQL engine before final commit, as syntax like multi-action policies may fail despite passing local mock tests. Mobile POS layouts must prioritize dynamic viewports (`h-dvh`) and scrollable containers to survive virtual keyboard expansions.
+
+---
 
 ## Multi-Tenant Store-Scoped SKU & Database Trigger (2026-05-23)
 
