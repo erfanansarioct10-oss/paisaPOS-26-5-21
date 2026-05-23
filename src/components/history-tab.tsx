@@ -343,7 +343,7 @@ export default function HistoryTab() {
                     </div>
                   </div>
                   <div className="pt-1">
-                    <button onClick={() => handleReprint(inv)} className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold border border-border hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground transition-all h-10">
+                    <button onClick={() => handleReprint(inv)} className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold border border-border hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground transition-all h-11">
                       <Eye className="w-4 h-4" />
                       <span>View & Reprint Receipt</span>
                     </button>
@@ -362,7 +362,7 @@ export default function HistoryTab() {
                   <button
                     onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                     disabled={safePage <= 1}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold border border-border rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-all disabled:opacity-30 disabled:pointer-events-none h-9"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold border border-border rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-all disabled:opacity-30 disabled:pointer-events-none h-11"
                   >
                     <ChevronLeft className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Previous</span>
@@ -373,7 +373,7 @@ export default function HistoryTab() {
                   <button
                     onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                     disabled={safePage >= totalPages}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold border border-border rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-all disabled:opacity-30 disabled:pointer-events-none h-9"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold border border-border rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-all disabled:opacity-30 disabled:pointer-events-none h-11"
                   >
                     <span className="hidden sm:inline">Next</span>
                     <ChevronRight className="w-3.5 h-3.5" />

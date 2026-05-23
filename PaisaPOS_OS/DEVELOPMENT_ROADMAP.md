@@ -298,6 +298,8 @@ Planned for incremental rollout:
 2. **[COMPLETED] Ad-hoc Custom Cart Item (Fast Checkout)**: Quick input in POS billing cart sidebar to add custom item names/pricing (e.g., custom alterations, unlisted stock) without leaving the billing workflow. (Implemented and verified May 2026)
 3. **[COMPLETED] Inline Stock Bumpers**: Tactical `+` and `-` clickers next to quantities in the main Inventory variant list view to perform instant quantity updates. (Implemented and verified May 2026)
 4. **[COMPLETED] Quick-Access Favorite Chips**: Tap-friendly shortcut chips below the billing search bar for high-frequency items (bags, gift wraps, top-selling seasonal variants) with horizontal momentum scroll and dynamic fades for 1-tap addition. (Implemented and verified May 2026)
+5. **Role-Based UI Isolation (Access Control)**: Configure cashier-level visual blocks and administrative guards directly inside the frontend UI (leveraging the newly deployed database-level `users.role` cashier/owner columns).
+6. **Bulk Catalog Importer (Onboarding Acceleration)**: Create a lightweight CSV/Excel catalog parser to help boutique owners bulk-upload their product listings and initial variant stock in seconds during pilot onboarding.
 
 Only after:
 - strong MVP validation

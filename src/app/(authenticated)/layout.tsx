@@ -91,7 +91,7 @@ export default function AuthenticatedLayout({
   const isBillingRoute = pathname === "/billing";
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-background overflow-hidden relative">
+    <div className="flex flex-col md:flex-row h-dvh bg-background md:overflow-hidden overflow-y-auto relative">
       {/* 1. NAVIGATION DRAWER SIDEBAR */}
       <Sidebar />
 
@@ -106,7 +106,7 @@ export default function AuthenticatedLayout({
         )}
 
         <div className={`flex-1 flex flex-col min-h-0 ${
-          isBillingRoute ? "overflow-hidden" : "overflow-y-auto"
+          isBillingRoute ? "md:overflow-hidden overflow-y-auto" : "overflow-y-auto"
         } px-4 py-5 sm:p-6 lg:p-8`}>
           <ErrorBoundary fallbackName="Workspace Panel">
             {children}
