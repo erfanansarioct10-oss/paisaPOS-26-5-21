@@ -73,6 +73,32 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
       }
     }
   },
+  addCustomToCart: (name: string, price: number) => {
+    const { cart } = get();
+    const existing = cart.find(item => item.is_custom && item.name === name && item.price === price);
+    if (existing) {
+      set({
+        cart: cart.map(item =>
+          item.variant_id === existing.variant_id ? { ...item, quantity: item.quantity + 1 } : item
+        ),
+      });
+    } else {
+      const customId = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const newItem: CartItem = {
+        variant_id: customId,
+        product_id: "custom",
+        name,
+        size: "-",
+        color: "-",
+        sku: "CUSTOM",
+        price,
+        quantity: 1,
+        availableStock: 9999,
+        is_custom: true,
+      };
+      set({ cart: [...cart, newItem] });
+    }
+  },
 
   removeFromCart: (variantId: string) => {
     const { cart } = get();
@@ -168,7 +194,8 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
 
       // Real Supabase checkout via Server Action (MEDIUM-09, MEDIUM-20)
       const itemsPayload = cart.map(item => ({
-        variant_id: item.variant_id,
+        variant_id: item.is_custom ? null : item.variant_id,
+        custom_name: item.is_custom ? item.name : null,
         quantity: item.quantity,
         unit_price: item.price,
         subtotal: item.quantity * item.price,
@@ -190,6 +217,14 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
 
       // Map dynamic receipt fields
       const receiptItems: InvoiceItem[] = (dbItems || []).map((item: InvoiceItem) => {
+        if (!item.variant_id) {
+          return {
+            ...item,
+            product_name: item.custom_name ?? "Custom Item",
+            size: "-",
+            color: "-",
+          };
+        }
         const v = variants.find(vr => vr.id === item.variant_id);
         const p = products.find(pr => pr.id === v?.product_id);
         return {

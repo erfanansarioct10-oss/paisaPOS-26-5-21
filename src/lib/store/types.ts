@@ -55,6 +55,7 @@ export interface CartItem {
   price: number;
   quantity: number;
   availableStock: number;
+  is_custom?: boolean;
 }
 
 export interface Invoice {
@@ -73,7 +74,7 @@ export interface Invoice {
 export interface InvoiceItem {
   id: string;
   invoice_id: string;
-  variant_id: string;
+  variant_id: string | null;
   quantity: number;
   unit_price: number;
   subtotal: number;
@@ -81,6 +82,7 @@ export interface InvoiceItem {
   product_name?: string;
   size?: string;
   color?: string;
+  custom_name?: string | null;
 }
 
 // =========================================================================
@@ -157,6 +159,7 @@ export interface AppState {
 
   // Billing POS Cart Actions
   addToCart: (variantId: string) => void;
+  addCustomToCart: (name: string, price: number) => void;
   removeFromCart: (variantId: string) => void;
   updateCartQuantity: (variantId: string, quantity: number) => void;
   clearCart: () => void;

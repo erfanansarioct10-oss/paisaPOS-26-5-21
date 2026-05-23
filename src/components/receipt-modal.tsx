@@ -130,9 +130,15 @@ export default function ReceiptModal() {
                         <p className="font-medium text-slate-800 leading-tight">
                           {item.product_name || "Jeans"}
                         </p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">
-                          Size: {item.size || "-"} | Color: {item.color || "-"}
-                        </p>
+                        {!item.variant_id ? (
+                          <p className="text-[9px] text-amber-600 font-semibold mt-0.5">
+                            Ad-hoc Custom Item
+                          </p>
+                        ) : (
+                          <p className="text-[10px] text-slate-500 mt-0.5">
+                            Size: {item.size || "-"} | Color: {item.color || "-"}
+                          </p>
+                        )}
                       </td>
                       <td className="py-2.5 text-center text-slate-600">{item.quantity}</td>
                       <td className="py-2.5 text-right text-slate-600">

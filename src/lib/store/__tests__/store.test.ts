@@ -112,6 +112,7 @@ vi.mock("@/app/actions", () => {
 
       // Check stock
       for (const item of params.items) {
+        if (!item.variant_id) continue;
         const variant = state.variants.find((v: any) => v.id === item.variant_id);
         if (!variant || (variant.stock ?? 0) < item.quantity) {
           throw new Error(`Insufficient stock for SKU ${variant?.sku || "unknown"}. Available: ${variant?.stock ?? 0}, Requested: ${item.quantity}`);
@@ -150,6 +151,7 @@ vi.mock("@/app/actions", () => {
         id: `item-${Math.random().toString(36).substr(2, 9)}`,
         invoice_id: invoiceId,
         variant_id: item.variant_id,
+        custom_name: item.custom_name || null,
         quantity: item.quantity,
         unit_price: item.unit_price,
         subtotal: item.subtotal,
@@ -400,6 +402,24 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
       finalTotal = Math.max(0, subtotal - store.getState().cartDiscount);
       expect(finalTotal).toBe(0);
     });
+
+    test("should successfully add custom item to cart and increment quantity if duplicate custom item is added", () => {
+      store.getState().addCustomToCart("Hemming Fee", 150);
+      expect(store.getState().cart.length).toBe(1);
+      expect(store.getState().cart[0].name).toBe("Hemming Fee");
+      expect(store.getState().cart[0].price).toBe(150);
+      expect(store.getState().cart[0].is_custom).toBe(true);
+      expect(store.getState().cart[0].variant_id).toContain("custom-");
+
+      // Add duplicate custom item with same name and price
+      store.getState().addCustomToCart("Hemming Fee", 150);
+      expect(store.getState().cart.length).toBe(1); // Same row
+      expect(store.getState().cart[0].quantity).toBe(2);
+
+      // Add another custom item with different name or price
+      store.getState().addCustomToCart("Gift Box", 50);
+      expect(store.getState().cart.length).toBe(2);
+    });
   });
 
   // =========================================================================
@@ -485,6 +505,37 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
 
       // 3. Cart must NOT be cleared, letting the retailer see and resolve the issue
       expect(store.getState().cart.length).toBe(2);
+    });
+
+    test("should process checkout with custom items, passing null variant_id and custom_name, and fallback in receipt", async () => {
+      store.getState().addCustomToCart("Custom Tailoring", 1200);
+      store.getState().addToCart("var-1-m"); // Regular item (Qty: 1, Stock: 5)
+      
+      expect(store.getState().cart.length).toBe(2);
+      
+      const success = await store.getState().checkout();
+      expect(success).toBe(true);
+      
+      // Stock of regular item should decrease
+      expect(store.getState().variants.find(v => v.id === "var-1-m")?.stock).toBe(4);
+      
+      // Invoice should be recorded
+      expect(store.getState().invoices.length).toBe(1);
+      
+      // Active invoice items should map custom item correctly
+      const activeItems = store.getState().activeInvoiceItems;
+      expect(activeItems?.length).toBe(2);
+      
+      const customReceiptItem = activeItems?.find(item => !item.variant_id);
+      expect(customReceiptItem).toBeDefined();
+      expect(customReceiptItem?.product_name).toBe("Custom Tailoring");
+      expect(customReceiptItem?.quantity).toBe(1);
+      expect(customReceiptItem?.unit_price).toBe(1200);
+      expect(customReceiptItem?.subtotal).toBe(1200);
+      
+      const regularReceiptItem = activeItems?.find(item => item.variant_id === "var-1-m");
+      expect(regularReceiptItem).toBeDefined();
+      expect(regularReceiptItem?.product_name).toBe("Oversized Heavyweight Hoodie");
     });
   });
 

@@ -81,6 +81,14 @@ export default function DashboardTab() {
     
     // If empty (e.g. freshly fetched from DB), attempt to construct from state variants
     const filledItems = items.map(item => {
+      if (!item.variant_id) {
+        return {
+          ...item,
+          product_name: item.custom_name ?? "Custom Item",
+          size: "-",
+          color: "-",
+        };
+      }
       const v = variants.find(vr => vr.id === item.variant_id);
       const p = products.find(pr => pr.id === v?.product_id);
       return {

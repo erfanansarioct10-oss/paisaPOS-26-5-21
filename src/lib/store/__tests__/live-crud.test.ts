@@ -170,6 +170,13 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
         unit_price: 2450.00,
         subtotal: 9800.00,
       },
+      {
+        variant_id: null,
+        custom_name: "Premium Gift Wrap",
+        quantity: 2,
+        unit_price: 150.00,
+        subtotal: 300.00,
+      },
     ];
 
     const { data: invoiceId, error: checkoutError } = await supabase.rpc("create_invoice_and_deduct_stock", {
@@ -177,9 +184,9 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
       p_invoice_number: "INV-PRE-GENERATED", // Overwritten dynamically by the RPC sequencer
       p_customer_name: "John Doe Nepal",
       p_customer_phone: "9851000000",
-      p_total_amount: 9800.00,
+      p_total_amount: 10100.00,
       p_discount_amount: 0.00,
-      p_paid_amount: 9800.00,
+      p_paid_amount: 10100.00,
       p_payment_method: "Fonepay",
       p_items: items,
     });
@@ -207,12 +214,21 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
 
     expect(readInvoiceError).toBeNull();
     expect(checkInvoice.customer_name).toBe("John Doe Nepal");
-    expect(checkInvoice.total_amount).toBe(9800.00);
+    expect(checkInvoice.total_amount).toBe(10100.00);
     // Invoice number should follow sequential format: e.g. INV-YYYY-0001
     const currentYear = new Date().getFullYear().toString();
     expect(checkInvoice.invoice_number).toBe(`INV-${currentYear}-0001`);
-    expect(checkInvoice.invoice_items.length).toBe(1);
-    expect(checkInvoice.invoice_items[0].quantity).toBe(4);
+    expect(checkInvoice.invoice_items.length).toBe(2);
+
+    const regularItem = checkInvoice.invoice_items.find((i: { variant_id: string | null; quantity: number; custom_name: string | null }) => i.variant_id === variant.id);
+    expect(regularItem).toBeDefined();
+    expect(regularItem.quantity).toBe(4);
+    expect(regularItem.custom_name).toBeNull();
+
+    const customItem = checkInvoice.invoice_items.find((i: { variant_id: string | null; quantity: number; custom_name: string | null }) => i.variant_id === null);
+    expect(customItem).toBeDefined();
+    expect(customItem.quantity).toBe(2);
+    expect(customItem.custom_name).toBe("Premium Gift Wrap");
 
     // 13.5. Verify check constraint on payment method: only Cash, eSewa, Khalti, Fonepay are allowed
     console.log("[QA] Testing payment method check constraint with invalid method 'Visa'...");

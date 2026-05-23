@@ -15,6 +15,7 @@ import {
   Percent,
   Keyboard,
   Plus,
+  X,
 } from "lucide-react";
 
 export default function BillingTab() {
@@ -30,6 +31,7 @@ export default function BillingTab() {
     isLoading,
     errorMsg,
     addToCart,
+    addCustomToCart,
     removeFromCart,
     updateCartQuantity,
     setCartDiscount,
@@ -40,6 +42,11 @@ export default function BillingTab() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  
+  // Custom ad-hoc item input state
+  const [isCustomOpen, setIsCustomOpen] = useState(false);
+  const [customName, setCustomName] = useState("");
+  const [customPrice, setCustomPrice] = useState("");
   
   // Mobile responsiveness tab switcher state
   const [activeSubTab, setActiveSubTab] = useState<"products" | "cart">("products");
@@ -358,9 +365,19 @@ export default function BillingTab() {
             <ShoppingCart className="w-4 h-4 text-primary" />
             <h3 className="font-semibold text-foreground">Billing Cart</h3>
           </div>
-          <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-bold border border-primary/10">
-            {totalItemsCount} Item{totalItemsCount !== 1 ? "s" : ""}
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsCustomOpen(true)}
+              className="text-[10px] sm:text-[11px] font-bold px-2 py-1 sm:px-2.5 sm:py-1.5 border border-border bg-card text-muted-foreground hover:text-foreground rounded-lg transition-all flex items-center gap-1 shadow-sm"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Custom</span>
+            </button>
+            <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-bold border border-primary/10">
+              {totalItemsCount} Item{totalItemsCount !== 1 ? "s" : ""}
+            </span>
+          </div>
         </div>
 
         {/* Dynamic Cart Ledger Items */}
@@ -378,9 +395,15 @@ export default function BillingTab() {
               <div key={item.variant_id} className="pt-3 first:pt-0 flex items-start justify-between gap-3 text-xs leading-normal">
                 <div className="flex flex-col min-w-0">
                   <span className="font-bold text-foreground truncate">{item.name}</span>
-                  <span className="text-[10px] text-muted-foreground mt-0.5 font-mono">
-                    SKU: {item.sku} (Size {item.size} / {item.color})
-                  </span>
+                  {item.is_custom ? (
+                    <span className="text-[10px] text-amber-500 font-semibold mt-0.5">
+                      Ad-hoc Custom Item
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground mt-0.5 font-mono">
+                      SKU: {item.sku} (Size {item.size} / {item.color})
+                    </span>
+                  )}
                   <span className="text-[10px] text-primary font-bold mt-1">
                     Rs. {item.price.toLocaleString()} each
                   </span>
@@ -549,6 +572,90 @@ export default function BillingTab() {
 
     </div>
 
-  </div>
+      {/* ADD CUSTOM ITEM DIALOG */}
+      {isCustomOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+          <div className="bg-card border border-border rounded-xl w-full max-w-md flex flex-col shadow-lg overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-muted/20">
+              <h3 className="font-bold text-sm text-foreground">Add Custom Cart Item</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCustomOpen(false);
+                  setCustomName("");
+                  setCustomPrice("");
+                }}
+                className="text-muted-foreground hover:text-foreground p-1 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {/* Form Body */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!customName || !customPrice) return;
+                addCustomToCart(customName, Number(customPrice));
+                setIsCustomOpen(false);
+                setCustomName("");
+                setCustomPrice("");
+              }}
+              className="p-5 space-y-4"
+            >
+              <div>
+                <label className="block text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                  Item Name / Description
+                </label>
+                <input
+                  type="text"
+                  required
+                  maxLength={100}
+                  placeholder="e.g. Hemming/Alteration, Gift Wrap"
+                  value={customName}
+                  onChange={(e) => setCustomName(e.target.value)}
+                  className="block w-full px-3 h-10 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none focus:border-primary text-slate-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                  Price (NPR)
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={0}
+                  placeholder="e.g. 150"
+                  value={customPrice}
+                  onChange={(e) => setCustomPrice(e.target.value)}
+                  className="block w-full px-3 h-10 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none focus:border-primary text-slate-900 dark:text-white font-bold"
+                />
+              </div>
+              {/* Footer Buttons */}
+              <div className="flex gap-3 pt-3 border-t border-border/40">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomOpen(false);
+                    setCustomName("");
+                    setCustomPrice("");
+                  }}
+                  className="flex-1 h-10 border border-border rounded-lg text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 h-10 bg-primary text-primary-foreground text-xs font-semibold rounded-lg hover:opacity-95 shadow transition-all"
+                >
+                  Add to Cart
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
   );
 }

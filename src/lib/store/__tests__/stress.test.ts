@@ -111,6 +111,7 @@ vi.mock("@/app/actions", () => {
 
       // Check stock
       for (const item of params.items) {
+        if (!item.variant_id) continue;
         const variant = state.variants.find((v: any) => v.id === item.variant_id);
         if (!variant || (variant.stock ?? 0) < item.quantity) {
           throw new Error(`Insufficient stock for SKU ${variant?.sku || "unknown"}. Available: ${variant?.stock ?? 0}, Requested: ${item.quantity}`);
@@ -149,6 +150,7 @@ vi.mock("@/app/actions", () => {
         id: `item-${Math.random().toString(36).substr(2, 9)}`,
         invoice_id: invoiceId,
         variant_id: item.variant_id,
+        custom_name: item.custom_name || null,
         quantity: item.quantity,
         unit_price: item.unit_price,
         subtotal: item.subtotal,
@@ -506,5 +508,77 @@ describe("PaisaPOS — Master Concurrency, Performance, & Security Stress Tests"
     // Both failed, and all requests are finished. UI should correctly rollback to the original base value (20)!
     expect(store.getState().variants.find(v => v.id === variant.id)!.stock).toBe(20);
     expect(store.getState().pendingStockRequests[variant.id]).toBeUndefined();
+  });
+
+  // =========================================================================
+  // 6. CONCURRENT MIXED CHECKOUT STRESS TEST (CUSTOM & REGULAR ITEMS)
+  // =========================================================================
+  test("Stress Test 6: Concurrent Checkout of Mixed Custom & Regular Items (250 Sales)", async () => {
+    // Seed high stock standard product
+    await store.getState().addProduct("Standard Polo", "Tops", 5, [
+      { size: "M", color: "Black", sku: "POLO-BLK-M", price: 1800, stock: 1000 }
+    ]);
+    const targetVariant = store.getState().variants.find(v => v.sku === "POLO-BLK-M")!;
+
+    const tStart = performance.now();
+    const runs = 250;
+    let successfulSales = 0;
+
+    for (let c = 1; c <= runs; c++) {
+      // 1. Add white polo to cart
+      store.getState().addToCart(targetVariant.id);
+      
+      // 2. Add custom tailor charge
+      store.getState().addCustomToCart("Hemming Charge", 200);
+
+      // 3. Add custom gift wrap charge
+      store.getState().addCustomToCart("Gift Box Premium", 100);
+
+      // Verify cart has 3 items
+      expect(store.getState().cart.length).toBe(3);
+
+      // Checkout
+      const ok = await store.getState().checkout();
+      if (ok) {
+        successfulSales++;
+      }
+    }
+
+    const tEnd = performance.now();
+    const duration = tEnd - tStart;
+    expect(duration).toBeGreaterThanOrEqual(0);
+
+    // Verify all checkouts completed successfully
+    expect(successfulSales).toBe(250);
+
+    // Verify stock of regular item decreased to 750 (1000 - 250)
+    const finalVariant = store.getState().variants.find(v => v.sku === "POLO-BLK-M")!;
+    expect(finalVariant.stock).toBe(750);
+
+    // Verify invoices list size
+    const invoices = store.getState().invoices;
+    expect(invoices.length).toBe(250);
+
+    // Verify the latest active receipt items mapped custom items cleanly
+    const receiptItems = store.getState().activeInvoiceItems;
+    expect(receiptItems?.length).toBe(3);
+
+    const hemming = receiptItems?.find(item => item.product_name === "Hemming Charge");
+    expect(hemming).toBeDefined();
+    expect(hemming?.variant_id).toBeNull();
+    expect(hemming?.unit_price).toBe(200);
+    expect(hemming?.quantity).toBe(1);
+
+    const giftBox = receiptItems?.find(item => item.product_name === "Gift Box Premium");
+    expect(giftBox).toBeDefined();
+    expect(giftBox?.variant_id).toBeNull();
+    expect(giftBox?.unit_price).toBe(100);
+    expect(giftBox?.quantity).toBe(1);
+
+    const polo = receiptItems?.find(item => item.variant_id === targetVariant.id);
+    expect(polo).toBeDefined();
+    expect(polo?.product_name).toBe("Standard Polo");
+    expect(polo?.unit_price).toBe(1800);
+    expect(polo?.quantity).toBe(1);
   });
 });
