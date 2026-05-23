@@ -24,6 +24,7 @@ export interface Product {
   category: string;
   image_url: string | null;
   low_stock_threshold: number;
+  is_favorite: boolean;
   created_at?: string;
 }
 
@@ -121,6 +122,11 @@ export interface AppState {
   pendingStockRequests: Record<string, number>;
   originalStockLevels: Record<string, number>;
 
+  // In-flight concurrency tracking for favorite updates
+  pendingFavoriteUpdates: Record<string, boolean>;
+  pendingFavoriteRequests: Record<string, number>;
+  originalFavoriteLevels: Record<string, boolean>;
+
 
   // ACTIONS
   setTab: (tab: "dashboard" | "billing" | "inventory" | "history" | "settings") => void;
@@ -156,6 +162,7 @@ export interface AppState {
     deletedVariantIds: string[]
   ) => Promise<boolean>;
   updateStockDirect: (variantId: string, newStock: number) => Promise<boolean>;
+  toggleProductFavorite: (productId: string, isFavorite: boolean) => Promise<boolean>;
 
   // Billing POS Cart Actions
   addToCart: (variantId: string) => void;

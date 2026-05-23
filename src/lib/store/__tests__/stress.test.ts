@@ -6,6 +6,7 @@ import { createAuthSlice } from "../authSlice";
 import { createInventorySlice } from "../inventorySlice";
 import { createCartSlice } from "../cartSlice";
 import { adjustStockAction } from "@/app/actions";
+import * as actions from "@/app/actions";
 
 let currentStore: any = null;
 
@@ -165,6 +166,17 @@ vi.mock("@/app/actions", () => {
         ...newInvoice,
         invoice_items: newInvoiceItems,
       };
+    }),
+
+    toggleProductFavoriteAction: vi.fn(async (productId, isFavorite) => {
+      if (!currentStore) throw new Error("No active store");
+      const state = currentStore.getState();
+      currentStore.setState({
+        products: state.products.map((p: any) =>
+          p.id === productId ? { ...p, is_favorite: isFavorite } : p
+        ),
+      });
+      return true;
     }),
   };
 });
@@ -580,5 +592,102 @@ describe("PaisaPOS — Master Concurrency, Performance, & Security Stress Tests"
     expect(polo?.product_name).toBe("Standard Polo");
     expect(polo?.unit_price).toBe(1800);
     expect(polo?.quantity).toBe(1);
+  });
+
+  // =========================================================================
+  // 7. FAVORITES CONCURRENCY, SCALING, & RESILIENCE TESTS
+  // =========================================================================
+  describe("Product Favorites Concurrency, Scaling, & Resilience", () => {
+    test("Stress Test 7: Concurrent Toggling Concurrency Race", async () => {
+      await store.getState().addProduct("Stress Test Hoodie", "Tops", 5, [
+        { size: "M", color: "Black", sku: "STRESS-HOOD-M", price: 2000, stock: 10 }
+      ]);
+      const product = store.getState().products.find(p => p.name === "Stress Test Hoodie")!;
+      expect(product.is_favorite).toBeFalsy();
+
+      const resolvers: Array<(ok: boolean) => void> = [];
+      const mockToggleAction = vi.fn().mockImplementation((prodId, isFav) => {
+        return new Promise<boolean>((resolve, reject) => {
+          resolvers.push((ok: boolean) => {
+            if (ok) {
+              const prods = store.getState().products.map(p =>
+                p.id === prodId ? { ...p, is_favorite: isFav } : p
+              );
+              store.setState({ products: prods });
+              resolve(true);
+            } else {
+              reject(new Error("Database error"));
+            }
+          });
+        });
+      });
+
+      vi.spyOn(actions, "toggleProductFavoriteAction").mockImplementation(mockToggleAction);
+
+      const promises: Array<Promise<boolean>> = [];
+      for (let i = 1; i <= 100; i++) {
+        const targetFav = i % 2 === 1; // Alternates: true, false, true, false...
+        promises.push(store.getState().toggleProductFavorite(product.id, targetFav));
+      }
+
+      expect(store.getState().products.find(p => p.id === product.id)!.is_favorite).toBe(false);
+
+      resolvers.forEach((r) => r(true));
+      await Promise.all(promises);
+
+      expect(store.getState().products.find(p => p.id === product.id)!.is_favorite).toBe(false);
+      expect(store.getState().errorMsg).toBeNull();
+    });
+
+    test("Stress Test 8: Bulk Favorites Filtering & SLA Benchmark (500 Products)", async () => {
+      const seedProducts: any[] = [];
+      for (let i = 1; i <= 500; i++) {
+        seedProducts.push({
+          id: `stress-fav-p-${i}`,
+          store_id: "stress-store-id",
+          name: `Stress Product ${i}`,
+          category: "Accessories",
+          image_url: null,
+          low_stock_threshold: 5,
+          is_favorite: i % 2 === 0,
+          created_at: new Date().toISOString(),
+        });
+      }
+
+      store.setState({ products: seedProducts });
+
+      const tFilterStart = performance.now();
+      
+      let count = 0;
+      for (let k = 1; k <= 1000; k++) {
+        const favs = store.getState().products.filter((p) => p.is_favorite);
+        count = favs.length;
+      }
+
+      const tFilterEnd = performance.now();
+      const filterDuration = tFilterEnd - tFilterStart;
+      const avgFilterLatency = filterDuration / 1000;
+
+      expect(count).toBe(250);
+      expect(avgFilterLatency).toBeLessThan(0.1);
+    });
+
+    test("Stress Test 9: Offline Transitions & Automatic UI Rollbacks", async () => {
+      await store.getState().addProduct("Offline Product", "Tops", 5, [
+        { size: "S", color: "Red", sku: "OFF-RED-S", price: 1000, stock: 10 }
+      ]);
+      const product = store.getState().products.find(p => p.name === "Offline Product")!;
+      expect(product.is_favorite).toBeFalsy();
+      // Go offline
+      vi.stubGlobal("navigator", { onLine: false });
+
+      const res = await store.getState().toggleProductFavorite(product.id, true);
+      expect(res).toBe(false);
+
+      expect(store.getState().products.find(p => p.id === product.id)!.is_favorite).toBeFalsy();
+      expect(store.getState().errorMsg).toContain("Internet connection is offline");
+
+      vi.unstubAllGlobals();
+    });
   });
 });

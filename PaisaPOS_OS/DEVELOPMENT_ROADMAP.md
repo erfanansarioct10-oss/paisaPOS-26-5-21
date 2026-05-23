@@ -2,7 +2,7 @@
 
 Version: 1.0  
 Status: Active  
-Last Updated: 2026-05-21
+Last Updated: 2026-05-23
 
 ---
 
@@ -59,9 +59,8 @@ The roadmap is divided into:
 
 ```text
 Phase 1 → Core MVP
-Phase 2 → Pilot Validation
-Phase 3 → Operational Expansion
-Phase 4 → Scale Preparation
+Phase 2 → Operational Expansion
+Phase 3 → Scale Preparation
 ```
 
 ---
@@ -271,84 +270,7 @@ Do NOT build during MVP:
 
 ---
 
-# 12. PHASE 2 — PILOT VALIDATION
-
-Status:
-```text
-PLANNED
-```
-
-Goal:
-Validate PaisaPOS with real Nepali stores.
-
----
-
-# 13. PHASE 2 OBJECTIVES
-
-Observe:
-- operational friction
-- onboarding pain
-- billing speed
-- inventory behavior
-- store usage patterns
-
----
-
-# 14. PHASE 2 — PILOT TASKS
-
-## Onboard Pilot Stores
-
-Target:
-```text
-3–10 stores
-```
-
----
-
-## Observe Daily Operations
-
-Track:
-- billing speed
-- search issues
-- stock confusion
-- usability friction
-
----
-
-## Gather Real Feedback
-
-Focus on:
-- workflow pain
-- onboarding confusion
-- missing operational functionality
-
-NOT feature wishlist inflation.
-
----
-
-# 15. PHASE 2 — OPTIMIZATION PRIORITIES
-
-Likely improvements:
-- faster search UX
-- better inventory editing
-- onboarding simplification
-- mobile refinement
-
----
-
-# 16. PHASE 2 — BUG PRIORITIES
-
-Critical bugs:
-- inventory inconsistency
-- duplicate invoices
-- stock mismatch
-- checkout failures
-
-Must be fixed immediately.
-
----
-
-# 17. PHASE 3 — OPERATIONAL EXPANSION
+# 12. PHASE 2 — OPERATIONAL EXPANSION
 
 Status:
 ```text
@@ -360,7 +282,7 @@ Expand operational capabilities carefully.
 
 ---
 
-# 18. PHASE 3 — POSSIBLE FEATURES
+# 13. PHASE 2 — POSSIBLE FEATURES
 
 Potential additions:
 - barcode scanning
@@ -371,20 +293,20 @@ Potential additions:
 - advanced reporting
 
 ### High-Priority Operational Micro-Features
-Planned for incremental rollout during/after the pilot validation phase:
+Planned for incremental rollout:
 1. **WhatsApp/Viber Restock Draft (Quick Supplier Orders)**: Formats and copies a plain-text restock order list of low-stock items directly to clipboard for fast messaging to Kathmandu wholesalers.
-2. **Ad-hoc Custom Cart Item (Fast Checkout)**: Quick input in POS billing cart sidebar to add custom item names/pricing (e.g., custom alterations, unlisted stock) without leaving the billing workflow.
-3. **Quick-Access Favorite Chips**: Tap-friendly shortcut chips below the billing search bar for high-frequency items (bags, gift wraps, top-selling seasonal variants) for 1-tap addition.
-4. **Inline Stock Bumpers**: Tactical `+` and `-` clickers next to quantities in the main Inventory variant list view to perform instant quantity updates.
+2. **[COMPLETED] Ad-hoc Custom Cart Item (Fast Checkout)**: Quick input in POS billing cart sidebar to add custom item names/pricing (e.g., custom alterations, unlisted stock) without leaving the billing workflow. (Implemented and verified May 2026)
+3. **[COMPLETED] Inline Stock Bumpers**: Tactical `+` and `-` clickers next to quantities in the main Inventory variant list view to perform instant quantity updates. (Implemented and verified May 2026)
+4. **Quick-Access Favorite Chips**: Tap-friendly shortcut chips below the billing search bar for high-frequency items (bags, gift wraps, top-selling seasonal variants) for 1-tap addition.
 
 Only after:
-- strong pilot validation
+- strong MVP validation
 - stable operations
 - clear demand
 
 ---
 
-# 19. PHASE 3 — OFFLINE MODE
+# 14. PHASE 2 — OFFLINE MODE
 
 Potential future feature:
 - temporary offline billing
@@ -397,7 +319,7 @@ Do NOT implement prematurely.
 
 ---
 
-# 20. PHASE 3 — ANALYTICS
+# 15. PHASE 2 — ANALYTICS
 
 Potential additions:
 - sales trends
@@ -410,7 +332,7 @@ Avoid:
 
 ---
 
-# 21. PHASE 4 — SCALE PREPARATION
+# 16. PHASE 3 — SCALE PREPARATION
 
 Status:
 ```text
@@ -422,7 +344,7 @@ Prepare for larger SaaS operations.
 
 ---
 
-# 22. PHASE 4 — POSSIBLE EXPANSIONS
+# 17. PHASE 3 — POSSIBLE EXPANSIONS
 
 Potential future areas:
 - multi-branch support
@@ -436,7 +358,7 @@ real usage demands them.
 
 ---
 
-# 23. ROADMAP PRIORITIZATION RULES
+# 18. ROADMAP PRIORITIZATION RULES
 
 When prioritizing features ask:
 
@@ -453,7 +375,7 @@ deprioritize heavily.
 
 ---
 
-# 24. FEATURE EVALUATION FRAMEWORK
+# 19. FEATURE EVALUATION FRAMEWORK
 
 Every proposed feature should be evaluated on:
 
@@ -477,7 +399,7 @@ Could it reduce operational trust?
 
 ---
 
-# 25. ROADMAP ANTI-GOALS
+# 20. ROADMAP ANTI-GOALS
 
 Avoid becoming:
 - ERP software
@@ -487,7 +409,7 @@ Avoid becoming:
 
 ---
 
-# 26. AI AGENT ROADMAP RULES
+# 21. AI AGENT ROADMAP RULES
 
 All AI agents MUST:
 - respect roadmap priorities
@@ -497,7 +419,7 @@ All AI agents MUST:
 
 ---
 
-# 27. RELEASE STRATEGY
+# 22. RELEASE STRATEGY
 
 ## Release Philosophy
 
@@ -525,7 +447,7 @@ Assume → Overbuild → Complicate
 
 ---
 
-# 28. TECHNICAL DEBT STRATEGY
+# 23. TECHNICAL DEBT STRATEGY
 
 Accept small technical debt if:
 - it speeds validation safely
@@ -537,7 +459,7 @@ But avoid:
 
 ---
 
-# 29. LONG-TERM PRODUCT VISION
+# 24. LONG-TERM PRODUCT VISION
 
 Long-term goal:
 Become the default lightweight retail operating system for Nepali fashion stores.
@@ -552,7 +474,7 @@ NOT feature quantity.
 
 ---
 
-# 30. FINAL ROADMAP PRINCIPLE
+# 25. FINAL ROADMAP PRINCIPLE
 
 The roadmap exists to protect:
 - simplicity
