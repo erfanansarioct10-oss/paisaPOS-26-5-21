@@ -1,5 +1,40 @@
 # Memory
-> Last updated: 2026-05-22 22:05 NPT
+> Last updated: 2026-05-23 07:55 NPT
+
+## Database RLS Caching Optimization & Foreign Key Indexing (2026-05-23)
+
+**Observation:** The database Row-Level Security (RLS) policies called custom functions (like `get_user_store_id()`) and auth checks (`auth.uid()`) directly, causing PostgreSQL to re-evaluate the function row-by-row on queries, degrading performance on large tables. Additionally, missing foreign key indexes on `users(store_id)`, `invoice_items(variant_id)`, and `audit_logs(store_id)` risked slow table scans.
+
+**Action:**
+- **RLS Query Optimization:** Rewrote all 9 RLS policies in [schema.sql](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/schema.sql#L283-L311) to wrap function evaluations in a `SELECT` statement (e.g. `(SELECT get_user_store_id())` and `(SELECT auth.uid())`) to enable planner-level caching and avoid per-row re-evaluation.
+- **Index Reinforcement:** Added indexes on foreign key columns used in joins and policies (`users.store_id`, `invoice_items.variant_id`, and `audit_logs.store_id`).
+- **Idempotent Migration:** Compiled these improvements into database migration [20260523074500_rls_optimizations_and_indexes.sql](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/supabase/migrations/20260523074500_rls_optimizations_and_indexes.sql).
+- **Agent Skills Sync:** Installed/Updated Supabase and Vercel Next.js best practice agent skills locally into [.\.agents\skills\](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/.agents/skills) for workspace compliance.
+- **Verification:** Validated that local production compilation (`npm run build`), test suite (`npm run test`), and linter (`npm run lint`) pass cleanly with 0 compilation and style warnings/failures.
+
+**Lesson:** Wrapping function calls in a `(SELECT ...)` subquery within RLS policy statements forces PostgreSQL to evaluate them once and reuse the value, protecting search execution speed. Keep all foreign keys referenced in policies indexed.
+
+## Supabase Client Build-Time Prerendering Resolution (2026-05-23)
+
+**Observation:** During `npm run build`, Next.js attempts to statically prerender client pages (such as `/billing`). Because client pages transitively import the module-level Supabase client initialized in [supabase.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/supabase.ts), the module was evaluated in the build-time Node.js environment. Since `typeof window === "undefined"` was true, it triggered the fallback `createClient(supabaseUrl, supabaseAnonKey)` branch. Because the build environment lacked configured credentials, the client initialization crashed the compiler with `Error: supabaseKey is required`.
+
+**Action:**
+- **Dynamic Fallbacks**: Modified [supabase.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/supabase.ts#L4-L5) to fall back to dummy/placeholder credentials (`"https://placeholder-project.supabase.co"` and `"placeholder-anon-key"`) if `process.env.NEXT_PUBLIC_SUPABASE_URL` or `process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY` are not set.
+- **Verification**: Verified that `npm run build` compiles with 0 errors and all 30 Vitest tests pass cleanly. Committed and pushed changes to `origin/v2`.
+
+**Lesson:** Any module-level service client that initializes at compile time (like Supabase, Firebase, or external API drivers) must provide default/fallback structures when environment credentials are not present, ensuring that Next.js static prerendering processes do not crash. Real configuration keys will safely take precedence at runtime.
+
+## Vercel Build Cache & Config Format Transition Resolution (2026-05-22)
+
+**Observation:** Switching Next.js configuration files from `.ts` to `.mjs` to `.js` caused Vercel's automated git-triggered build to fail with `TypeError: The "path" argument must be of type string. Received undefined` in the Vercel-specific `modifyConfig` hook. This happened because Vercel's restored build cache retained outdated configuration paths resolving to `undefined`. Additionally, ESLint runs on local/remote builds failed because Vercel's `.vercel/output/` directory build files were being linted.
+
+**Action:**
+- **Build Cache Bypass**: Linked the local directory to the correct Vercel project (`paisa-pos-26-5-21` instead of the local name `billing-system-26-5-21`) by configuring `.vercel/repo.json`.
+- **Force Cache Override**: Ran `npx vercel --force` to deploy directly to Vercel, bypassing the build cache. This populated the cache with a fresh successful build and resolved the configuration path resolution issues.
+- **ESLint Ignores Update**: Added `.vercel/**` to the `globalIgnores` block in [eslint.config.mjs](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/eslint.config.mjs#L12) to prevent ESLint checking Vercel output files, which successfully resolved all local and remote linter checks.
+- **Verification**: Verified that both `npm run lint` and `npm run build` succeed locally, and the forced deployment builds successfully on Vercel. Pushed the changes (commit `c343f8c`) to remote branch `v2`.
+
+**Lesson:** Changing file extensions or config shapes (like `next.config`) can leave stale path pointers in the Vercel remote build cache. Deploying from the Vercel CLI with the `--force` flag completely overrides the build cache and initializes a clean configuration resolver context. Furthermore, ensure build environment output folders like `.vercel` are ignored by static analysis / linters.
 
 ## Store Settings Validation, CRUD Synchronization & Dynamic Printing (2026-05-22)
 
