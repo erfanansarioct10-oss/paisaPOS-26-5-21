@@ -47,6 +47,9 @@ export default function Sidebar() {
         <div className="flex items-center gap-2">
           <Store className="w-5 h-5 text-primary" />
           <span className="font-outfit font-bold tracking-tight text-lg">PaisaPOS</span>
+          <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[9px] font-bold uppercase tracking-wider leading-none">
+            Beta
+          </span>
         </div>
         <div className="flex items-center gap-3">
           {/* Mobile Quick Theme Toggle */}
@@ -93,9 +96,14 @@ export default function Sidebar() {
         <div className="h-16 flex items-center gap-2.5 px-6 border-b border-border">
           <Store className="w-6 h-6 text-primary shrink-0" />
           <div className="flex flex-col">
-            <span className="font-outfit font-extrabold tracking-tight text-xl text-foreground">
-               PaisaPOS
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="font-outfit font-extrabold tracking-tight text-xl text-foreground">
+                PaisaPOS
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[9px] font-bold uppercase tracking-wider leading-none">
+                Beta
+              </span>
+            </div>
             <span className="text-[10px] text-muted-foreground font-mono tracking-widest uppercase">
               Nepali Boutique Sync
             </span>

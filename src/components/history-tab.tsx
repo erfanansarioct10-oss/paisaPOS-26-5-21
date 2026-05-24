@@ -81,8 +81,14 @@ export default function HistoryTab() {
     safePage * PAGE_SIZE
   );
 
-  const handleReprint = (invoice: Invoice) => {
-    const items = invoiceItems[invoice.id] || [];
+  const handleReprint = async (invoice: Invoice) => {
+    let items = invoiceItems[invoice.id] || [];
+    
+    if (items.length === 0) {
+      const { fetchInvoiceItems } = useAppStore.getState();
+      items = await fetchInvoiceItems(invoice.id);
+    }
+
     const filledItems = items.map(item => {
       if (!item.variant_id) {
         return {
@@ -351,6 +357,21 @@ export default function HistoryTab() {
                 </div>
               ))}
             </div>
+
+            {/* LOAD MORE FROM DATABASE BUTTON */}
+            {invoices.length >= 50 && (
+              <div className="flex justify-center py-4 border-t border-border bg-muted/5">
+                <button
+                  onClick={async () => {
+                    const { loadMoreInvoices } = useAppStore.getState();
+                    await loadMoreInvoices();
+                  }}
+                  className="inline-flex items-center justify-center h-10 px-6 text-xs font-semibold bg-secondary hover:bg-secondary/80 border border-border text-muted-foreground hover:text-foreground rounded-lg transition-all active:scale-[0.98]"
+                >
+                  Load More from Database
+                </button>
+              </div>
+            )}
 
             {/* PAGINATION CONTROLS */}
             {totalPages > 1 && (

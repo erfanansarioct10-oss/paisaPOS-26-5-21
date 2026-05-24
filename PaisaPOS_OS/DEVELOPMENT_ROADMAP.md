@@ -1,6 +1,6 @@
 # DEVELOPMENT_ROADMAP
 
-Version: 1.0  
+Version: 1.1  
 Status: Active  
 Last Updated: 2026-05-23
 
@@ -62,6 +62,34 @@ Phase 1 → Core MVP
 Phase 2 → Operational Expansion
 Phase 3 → Scale Preparation
 ```
+
+---
+
+# 4A. STRATEGIC PRODUCT HORIZONS
+
+PaisaPOS follows a three-horizon product strategy.
+Each horizon builds on validated operational trust from the previous one.
+
+## Horizon 1 — Core Operational MVP
+
+Build the fastest, most reliable inventory + billing workflow for Nepali clothing stores.
+Focus: inventory trust, variant management, billing speed, invoice generation, low stock visibility.
+
+**This is the current execution horizon.**
+
+## Horizon 2 — Unified Commerce Operations
+
+Expand operational workflows beyond physical checkout.
+Potential direction: Instagram order workflows, WhatsApp/Viber selling workflows, unified inventory across channels, lightweight order capture.
+
+Do NOT overdesign. This horizon activates only after strong MVP validation.
+
+## Horizon 3 — Retail Intelligence Layer
+
+Operational intelligence for smarter restocking and inventory health.
+Potential direction: reorder recommendations, inventory health scoring, fast/slow moving insights, demand patterns, operational decision support.
+
+NOT vanity analytics dashboards. NOT AI features. Operational utility only.
 
 ---
 
@@ -277,20 +305,21 @@ Status:
 FUTURE
 ```
 
-Goal:
-Expand operational capabilities carefully.
+Phase 2 is split into two sub-phases to separate operational hardening from commerce expansion.
 
 ---
 
-# 13. PHASE 2 — POSSIBLE FEATURES
+# 13. PHASE 2A — OPERATIONAL ENHANCEMENTS
 
-Potential additions:
+Goal:
+Harden and accelerate daily store operations.
+
+### Core Operational Features
 - barcode scanning
-- supplier management
-- employee accounts
-- offline mode
-- analytics
-- advanced reporting
+- role-based access control (cashier/owner UI isolation)
+- bulk catalog importer (onboarding acceleration)
+- offline billing preparation (temporary offline + sync reconciliation)
+- supplier management (lightweight, NOT ERP-grade)
 
 ### High-Priority Operational Micro-Features
 Planned for incremental rollout:
@@ -301,6 +330,20 @@ Planned for incremental rollout:
 5. **Role-Based UI Isolation (Access Control)**: Configure cashier-level visual blocks and administrative guards directly inside the frontend UI (leveraging the newly deployed database-level `users.role` cashier/owner columns).
 6. **Bulk Catalog Importer (Onboarding Acceleration)**: Create a lightweight CSV/Excel catalog parser to help boutique owners bulk-upload their product listings and initial variant stock in seconds during pilot onboarding.
 
+### Operational Analytics (Lightweight)
+- sales trends
+- best-selling products
+- category performance
+
+Avoid: dashboard overload. Avoid: vanity metrics.
+
+### Offline Mode
+
+Important:
+Offline mode introduces major complexity.
+Do NOT implement prematurely.
+Only pursue after clear demand from pilot retailers.
+
 Only after:
 - strong MVP validation
 - stable operations
@@ -308,33 +351,30 @@ Only after:
 
 ---
 
-# 14. PHASE 2 — OFFLINE MODE
+# 14. PHASE 2B — COMMERCE OPERATIONS LAYER
 
-Potential future feature:
-- temporary offline billing
-- sync reconciliation
-
-Important:
-Offline mode introduces major complexity.
-
-Do NOT implement prematurely.
-
----
-
-# 15. PHASE 2 — ANALYTICS
+Goal:
+Extend PaisaPOS into social-commerce and multi-channel selling workflows.
 
 Potential additions:
-- sales trends
-- best-selling products
-- category performance
+- social order capture (Instagram/TikTok DM orders → inventory-linked checkout)
+- unified inventory across channels (physical store + social selling = one stock count)
+- messaging-driven selling workflows (WhatsApp/Viber order conversations)
+- lightweight order management (track pending orders from social channels)
 
-Avoid:
-- dashboard overload
-- vanity metrics
+### Guardrails
+- Do NOT build an ecommerce platform.
+- Do NOT build a CRM.
+- Do NOT introduce ERP workflows.
+- Every feature must link back to inventory trust and operational simplicity.
+
+Only after:
+- Phase 2A operational enhancements are stable
+- clear demand from retailers selling on social platforms
 
 ---
 
-# 16. PHASE 3 — SCALE PREPARATION
+# 15. PHASE 3 — SCALE PREPARATION
 
 Status:
 ```text
@@ -346,7 +386,7 @@ Prepare for larger SaaS operations.
 
 ---
 
-# 17. PHASE 3 — POSSIBLE EXPANSIONS
+# 16. PHASE 3 — POSSIBLE EXPANSIONS
 
 Potential future areas:
 - multi-branch support
@@ -360,7 +400,7 @@ real usage demands them.
 
 ---
 
-# 18. ROADMAP PRIORITIZATION RULES
+# 17. ROADMAP PRIORITIZATION RULES
 
 When prioritizing features ask:
 
@@ -377,7 +417,7 @@ deprioritize heavily.
 
 ---
 
-# 19. FEATURE EVALUATION FRAMEWORK
+# 18. FEATURE EVALUATION FRAMEWORK
 
 Every proposed feature should be evaluated on:
 
@@ -401,7 +441,7 @@ Could it reduce operational trust?
 
 ---
 
-# 20. ROADMAP ANTI-GOALS
+# 19. ROADMAP ANTI-GOALS
 
 Avoid becoming:
 - ERP software
@@ -411,7 +451,7 @@ Avoid becoming:
 
 ---
 
-# 21. AI AGENT ROADMAP RULES
+# 20. AI AGENT ROADMAP RULES
 
 All AI agents MUST:
 - respect roadmap priorities
@@ -421,7 +461,7 @@ All AI agents MUST:
 
 ---
 
-# 22. RELEASE STRATEGY
+# 21. RELEASE STRATEGY
 
 ## Release Philosophy
 
@@ -449,7 +489,7 @@ Assume → Overbuild → Complicate
 
 ---
 
-# 23. TECHNICAL DEBT STRATEGY
+# 22. TECHNICAL DEBT STRATEGY
 
 Accept small technical debt if:
 - it speeds validation safely
@@ -461,18 +501,40 @@ But avoid:
 
 ---
 
-# 24. LONG-TERM PRODUCT VISION
+# 23. LONG-TERM PRODUCT VISION
 
 Long-term goal:
-Become the default lightweight retail operating system for Nepali fashion stores.
+Become the default operating system for modern Nepali fashion retailers.
 
 The product should win through:
-- reliability
+- inventory trust
 - operational excellence
-- simplicity
+- billing speed
+- social-commerce compatibility
+- mobile-first workflows
 - workflow quality
 
 NOT feature quantity.
+
+---
+
+# 24. VERTICAL PRODUCT STRATEGY
+
+PaisaPOS is clothing-native software.
+
+Every feature, workflow, and design decision must be optimized for apparel retail:
+- variant-heavy inventory (sizes, colors, materials)
+- visual product operations
+- fast product onboarding for seasonal stock rotations
+- social selling behavior (Instagram/TikTok-driven sales)
+- mobile-first retailer workflows
+
+Avoid:
+- generic multi-industry POS thinking
+- features that serve non-clothing verticals at the expense of apparel workflows
+- horizontal product expansion before vertical dominance
+
+PaisaPOS wins by being the BEST system for clothing — not an adequate system for everything.
 
 ---
 

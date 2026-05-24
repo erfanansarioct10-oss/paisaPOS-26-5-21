@@ -265,4 +265,73 @@ describe.runIf(runLiveTests)("PaisaPOS — Multi-Tenant Row Level Security (RLS)
     await clientA.auth.signOut();
     await clientB.auth.signOut();
   }, 20000);
+
+  test("Enforces strict Owner vs Cashier privilege boundaries on product catalog", async () => {
+    const random = Math.random().toString(36).slice(2, 7) + Date.now();
+    const emailOwner = `test-role-owner-${random}@paisapos-qa.com`;
+    const emailCashier = `test-role-cashier-${random}@paisapos-qa.com`;
+    const password = "SecurityDefinerPass123!";
+
+    const clientOwner = createClient(supabaseUrl, supabaseAnonKey);
+    const clientCashier = createClient(supabaseUrl, supabaseAnonKey);
+
+    // 1. Sign up Owner & Onboard
+    const { data: signUpOwner } = await clientOwner.auth.signUp({ email: emailOwner, password });
+    const ownerId = signUpOwner.user!.id;
+
+    const { data: storeId } = await clientOwner.rpc("register_store_and_user", {
+      p_full_name: `Store Owner`,
+      p_store_name: `Store - ${random}`,
+    });
+
+    // 2. Sign up Cashier
+    const { data: signUpCashier } = await clientCashier.auth.signUp({ email: emailCashier, password });
+    const cashierId = signUpCashier.user!.id;
+
+    // 3. Since RLS restricts cashier store links manually, use the service_role key to register Cashier
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!serviceRoleKey) {
+      console.log("[RLS QA] Skipping Owner vs Cashier integration test (SUPABASE_SERVICE_ROLE_KEY not set)");
+      await clientOwner.from("stores").delete().eq("id", storeId);
+      await clientOwner.from("users").delete().eq("id", ownerId);
+      await clientOwner.auth.signOut();
+      await clientCashier.from("users").delete().eq("id", cashierId);
+      await clientCashier.auth.signOut();
+      return;
+    }
+
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
+
+    // Insert cashier profile with cashier role under Owner's store
+    await adminClient.from("users").insert({
+      id: cashierId,
+      name: `Store Cashier`,
+      store_id: storeId,
+      role: "cashier",
+    });
+
+    // 4. Cashier attempts to call upsert_product_and_variants RPC
+    console.log("[RLS QA] Verifying Cashier is blocked from calling upsert_product_and_variants RPC...");
+    const { error: errCashierUpsert } = await clientCashier.rpc("upsert_product_and_variants", {
+      p_product_id: null,
+      p_name: "Cashier Product",
+      p_category: "Tops",
+      p_low_stock_threshold: 5,
+      p_deleted_variant_ids: [],
+      p_variants: [
+        { size: "Free", color: "Red", sku: `SKU-CASH-${random}`, price: 1000, stock: 5 }
+      ],
+    });
+
+    expect(errCashierUpsert).not.toBeNull();
+    expect(errCashierUpsert!.message).toContain("Only store owners can add or modify products");
+
+    // 5. Clean up
+    console.log("[RLS QA] Cleaning up role test records...");
+    await adminClient.from("stores").delete().eq("id", storeId);
+    await adminClient.from("users").delete().eq("id", ownerId);
+    await adminClient.from("users").delete().eq("id", cashierId);
+    await clientOwner.auth.signOut();
+    await clientCashier.auth.signOut();
+  });
 });

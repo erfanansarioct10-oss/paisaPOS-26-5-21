@@ -3,7 +3,7 @@
 // =========================================================================
 
 import type { AppState } from "./types";
-import { upsertProductAction, deleteProductAction, adjustStockAction, toggleProductFavoriteAction } from "@/app/actions";
+import { upsertProductAction, deleteProductAction, adjustStockAction, toggleProductFavoriteAction, bulkUpsertProductsAction } from "@/app/actions";
 
 function mapProductError(e: unknown): string {
   let msg = "";
@@ -22,6 +22,19 @@ function mapProductError(e: unknown): string {
   }
 
   const lowercaseMsg = msg.toLowerCase();
+  if (
+    lowercaseMsg.includes("invalid product details") ||
+    lowercaseMsg.includes("invalid bulk products details")
+  ) {
+    return msg;
+  }
+  if (
+    lowercaseMsg.includes("too many requests") ||
+    lowercaseMsg.includes("rate limit") ||
+    lowercaseMsg.includes("please try again")
+  ) {
+    return msg;
+  }
   if (
     lowercaseMsg.includes("duplicate key") ||
     lowercaseMsg.includes("sku already exists") ||
@@ -360,5 +373,127 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
         originalFavoriteLevels: nextOriginalsFinal,
       });
     }
+  },
+
+  // -----------------------------------------------------------------------
+  // BULK CATALOG IMPORTER BATCH OPERATIONS
+  // -----------------------------------------------------------------------
+  bulkImportProducts: async (
+    parsedProducts: Array<{
+      name: string;
+      category: string;
+      lowStockThreshold: number;
+      variants: Array<{
+        size: string;
+        color: string;
+        sku: string;
+        price: number;
+        stock: number;
+      }>;
+    }>,
+    onProgress?: (current: number, total: number) => void
+  ): Promise<{
+    succeededCount: number;
+    failedProducts: Array<{ name: string; error: string }>;
+    failedChunkError?: string;
+    skippedRemainder?: string[];
+  }> => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      set({ errorMsg: "Operation failed: Internet connection is offline." });
+      return {
+        succeededCount: 0,
+        failedProducts: parsedProducts.map(p => ({
+          name: p.name,
+          error: "Internet connection is offline.",
+        })),
+      };
+    }
+
+    set({ isLoading: true, errorMsg: null, isImporting: true });
+
+    let succeededCount = 0;
+    const failedProducts: Array<{ name: string; error: string }> = [];
+    let failedChunkError: string | undefined = undefined;
+    let skippedRemainder: string[] | undefined = undefined;
+    const total = parsedProducts.length;
+
+    if (onProgress) {
+      onProgress(0, total);
+    }
+
+    try {
+      const payloads = parsedProducts.map(p => ({
+        productId: null,
+        name: p.name,
+        category: p.category,
+        lowStockThreshold: p.lowStockThreshold,
+        deletedVariantIds: [],
+        variants: p.variants.map(v => ({
+          size: v.size,
+          color: v.color,
+          sku: v.sku,
+          price: v.price,
+          stock: v.stock,
+        })),
+      }));
+
+      const result = await bulkUpsertProductsAction(payloads);
+      succeededCount = result.succeededCount;
+      failedProducts.push(...result.failedProducts);
+      failedChunkError = result.failedChunkError;
+      skippedRemainder = result.skippedRemainder;
+
+    } catch (e: unknown) {
+      console.error("Error bulk importing products:", e);
+      let errorMsg = "Unknown error occurred.";
+      if (e instanceof Error) {
+        errorMsg = e.message;
+      } else if (e && typeof e === "object" && "message" in e && typeof e.message === "string") {
+        errorMsg = e.message;
+      }
+
+      const lowerError = errorMsg.toLowerCase();
+      const isNetworkError =
+        lowerError.includes("network") ||
+        lowerError.includes("fetch failed") ||
+        lowerError.includes("failed to fetch") ||
+        lowerError.includes("connection dropped") ||
+        lowerError.includes("failed to connect") ||
+        lowerError.includes("offline") ||
+        lowerError.includes("econnrefused") ||
+        lowerError.includes("cors");
+
+      parsedProducts.forEach(p => {
+        failedProducts.push({
+          name: p.name,
+          error: isNetworkError
+            ? `Import skipped due to network disconnection: ${errorMsg}`
+            : `Database operation failed: ${errorMsg}`,
+        });
+      });
+    }
+
+    if (onProgress) {
+      onProgress(total, total);
+    }
+
+    // Reactivate real-time listeners
+    set({ isImporting: false });
+
+    // Single consolidated database-client synchronization
+    try {
+      await get().fetchStoreData();
+    } catch (syncError: unknown) {
+      console.error("Synchronizing store data post-import failed:", syncError);
+    } finally {
+      set({ isLoading: false });
+    }
+
+    return {
+      succeededCount,
+      failedProducts,
+      failedChunkError,
+      skippedRemainder,
+    };
   },
 });

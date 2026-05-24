@@ -381,9 +381,12 @@ begin
     raise exception 'Unauthenticated. Only logged-in users can register a store.';
   end if;
 
-  -- Prevent duplicate registration: check if profile already exists
-  if exists (select 1 from users where id = v_user_id) then
-    raise exception 'User is already registered and associated with a store.';
+  -- If the user profile already exists (e.g. created by the email verification
+  -- trigger in auto-confirm mode), return the existing store_id gracefully
+  -- instead of blocking the signup flow with an error.
+  select store_id into v_store_id from users where id = v_user_id;
+  if v_store_id is not null then
+    return v_store_id;
   end if;
 
   -- 1. Insert store bypasses initial RLS since this is a security definer function

@@ -273,6 +273,7 @@ export default function BillingTab() {
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             ref={searchInputRef}
+            id="pos-search-input"
             type="text"
             placeholder={placeholder}
             value={searchQuery}
