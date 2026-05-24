@@ -103,3 +103,86 @@ export function formatZodError(error: ZodError): string {
     })
     .join(", ");
 }
+
+/**
+ * Maps raw, technical database/network/auth errors into clean, highly professional, user-friendly messages.
+ * Prevents technical jargon or internal server-side errors from leaking to users.
+ */
+export function getFriendlyErrorMessage(err: unknown): string {
+  if (!err) return "An unexpected error occurred. Please try again.";
+
+  let message = "";
+  if (err instanceof Error) {
+    message = err.message;
+  } else if (typeof err === "string") {
+    message = err;
+  } else if (typeof err === "object" && err !== null && "message" in err) {
+    message = String((err as { message: unknown }).message);
+  } else {
+    message = String(err);
+  }
+
+  const lowercaseMsg = message.toLowerCase();
+
+  // 1. Password complexity / strength mapping
+  if (lowercaseMsg.includes("password should contain at least one character of each") || 
+      lowercaseMsg.includes("password must contain at least one lowercase")) {
+    return "Password must contain at least one lowercase letter, one uppercase letter, and one number.";
+  }
+  if (lowercaseMsg.includes("password must be at least 8 characters")) {
+    return "Password must be at least 8 characters long.";
+  }
+
+  // 2. Credentials/Auth failures
+  if (lowercaseMsg.includes("invalid login credentials") || 
+      lowercaseMsg.includes("user not found") || 
+      lowercaseMsg.includes("invalid credentials") ||
+      lowercaseMsg.includes("email not found") ||
+      lowercaseMsg.includes("password is incorrect")) {
+    return "Invalid email or password. Please try again.";
+  }
+
+  // 3. Account issues
+  if (lowercaseMsg.includes("email not confirmed") || 
+      lowercaseMsg.includes("confirm your email")) {
+    return "Please confirm your email address before signing in. Check your inbox for the confirmation link.";
+  }
+  if (lowercaseMsg.includes("user already exists") || 
+      lowercaseMsg.includes("email already registered") ||
+      lowercaseMsg.includes("already registered") ||
+      lowercaseMsg.includes("email_owner_unique") ||
+      lowercaseMsg.includes("user already registered")) {
+    return "This email address is already registered. Please sign in instead.";
+  }
+
+  // 4. Rate limiting / abuse
+  if (lowercaseMsg.includes("too many requests") || 
+      lowercaseMsg.includes("rate limit") || 
+      lowercaseMsg.includes("rate_limit_exceeded")) {
+    const match = message.match(/(\d+)\s*(second|minute|hour)/i);
+    if (match) {
+      return `Too many attempts. Please try again in ${match[1]} ${match[2].toLowerCase()}${Number(match[1]) > 1 ? 's' : ''}.`;
+    }
+    return "Too many attempts. Please try again in a few minutes.";
+  }
+
+  // 5. Network / Database / Server Action / Fetch failures
+  if (lowercaseMsg.includes("fetch failed") || 
+      lowercaseMsg.includes("typeerror") || 
+      lowercaseMsg.includes("network error") || 
+      lowercaseMsg.includes("failed to fetch") || 
+      lowercaseMsg.includes("internal server error") ||
+      lowercaseMsg.includes("database error") ||
+      lowercaseMsg.includes("unexpected character") ||
+      lowercaseMsg.includes("connection failed")) {
+    return "We are experiencing a temporary server connection issue. Please verify your internet connection and try again in a few moments.";
+  }
+
+  // Fallback to a clean general message
+  if (lowercaseMsg.includes("an error occurred in the server action") || 
+      lowercaseMsg.includes("internal server error")) {
+    return "An error occurred on the server. Please try again in a moment.";
+  }
+
+  return message;
+}

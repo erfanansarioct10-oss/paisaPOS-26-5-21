@@ -5,15 +5,22 @@ import { createClient } from "@supabase/supabase-js";
 import { cookies, headers } from "next/headers";
 import { z } from "zod";
 import { writeLog } from "@/lib/logger";
-import { loginLimiter, signupLimiter, passwordResetLimiter, enforceRateLimit, getClientIp } from "@/lib/rate-limiter";
-import { sanitizeString, formatZodError } from "@/lib/security";
+import { loginLimiter, loginIpLimiter, signupLimiter, passwordResetLimiter, enforceRateLimit, getClientIp } from "@/lib/rate-limiter";
+import { sanitizeString, formatZodError, getFriendlyErrorMessage } from "@/lib/security";
 
 const authSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
-const signupSchema = authSchema.extend({
+const signupSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  password: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .refine(
+      (val) => /[a-z]/.test(val) && /[A-Z]/.test(val) && /\d/.test(val),
+      "Password must contain at least one lowercase letter, one uppercase letter, and one number."
+    ),
   fullName: z.string().min(1, "Full name is required").max(100).transform(sanitizeString),
   storeName: z.string().min(1, "Store name is required").max(100).transform(sanitizeString),
 });
@@ -61,9 +68,13 @@ export async function loginAction(rawParams: unknown) {
 
     const { email, password } = validation.data;
 
-    // IP-scoped rate limiting: 5 login attempts per 15 minutes
     const ip = await getClientIp();
-    await enforceRateLimit(loginLimiter, `login:${ip}`, "LOGIN");
+
+    // 1. Account-scoped rate limiting: 5 login attempts per 15 minutes per email
+    await enforceRateLimit(loginLimiter, `login:${email}`, "LOGIN");
+
+    // 2. IP-scoped abuse protection: 30 login attempts per 15 minutes per IP
+    await enforceRateLimit(loginIpLimiter, `login_ip:${ip}`, "LOGIN");
 
     const supabase = await getSupabaseServerClient();
 
@@ -96,7 +107,7 @@ export async function loginAction(rawParams: unknown) {
         }
       }
 
-      return { error: error.message };
+      return { error: getFriendlyErrorMessage(error.message) };
     }
 
     // Log successful login
@@ -120,8 +131,7 @@ export async function loginAction(rawParams: unknown) {
 
     return { success: true, user: data.user };
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "An authentication error occurred.";
-    return { error: message };
+    return { error: getFriendlyErrorMessage(err) };
   }
 }
 
@@ -161,7 +171,7 @@ export async function signupAction(rawParams: unknown) {
         email,
         errorMessage: signUpError.message,
       });
-      return { error: signUpError.message };
+      return { error: getFriendlyErrorMessage(signUpError.message) };
     }
 
     if (!signUpData.user) {
@@ -180,7 +190,7 @@ export async function signupAction(rawParams: unknown) {
         email,
         errorMessage: onboardingError.message,
       });
-      return { error: onboardingError.message };
+      return { error: getFriendlyErrorMessage(onboardingError.message) };
     }
 
     // Log successful onboarding
@@ -192,8 +202,7 @@ export async function signupAction(rawParams: unknown) {
 
     return { success: true, user: signUpData.user, storeId };
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "A registration error occurred.";
-    return { error: message };
+    return { error: getFriendlyErrorMessage(err) };
   }
 }
 
@@ -241,13 +250,12 @@ export async function requestPasswordResetAction(email: string) {
         email: cleanEmail,
         errorMessage: error.message,
       });
-      return { error: error.message };
+      return { error: getFriendlyErrorMessage(error.message) };
     }
 
     await writeLog("SECURITY", "AUTH_PASSWORD_RESET_SUCCESS", `Password reset link sent to: ${cleanEmail}`);
     return { success: true };
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Failed to send reset email.";
-    return { error: message };
+    return { error: getFriendlyErrorMessage(err) };
   }
 }

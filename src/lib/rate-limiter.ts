@@ -224,8 +224,11 @@ export class RateLimiter {
 // Preconfigured Rate Limiter Instances
 // ---------------------------------------------------------------------------
 
-/** Login attempts: 5 per 15 minutes per IP */
+/** Login attempts per email to prevent brute-forcing: 5 per 15 minutes */
 export const loginLimiter = new RateLimiter(5, 15 * 60 * 1000);
+
+/** Login attempts per IP to prevent massive abuse: 30 per 15 minutes */
+export const loginIpLimiter = new RateLimiter(30, 15 * 60 * 1000);
 
 /** Account creation: 3 per hour per IP */
 export const signupLimiter = new RateLimiter(3, 60 * 60 * 1000);

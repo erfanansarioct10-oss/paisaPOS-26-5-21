@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Store, Lock, AlertCircle, Loader2, CheckCircle } from "lucide-react";
+import { getFriendlyErrorMessage } from "@/lib/security";
 
 export default function UpdatePasswordPage() {
   const router = useRouter();
@@ -19,6 +20,17 @@ export default function UpdatePasswordPage() {
 
     if (password.length < 8) {
       setError("Password must be at least 8 characters long.");
+      return;
+    }
+
+    const hasLowercase = /[a-z]/.test(password);
+    const hasUppercase = /[A-Z]/.test(password);
+    const hasDigit = /\d/.test(password);
+
+    if (!hasLowercase || !hasUppercase || !hasDigit) {
+      setError(
+        "Password must contain at least one lowercase letter, one uppercase letter, and one number."
+      );
       return;
     }
 
@@ -40,17 +52,7 @@ export default function UpdatePasswordPage() {
 
       setIsSuccess(true);
     } catch (err: unknown) {
-      let message =
-        err instanceof Error ? err.message : "Failed to update password.";
-      if (
-        message.includes(
-          "Password should contain at least one character of each"
-        )
-      ) {
-        message =
-          "Password must contain at least one lowercase letter, one uppercase letter, and one number.";
-      }
-      setError(message);
+      setError(getFriendlyErrorMessage(err));
     } finally {
       setIsLoading(false);
     }

@@ -6,6 +6,7 @@ import { useAppStore } from "@/lib/store/useAppStore";
 import { supabase } from "@/lib/supabase";
 import { Store, Mail, Lock, User, AlertCircle, Loader2, CheckCircle } from "lucide-react";
 import { loginAction, signupAction, requestPasswordResetAction } from "@/app/auth-actions";
+import { getFriendlyErrorMessage } from "@/lib/security";
 
 // ---------------------------------------------------------------------------
 // Client-side rate-limiting constants (defense-in-depth, not a security boundary)
@@ -154,11 +155,7 @@ export default function LoginPage() {
       // Re-initialize Zustand state which pulls the auth user details and routes them
       await initializeSession();
     } catch (err: unknown) {
-      let message = err instanceof Error ? err.message : "An authentication error occurred.";
-      if (message.includes("Password should contain at least one character of each")) {
-        message = "Password must contain at least one lowercase letter, one uppercase letter, and one number.";
-      }
-      setLocalError(message);
+      setLocalError(getFriendlyErrorMessage(err));
     } finally {
       setLocalLoading(false);
     }
@@ -203,8 +200,7 @@ export default function LoginPage() {
         "Password reset link sent! Check your email inbox and click the link to set a new password."
       );
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to send reset email.";
-      setLocalError(message);
+      setLocalError(getFriendlyErrorMessage(err));
     } finally {
       setLocalLoading(false);
     }
