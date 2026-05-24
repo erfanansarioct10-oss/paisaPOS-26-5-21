@@ -15,6 +15,15 @@ import { getFriendlyErrorMessage } from "@/lib/security";
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_SECONDS = 30;
 
+const formatLockoutTime = (seconds: number): string => {
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}m ${remainingSeconds}s`;
+};
+
 export default function LoginPage() {
   const router = useRouter();
   const {
@@ -282,7 +291,7 @@ export default function LoginPage() {
         <div className="bg-card border border-border rounded-2xl shadow-xl p-8 space-y-6">
 
           {/* DYNAMIC ERROR STRIPS */}
-          {(localError || errorMsg) && (
+          {!isLockedOut && (localError || errorMsg) && (
             <div className="bg-red-500/10 border border-red-500/25 rounded-xl p-3 flex items-start gap-2.5 text-xs text-red-400">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <p className="leading-normal">{localError || errorMsg}</p>
@@ -303,7 +312,7 @@ export default function LoginPage() {
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <p className="leading-normal">
                 Too many failed login attempts. Please wait{" "}
-                <span className="font-bold tabular-nums">{lockoutRemaining}s</span>{" "}
+                <span className="font-bold tabular-nums">{formatLockoutTime(lockoutRemaining)}</span>{" "}
                 before trying again.
               </p>
             </div>
