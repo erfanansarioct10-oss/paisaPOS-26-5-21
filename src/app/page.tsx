@@ -126,12 +126,15 @@ export default function LoginPage() {
           throw new Error("Full name and Store name are required to register.");
         }
 
-        await signupAction({
+        const signupRes = await signupAction({
           email,
           password,
           fullName,
           storeName,
         });
+        if (signupRes?.error) {
+          throw new Error(signupRes.error);
+        }
 
         // The server action created the auth user and store/profile, but the
         // client-side Supabase instance doesn't have the session yet (cookies
@@ -193,6 +196,7 @@ export default function LoginPage() {
 
     try {
       const result = await requestPasswordResetAction(email);
+      if (result?.error) throw new Error(result.error);
       if (!result.success) throw new Error("Failed to send reset email.");
 
       setSuccessMsg(

@@ -53,71 +53,76 @@ async function getSupabaseServerClient() {
  * Authenticates user, sets cookies, and logs the event
  */
 export async function loginAction(rawParams: unknown) {
-  const validation = authSchema.safeParse(rawParams);
-  if (!validation.success) {
-    return { error: formatZodError(validation.error) };
-  }
-
-  const { email, password } = validation.data;
-
-  // IP-scoped rate limiting: 5 login attempts per 15 minutes
-  const ip = await getClientIp();
-  await enforceRateLimit(loginLimiter, `login:${ip}`, "LOGIN");
-
-  const supabase = await getSupabaseServerClient();
-
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if (error) {
-    // Log the unauthenticated auth failure locally in JSON stdout
-    await writeLog("SECURITY", "AUTH_LOGIN_FAILURE", `Failed login attempt for email: ${email}`, {
-      email,
-      errorMessage: error.message,
-    });
-
-    // Also attempt database unauthenticated security logging if service role key is available
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      try {
-        const adminClient = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.SUPABASE_SERVICE_ROLE_KEY
-        );
-        await adminClient.rpc("log_unauthenticated_security_event", {
-          p_operation: "AUTH_LOGIN_FAILURE",
-          p_affected_entity: `Email: ${email}`,
-          p_error_message: error.message,
-        });
-      } catch (logErr) {
-        console.error("Failed to write unauthenticated log to DB:", logErr);
-      }
+  try {
+    const validation = authSchema.safeParse(rawParams);
+    if (!validation.success) {
+      return { error: formatZodError(validation.error) };
     }
 
-    return { error: error.message };
-  }
+    const { email, password } = validation.data;
 
-  // Log successful login
-  await writeLog("SECURITY", "AUTH_LOGIN_SUCCESS", `User successfully logged in: ${email}`, {
-    userId: data.user.id,
-    email,
-  });
+    // IP-scoped rate limiting: 5 login attempts per 15 minutes
+    const ip = await getClientIp();
+    await enforceRateLimit(loginLimiter, `login:${ip}`, "LOGIN");
 
-  // Create immediate database success log
-  try {
-    await supabase.from("audit_logs").insert({
-      store_id: null, // Resolves to user's store via RLS if appropriate, or keeps null
-      user_id: data.user.id,
-      operation: "AUTH_LOGIN_SUCCESS",
-      affected_entity: `User ID: ${data.user.id}`,
-      result: "SUCCESS",
+    const supabase = await getSupabaseServerClient();
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
     });
-  } catch (dbErr) {
-    console.error("Failed to record successful login to audit logs table:", dbErr);
-  }
 
-  return { success: true, user: data.user };
+    if (error) {
+      // Log the unauthenticated auth failure locally in JSON stdout
+      await writeLog("SECURITY", "AUTH_LOGIN_FAILURE", `Failed login attempt for email: ${email}`, {
+        email,
+        errorMessage: error.message,
+      });
+
+      // Also attempt database unauthenticated security logging if service role key is available
+      if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        try {
+          const adminClient = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY
+          );
+          await adminClient.rpc("log_unauthenticated_security_event", {
+            p_operation: "AUTH_LOGIN_FAILURE",
+            p_affected_entity: `Email: ${email}`,
+            p_error_message: error.message,
+          });
+        } catch (logErr) {
+          console.error("Failed to write unauthenticated log to DB:", logErr);
+        }
+      }
+
+      return { error: error.message };
+    }
+
+    // Log successful login
+    await writeLog("SECURITY", "AUTH_LOGIN_SUCCESS", `User successfully logged in: ${email}`, {
+      userId: data.user.id,
+      email,
+    });
+
+    // Create immediate database success log
+    try {
+      await supabase.from("audit_logs").insert({
+        store_id: null, // Resolves to user's store via RLS if appropriate, or keeps null
+        user_id: data.user.id,
+        operation: "AUTH_LOGIN_SUCCESS",
+        affected_entity: `User ID: ${data.user.id}`,
+        result: "SUCCESS",
+      });
+    } catch (dbErr) {
+      console.error("Failed to record successful login to audit logs table:", dbErr);
+    }
+
+    return { success: true, user: data.user };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "An authentication error occurred.";
+    return { error: message };
+  }
 }
 
 /**
@@ -125,67 +130,71 @@ export async function loginAction(rawParams: unknown) {
  * Registers user profile, registers store, and logs onboarding event
  */
 export async function signupAction(rawParams: unknown) {
-  const validation = signupSchema.safeParse(rawParams);
-  if (!validation.success) {
-    throw new Error(formatZodError(validation.error));
-  }
+  try {
+    const validation = signupSchema.safeParse(rawParams);
+    if (!validation.success) {
+      return { error: formatZodError(validation.error) };
+    }
 
-  const { email, password, fullName, storeName } = validation.data;
+    const { email, password, fullName, storeName } = validation.data;
 
-  // IP-scoped rate limiting: 3 account registrations per hour
-  const ip = await getClientIp();
-  await enforceRateLimit(signupLimiter, `signup:${ip}`, "SIGNUP");
+    // IP-scoped rate limiting: 3 account registrations per hour
+    const ip = await getClientIp();
+    await enforceRateLimit(signupLimiter, `signup:${ip}`, "SIGNUP");
 
-  const supabase = await getSupabaseServerClient();
+    const supabase = await getSupabaseServerClient();
 
-  // 1. Sign up the user
-  const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        full_name: fullName,
-        store_name: storeName,
+    // 1. Sign up the user
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          store_name: storeName,
+        },
       },
-    },
-  });
-
-  if (signUpError) {
-    await writeLog("SECURITY", "AUTH_SIGNUP_FAILURE", `Failed sign up attempt for email: ${email}`, {
-      email,
-      errorMessage: signUpError.message,
     });
-    throw new Error(signUpError.message);
-  }
 
-  if (!signUpData.user) {
-    throw new Error("Registration failed. Please check your credentials.");
-  }
+    if (signUpError) {
+      await writeLog("SECURITY", "AUTH_SIGNUP_FAILURE", `Failed sign up attempt for email: ${email}`, {
+        email,
+        errorMessage: signUpError.message,
+      });
+      return { error: signUpError.message };
+    }
 
-  // 2. Perform the onboarding store registration RPC
-  const { data: storeId, error: onboardingError } = await supabase.rpc("register_store_and_user", {
-    p_full_name: fullName,
-    p_store_name: storeName,
-  });
+    if (!signUpData.user) {
+      return { error: "Registration failed. Please check your credentials." };
+    }
 
-  if (onboardingError) {
-    await writeLog("SECURITY", "AUTH_ONBOARDING_FAILURE", `Failed onboarding store registration for user ${signUpData.user.id}`, {
+    // 2. Perform the onboarding store registration RPC
+    const { data: storeId, error: onboardingError } = await supabase.rpc("register_store_and_user", {
+      p_full_name: fullName,
+      p_store_name: storeName,
+    });
+
+    if (onboardingError) {
+      await writeLog("SECURITY", "AUTH_ONBOARDING_FAILURE", `Failed onboarding store registration for user ${signUpData.user.id}`, {
+        userId: signUpData.user.id,
+        email,
+        errorMessage: onboardingError.message,
+      });
+      return { error: onboardingError.message };
+    }
+
+    // Log successful onboarding
+    await writeLog("SECURITY", "AUTH_SIGNUP_SUCCESS", `Store registered successfully: "${storeName}" (User: ${email})`, {
       userId: signUpData.user.id,
+      storeId,
       email,
-      errorMessage: onboardingError.message,
     });
-    throw new Error(onboardingError.message);
+
+    return { success: true, user: signUpData.user, storeId };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "A registration error occurred.";
+    return { error: message };
   }
-
-  // Log successful onboarding
-  await writeLog("SECURITY", "AUTH_SIGNUP_SUCCESS", `Store registered successfully: "${storeName}" (User: ${email})`, {
-    userId: signUpData.user.id,
-    storeId,
-    email,
-  });
-
-  // Successful onboarding is already logged to audit_logs by the register_store_and_user() RPC function body.
-  return { success: true, user: signUpData.user, storeId };
 }
 
 /**
@@ -193,47 +202,52 @@ export async function signupAction(rawParams: unknown) {
  * Wraps Supabase auth.resetPasswordForEmail with server-side rate limits
  */
 export async function requestPasswordResetAction(email: string) {
-  const emailSchema = z.string().email("Invalid email address");
-  const validation = emailSchema.safeParse(email);
-  if (!validation.success) {
-    throw new Error(formatZodError(validation.error));
-  }
+  try {
+    const emailSchema = z.string().email("Invalid email address");
+    const validation = emailSchema.safeParse(email);
+    if (!validation.success) {
+      return { error: formatZodError(validation.error) };
+    }
 
-  const cleanEmail = validation.data;
+    const cleanEmail = validation.data;
 
-  // Server-side IP rate limit: 3 password resets per 15 minutes per IP
-  const ip = await getClientIp();
-  await enforceRateLimit(passwordResetLimiter, `reset_password:${ip}`, "RESET_PASSWORD");
+    // Server-side IP rate limit: 3 password resets per 15 minutes per IP
+    const ip = await getClientIp();
+    await enforceRateLimit(passwordResetLimiter, `reset_password:${ip}`, "RESET_PASSWORD");
 
-  const supabase = await getSupabaseServerClient();
+    const supabase = await getSupabaseServerClient();
 
-  // Canonical origin resolution: use APP_URL env var, fallback to Vercel, then headers in development
-  let origin = process.env.APP_URL;
-  if (!origin && process.env.NEXT_PUBLIC_VERCEL_URL) {
-    origin = `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`;
-  }
-  if (!origin && process.env.NODE_ENV !== "production") {
-    const headersList = await headers();
-    const host = headersList.get("host") || "localhost:3000";
-    const proto = headersList.get("x-forwarded-proto") || "http";
-    origin = `${proto}://${host}`;
-  }
-  if (!origin) {
-    origin = "https://paisa-pos-26-5-21.vercel.app"; // Production fallback
-  }
+    // Canonical origin resolution: use APP_URL env var, fallback to Vercel, then headers in development
+    let origin = process.env.APP_URL;
+    if (!origin && process.env.NEXT_PUBLIC_VERCEL_URL) {
+      origin = `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`;
+    }
+    if (!origin && process.env.NODE_ENV !== "production") {
+      const headersList = await headers();
+      const host = headersList.get("host") || "localhost:3000";
+      const proto = headersList.get("x-forwarded-proto") || "http";
+      origin = `${proto}://${host}`;
+    }
+    if (!origin) {
+      origin = "https://paisa-pos-26-5-21.vercel.app"; // Production fallback
+    }
 
-  const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-    redirectTo: `${origin}/auth/callback?type=recovery`,
-  });
-
-  if (error) {
-    await writeLog("SECURITY", "AUTH_PASSWORD_RESET_FAILURE", `Failed reset request for email: ${cleanEmail}`, {
-      email: cleanEmail,
-      errorMessage: error.message,
+    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+      redirectTo: `${origin}/auth/callback?type=recovery`,
     });
-    throw new Error(error.message);
-  }
 
-  await writeLog("SECURITY", "AUTH_PASSWORD_RESET_SUCCESS", `Password reset link sent to: ${cleanEmail}`);
-  return { success: true };
+    if (error) {
+      await writeLog("SECURITY", "AUTH_PASSWORD_RESET_FAILURE", `Failed reset request for email: ${cleanEmail}`, {
+        email: cleanEmail,
+        errorMessage: error.message,
+      });
+      return { error: error.message };
+    }
+
+    await writeLog("SECURITY", "AUTH_PASSWORD_RESET_SUCCESS", `Password reset link sent to: ${cleanEmail}`);
+    return { success: true };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to send reset email.";
+    return { error: message };
+  }
 }
