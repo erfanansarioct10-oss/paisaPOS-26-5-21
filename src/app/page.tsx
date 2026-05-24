@@ -106,7 +106,10 @@ export default function LoginPage() {
       if (isLogin) {
         // Sign in using server action
         try {
-          await loginAction({ email, password });
+          const res = await loginAction({ email, password });
+          if (res?.error) {
+            throw new Error(res.error);
+          }
           setFailedAttempts(0);
         } catch (error: unknown) {
           // Track failed login attempts for client-side rate limiting
