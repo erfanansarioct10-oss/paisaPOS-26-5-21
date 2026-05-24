@@ -1,0 +1,2 @@
+Product Name,Category,Size,Color,Price,Stock,SKU,Low Stock Threshold
+"Oversized Shirt'; DROP TABLE products;--",Tops,"<script>alert('xss')</script>",Black,-1200,15.5,FUZZ-ERR-SKU,-5

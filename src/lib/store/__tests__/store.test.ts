@@ -119,15 +119,6 @@ vi.mock("@/app/actions", () => {
         }
       }
 
-      // Deduct stock
-      const updatedVariants = state.variants.map((v: any) => {
-        const item = params.items.find((i: any) => i.variant_id === v.id);
-        if (item) {
-          return { ...v, stock: v.stock - item.quantity };
-        }
-        return v;
-      });
-
       // Price validation check
       const recalculatedTotal = params.items.reduce((sum: number, item: any) => sum + item.quantity * item.unit_price, 0) - params.discountAmount;
       if (Math.abs(recalculatedTotal - params.totalAmount) > 0.01) {
@@ -156,11 +147,6 @@ vi.mock("@/app/actions", () => {
         unit_price: item.unit_price,
         subtotal: item.subtotal,
       }));
-
-      currentStore.setState({
-        variants: updatedVariants,
-        invoices: [newInvoice, ...state.invoices],
-      });
 
       return {
         ...newInvoice,
@@ -716,6 +702,8 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
           eq: () => chain,
           order: () => chain,
           in: () => chain,
+          limit: () => chain,
+          range: () => chain,
           single: () => chain,
         };
         chain.then = (resolve: any) => {

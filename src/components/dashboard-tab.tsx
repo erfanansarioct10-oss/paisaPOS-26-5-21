@@ -75,11 +75,16 @@ export default function DashboardTab() {
   };
 
   // View receipt detail
-  const handleViewReceipt = (invoice: Invoice) => {
-    // Search cached line items or map from variants
-    const items = invoiceItems[invoice.id] || [];
+  const handleViewReceipt = async (invoice: Invoice) => {
+    // Search cached line items or load them dynamically
+    let items = invoiceItems[invoice.id] || [];
     
-    // If empty (e.g. freshly fetched from DB), attempt to construct from state variants
+    if (items.length === 0) {
+      const { fetchInvoiceItems } = useAppStore.getState();
+      items = await fetchInvoiceItems(invoice.id);
+    }
+    
+    // Attempt to construct details from state variants
     const filledItems = items.map(item => {
       if (!item.variant_id) {
         return {

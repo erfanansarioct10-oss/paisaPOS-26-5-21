@@ -15,6 +15,7 @@ export interface Profile {
   name: string;
   store_id: string;
   email?: string;
+  role?: "owner" | "cashier";
 }
 
 export interface Product {
@@ -116,6 +117,7 @@ export interface AppState {
   // Modals & UI States
   isProductModalOpen: boolean;
   isQuickBillingOpen: boolean;
+  isImporting: boolean;
 
   // In-flight concurrency tracking for stock updates
   pendingStockUpdates: Record<string, number>;
@@ -135,6 +137,8 @@ export interface AppState {
 
   // Synchronizers
   fetchStoreData: (options?: { forceLoading?: boolean }) => Promise<void>;
+  loadMoreInvoices: (limit?: number) => Promise<void>;
+  fetchInvoiceItems: (invoiceId: string) => Promise<InvoiceItem[]>;
   clearError: () => void;
 
   // Products & Variants Management
@@ -163,6 +167,27 @@ export interface AppState {
   ) => Promise<boolean>;
   updateStockDirect: (variantId: string, newStock: number) => Promise<boolean>;
   toggleProductFavorite: (productId: string, isFavorite: boolean) => Promise<boolean>;
+  
+  bulkImportProducts: (
+    parsedProducts: Array<{
+      name: string;
+      category: string;
+      lowStockThreshold: number;
+      variants: Array<{
+        size: string;
+        color: string;
+        sku: string;
+        price: number;
+        stock: number;
+      }>;
+    }>,
+    onProgress?: (current: number, total: number) => void
+  ) => Promise<{
+    succeededCount: number;
+    failedProducts: Array<{ name: string; error: string }>;
+    failedChunkError?: string;
+    skippedRemainder?: string[];
+  }>;
 
   // Billing POS Cart Actions
   addToCart: (variantId: string) => void;

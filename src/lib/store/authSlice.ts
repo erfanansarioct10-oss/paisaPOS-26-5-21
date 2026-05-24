@@ -3,13 +3,17 @@
 // =========================================================================
 
 import { supabase } from "@/lib/supabase";
-import type { AppState, ProductVariant, Invoice, InvoiceItem } from "./types";
+import type { AppState, ProductVariant } from "./types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 let activeRealtimeChannel: RealtimeChannel | null = null;
 let realtimeFetchTimeout: ReturnType<typeof setTimeout> | null = null;
 
-const subscribeToRealtimeChanges = (storeId: string, fetchStoreData: () => Promise<void>) => {
+const subscribeToRealtimeChanges = (
+  storeId: string,
+  fetchStoreData: () => Promise<void>,
+  checkImporting: () => boolean
+) => {
   if (activeRealtimeChannel) {
     supabase.removeChannel(activeRealtimeChannel);
     activeRealtimeChannel = null;
@@ -20,6 +24,7 @@ const subscribeToRealtimeChanges = (storeId: string, fetchStoreData: () => Promi
   }
 
   const debouncedFetch = () => {
+    if (checkImporting()) return;
     if (realtimeFetchTimeout) {
       clearTimeout(realtimeFetchTimeout);
     }
@@ -74,6 +79,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
   // Modals
   isProductModalOpen: false,
   isQuickBillingOpen: false,
+  isImporting: false,
 
   // Concurrency tracking for stock updates
   pendingStockUpdates: {} as Record<string, number>,
@@ -154,11 +160,11 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
 
       // Success: Save Session details, trigger data fetches
       set({
-        user: { id: profile.id, name: profile.name, store_id: profile.store_id, email: authUser.email },
+        user: { id: profile.id, name: profile.name, store_id: profile.store_id, email: authUser.email, role: profile.role },
         store: store,
       });
 
-      subscribeToRealtimeChanges(profile.store_id, get().fetchStoreData);
+      subscribeToRealtimeChanges(profile.store_id, get().fetchStoreData, () => get().isImporting);
 
       await get().fetchStoreData();
     } catch (e: unknown) {
@@ -243,7 +249,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
 
       if (prodError) throw prodError;
 
-      // 2. Fetch variants + inlined stock
+      // 2. Fetch variants + inlined stock (tenant-scoped to prevent URL length limits and preflight CORS crashes on larger catalogs)
       const { data: dbVariants, error: varError } = await supabase
         .from("product_variants")
         .select(`
@@ -256,7 +262,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
           created_at,
           inventory (quantity)
         `)
-        .in("product_id", (dbProducts || []).map(p => p.id));
+        .eq("store_id", store.id);
 
       if (varError) throw varError;
 
@@ -288,23 +294,17 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
         };
       });
 
-      // 3. Fetch Invoices with line items to populate cached line items (fixes empty reprint line items bug)
+      // 3. Fetch Invoices (Paginating - Fetch 50 most recent records max)
       const { data: dbInvoices, error: invError } = await supabase
         .from("invoices")
-        .select("*, invoice_items(*)")
+        .select("*")
         .eq("store_id", store.id)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(50);
 
       if (invError) throw invError;
 
-      type DbInvoiceWithItems = Invoice & { invoice_items?: InvoiceItem[] };
-
-      const invoiceItemsMap: Record<string, InvoiceItem[]> = {};
-      if (dbInvoices) {
-        (dbInvoices as DbInvoiceWithItems[]).forEach((inv) => {
-          invoiceItemsMap[inv.id] = inv.invoice_items || [];
-        });
-      }
+      const invoiceItemsMap = { ...get().invoiceItems };
 
       const mappedProducts = (dbProducts || []).map((p) => {
         const pendingFav = get().pendingFavoriteUpdates[p.id];
@@ -330,6 +330,59 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       }
     }
   },
+
+  loadMoreInvoices: async (limit = 50) => {
+    const { store, invoices } = get();
+    if (!store) return;
+
+    const offset = invoices.length;
+    try {
+      const { data: moreInvoices, error } = await supabase
+        .from("invoices")
+        .select("*")
+        .eq("store_id", store.id)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      if (error) throw error;
+
+      if (moreInvoices && moreInvoices.length > 0) {
+        set({ invoices: [...invoices, ...moreInvoices] });
+      }
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.error("Error loading more invoices:", errMsg);
+      set({ errorMsg: "Failed to load more invoices: " + errMsg });
+    }
+  },
+
+  fetchInvoiceItems: async (invoiceId: string) => {
+    try {
+      const { data: items, error } = await supabase
+        .from("invoice_items")
+        .select("*")
+        .eq("invoice_id", invoiceId);
+
+      if (error) throw error;
+
+      const parsedItems = items || [];
+
+      set((state) => ({
+        invoiceItems: {
+          ...state.invoiceItems,
+          [invoiceId]: parsedItems,
+        },
+      }));
+
+      return parsedItems;
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.error(`Error fetching line items for invoice ${invoiceId}:`, errMsg);
+      set({ errorMsg: "Failed to load receipt details: " + errMsg });
+      return [];
+    }
+  },
+
   clearError: () => {
     set({ errorMsg: null });
   },

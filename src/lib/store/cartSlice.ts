@@ -7,13 +7,17 @@ import { checkoutAction } from "@/app/actions";
 
 function mapCheckoutError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
-  if (msg.toLowerCase().includes("insufficient stock")) {
+  const lowercaseMsg = msg.toLowerCase();
+  if (lowercaseMsg.includes("invalid checkout payload")) {
     return msg;
   }
-  if (msg.toLowerCase().includes("price tampering")) {
+  if (lowercaseMsg.includes("insufficient stock")) {
+    return msg;
+  }
+  if (lowercaseMsg.includes("price tampering")) {
     return "Checkout failed: Price validation mismatch. Please refresh your cart.";
   }
-  if (msg.toLowerCase().includes("unauthorized") || msg.toLowerCase().includes("unauthenticated")) {
+  if (lowercaseMsg.includes("unauthorized") || lowercaseMsg.includes("unauthenticated")) {
     return "Checkout failed: Unauthorized session. Please sign in again.";
   }
   return "Failed to process sale. Please try again.";
@@ -235,18 +239,33 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
         };
       });
 
-      // Clear cart locally, refresh store variables, and set receipt active
-      set({
-        cart: [],
-        cartDiscount: 0,
-        customerName: "",
-        customerPhone: "",
-        paymentMethod: "Cash",
-        activeInvoice: dbInvoice,
-        activeInvoiceItems: receiptItems,
-      });
+      // Clear cart locally, update store variables in-memory, and set receipt active
+      // Atomically prepends the returned invoice and decrements variant stock levels locally, avoiding redundant network fetches
+      set((state) => {
+        const updatedVariants = state.variants.map((v) => {
+          const cartItem = cart.find((item) => item.variant_id === v.id);
+          if (cartItem) {
+            return { ...v, stock: Math.max(0, (v.stock ?? 0) - cartItem.quantity) };
+          }
+          return v;
+        });
 
-      await get().fetchStoreData();
+        return {
+          cart: [],
+          cartDiscount: 0,
+          customerName: "",
+          customerPhone: "",
+          paymentMethod: "Cash",
+          activeInvoice: dbInvoice,
+          activeInvoiceItems: receiptItems,
+          invoices: [dbInvoice, ...state.invoices],
+          invoiceItems: {
+            ...state.invoiceItems,
+            [dbInvoice.id]: receiptItems,
+          },
+          variants: updatedVariants,
+        };
+      });
 
       return true;
     } catch (e: unknown) {

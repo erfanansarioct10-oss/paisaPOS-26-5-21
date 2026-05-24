@@ -9,6 +9,11 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:stress": "npx tsx scripts/stress-test.ts",
+    "test:abuse": "npx tsx scripts/test-abuse-protection.ts",
+    "test:security-stress": "npx tsx scripts/security-stress-test.ts",
+    "test:e2e": "playwright test",
+    "test:e2e-ui": "playwright test --ui",
     "audit": "npm audit --audit-level=high"
   },
   "dependencies": {
@@ -20,10 +25,12 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "tailwind-merge": "^3.6.0",
+    "xlsx": "^0.18.5",
     "zod": "^4.4.3",
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
