@@ -169,26 +169,30 @@ export default function LoginPage() {
 
       const lowercaseErr = friendlyError.toLowerCase();
       if (lowercaseErr.includes("too many attempts") || lowercaseErr.includes("too many requests")) {
-        const match = friendlyError.match(/(\d+)\s*(second|minute|hour)/i);
-        if (match) {
-          const value = parseInt(match[1], 10);
-          const unit = match[2].toLowerCase();
+        const minMatch = friendlyError.match(/(\d+)\s*minute/i);
+        const secMatch = friendlyError.match(/(\d+)\s*second/i);
+        const hourMatch = friendlyError.match(/(\d+)\s*hour/i);
 
-          let durationSeconds = 30; // fallback
-          if (unit.startsWith("second")) {
-            durationSeconds = value;
-          } else if (unit.startsWith("minute")) {
-            durationSeconds = value * 60;
-          } else if (unit.startsWith("hour")) {
-            durationSeconds = value * 3600;
+        let durationSeconds = 0;
+        if (hourMatch) durationSeconds += parseInt(hourMatch[1], 10) * 3600;
+        if (minMatch) durationSeconds += parseInt(minMatch[1], 10) * 60;
+        if (secMatch) durationSeconds += parseInt(secMatch[1], 10);
+
+        if (durationSeconds === 0) {
+          const simpleMatch = friendlyError.match(/(\d+)\s*(second|minute|hour)/i);
+          if (simpleMatch) {
+            const val = parseInt(simpleMatch[1], 10);
+            const unit = simpleMatch[2].toLowerCase();
+            if (unit.startsWith("second")) durationSeconds = val;
+            else if (unit.startsWith("minute")) durationSeconds = val * 60;
+            else if (unit.startsWith("hour")) durationSeconds = val * 3600;
+          } else {
+            durationSeconds = 5 * 60; // 5 minutes fallback
           }
-
-          setLockoutRemaining(durationSeconds);
-          setFailedAttempts(0); // Reset local count since we are in active server lockout
-        } else {
-          setLockoutRemaining(5 * 60); // 5 minutes fallback
-          setFailedAttempts(0);
         }
+
+        setLockoutRemaining(durationSeconds);
+        setFailedAttempts(0);
       }
     } finally {
       setLocalLoading(false);
@@ -239,26 +243,30 @@ export default function LoginPage() {
 
       const lowercaseErr = friendlyError.toLowerCase();
       if (lowercaseErr.includes("too many attempts") || lowercaseErr.includes("too many requests")) {
-        const match = friendlyError.match(/(\d+)\s*(second|minute|hour)/i);
-        if (match) {
-          const value = parseInt(match[1], 10);
-          const unit = match[2].toLowerCase();
+        const minMatch = friendlyError.match(/(\d+)\s*minute/i);
+        const secMatch = friendlyError.match(/(\d+)\s*second/i);
+        const hourMatch = friendlyError.match(/(\d+)\s*hour/i);
 
-          let durationSeconds = 30; // fallback
-          if (unit.startsWith("second")) {
-            durationSeconds = value;
-          } else if (unit.startsWith("minute")) {
-            durationSeconds = value * 60;
-          } else if (unit.startsWith("hour")) {
-            durationSeconds = value * 3600;
+        let durationSeconds = 0;
+        if (hourMatch) durationSeconds += parseInt(hourMatch[1], 10) * 3600;
+        if (minMatch) durationSeconds += parseInt(minMatch[1], 10) * 60;
+        if (secMatch) durationSeconds += parseInt(secMatch[1], 10);
+
+        if (durationSeconds === 0) {
+          const simpleMatch = friendlyError.match(/(\d+)\s*(second|minute|hour)/i);
+          if (simpleMatch) {
+            const val = parseInt(simpleMatch[1], 10);
+            const unit = simpleMatch[2].toLowerCase();
+            if (unit.startsWith("second")) durationSeconds = val;
+            else if (unit.startsWith("minute")) durationSeconds = val * 60;
+            else if (unit.startsWith("hour")) durationSeconds = val * 3600;
+          } else {
+            durationSeconds = 5 * 60; // 5 minutes fallback
           }
-
-          setLockoutRemaining(durationSeconds);
-          setFailedAttempts(0);
-        } else {
-          setLockoutRemaining(5 * 60);
-          setFailedAttempts(0);
         }
+
+        setLockoutRemaining(durationSeconds);
+        setFailedAttempts(0);
       }
     } finally {
       setLocalLoading(false);

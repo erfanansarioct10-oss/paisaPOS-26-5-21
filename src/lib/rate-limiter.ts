@@ -132,7 +132,7 @@ class UpstashRateLimiter {
     const windowStart = now - this.windowMs;
 
     try {
-      // Pipeline: ZREMRANGEBYSCORE (prune old) + ZADD (add current) + ZCARD (count) + PEXPIRE (TTL)
+      // Pipeline: ZREMRANGEBYSCORE (prune old) + ZADD (add current) + ZCARD (count) + ZRANGE (oldest) + PEXPIRE (TTL)
       const response = await fetch(`${this.restUrl}/pipeline`, {
         method: "POST",
         headers: {
@@ -143,6 +143,7 @@ class UpstashRateLimiter {
           ["ZREMRANGEBYSCORE", windowKey, "0", String(windowStart)],
           ["ZADD", windowKey, String(now), `${now}-${Math.random().toString(36).slice(2, 8)}`],
           ["ZCARD", windowKey],
+          ["ZRANGE", windowKey, "0", "0"],
           ["PEXPIRE", windowKey, String(this.windowMs)],
         ]),
       });
@@ -153,14 +154,26 @@ class UpstashRateLimiter {
         return { success: true, remaining: this.maxRequests, resetAt: now + this.windowMs };
       }
 
-      const results = await response.json() as Array<{ result: number }>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const results = await response.json() as Array<{ result: any }>;
       const currentCount = results[2]?.result ?? 0;
+      const zrangeResult = results[3]?.result as string[];
+      const oldestMember = zrangeResult?.[0];
+
+      let resetAt = now + this.windowMs;
+      if (oldestMember) {
+        const oldestTimestamp = parseInt(oldestMember.split("-")[0], 10);
+        if (!isNaN(oldestTimestamp)) {
+          resetAt = oldestTimestamp + this.windowMs;
+        }
+      }
+
       const remaining = Math.max(0, this.maxRequests - currentCount);
 
       return {
         success: currentCount <= this.maxRequests,
         remaining,
-        resetAt: now + this.windowMs,
+        resetAt,
       };
     } catch {
       // Fail-open: if Redis is unreachable, don't block legitimate traffic
@@ -366,8 +379,24 @@ export async function enforceRateLimit(
       windowMs: limiter.windowMs,
     });
 
+    const remainingMs = Math.max(0, result.resetAt - Date.now());
+    const remainingSeconds = Math.ceil(remainingMs / 1000);
+
+    let timeDescription = "";
+    if (remainingSeconds >= 3600) {
+      const hours = Math.floor(remainingSeconds / 3600);
+      const mins = Math.ceil((remainingSeconds % 3600) / 60);
+      timeDescription = `${hours} hour(s) and ${mins} minute(s)`;
+    } else if (remainingSeconds >= 60) {
+      const mins = Math.floor(remainingSeconds / 60);
+      const secs = remainingSeconds % 60;
+      timeDescription = secs > 0 ? `${mins} minute(s) and ${secs} second(s)` : `${mins} minute(s)`;
+    } else {
+      timeDescription = `${remainingSeconds} second(s)`;
+    }
+
     throw new Error(
-      `Too many requests. Please try again in ${limiter.windowDescription}.`
+      `Too many requests. Please try again in ${timeDescription}.`
     );
   }
 }
