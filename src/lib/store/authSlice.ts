@@ -225,6 +225,10 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       activeTab: "dashboard" as const,
       isLoading: false,
     });
+
+    if (typeof window !== "undefined" && window.location) {
+      window.location.href = "/";
+    }
   },
 
   // -----------------------------------------------------------------------
