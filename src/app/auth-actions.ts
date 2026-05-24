@@ -55,7 +55,7 @@ async function getSupabaseServerClient() {
 export async function loginAction(rawParams: unknown) {
   const validation = authSchema.safeParse(rawParams);
   if (!validation.success) {
-    throw new Error(formatZodError(validation.error));
+    return { error: formatZodError(validation.error) };
   }
 
   const { email, password } = validation.data;
@@ -95,7 +95,7 @@ export async function loginAction(rawParams: unknown) {
       }
     }
 
-    throw new Error(error.message);
+    return { error: error.message };
   }
 
   // Log successful login
@@ -207,8 +207,11 @@ export async function requestPasswordResetAction(email: string) {
 
   const supabase = await getSupabaseServerClient();
 
-  // Canonical origin resolution: use APP_URL env var, fallback to headers in development
+  // Canonical origin resolution: use APP_URL env var, fallback to Vercel, then headers in development
   let origin = process.env.APP_URL;
+  if (!origin && process.env.NEXT_PUBLIC_VERCEL_URL) {
+    origin = `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`;
+  }
   if (!origin && process.env.NODE_ENV !== "production") {
     const headersList = await headers();
     const host = headersList.get("host") || "localhost:3000";
@@ -216,7 +219,7 @@ export async function requestPasswordResetAction(email: string) {
     origin = `${proto}://${host}`;
   }
   if (!origin) {
-    origin = "https://paisapos.com"; // Production fallback
+    origin = "https://paisa-pos-26-5-21.vercel.app"; // Production fallback
   }
 
   const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
