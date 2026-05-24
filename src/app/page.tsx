@@ -155,7 +155,32 @@ export default function LoginPage() {
       // Re-initialize Zustand state which pulls the auth user details and routes them
       await initializeSession();
     } catch (err: unknown) {
-      setLocalError(getFriendlyErrorMessage(err));
+      const friendlyError = getFriendlyErrorMessage(err);
+      setLocalError(friendlyError);
+
+      const lowercaseErr = friendlyError.toLowerCase();
+      if (lowercaseErr.includes("too many attempts") || lowercaseErr.includes("too many requests")) {
+        const match = friendlyError.match(/(\d+)\s*(second|minute|hour)/i);
+        if (match) {
+          const value = parseInt(match[1], 10);
+          const unit = match[2].toLowerCase();
+
+          let durationSeconds = 30; // fallback
+          if (unit.startsWith("second")) {
+            durationSeconds = value;
+          } else if (unit.startsWith("minute")) {
+            durationSeconds = value * 60;
+          } else if (unit.startsWith("hour")) {
+            durationSeconds = value * 3600;
+          }
+
+          setLockoutRemaining(durationSeconds);
+          setFailedAttempts(0); // Reset local count since we are in active server lockout
+        } else {
+          setLockoutRemaining(5 * 60); // 5 minutes fallback
+          setFailedAttempts(0);
+        }
+      }
     } finally {
       setLocalLoading(false);
     }
@@ -200,7 +225,32 @@ export default function LoginPage() {
         "Password reset link sent! Check your email inbox and click the link to set a new password."
       );
     } catch (err: unknown) {
-      setLocalError(getFriendlyErrorMessage(err));
+      const friendlyError = getFriendlyErrorMessage(err);
+      setLocalError(friendlyError);
+
+      const lowercaseErr = friendlyError.toLowerCase();
+      if (lowercaseErr.includes("too many attempts") || lowercaseErr.includes("too many requests")) {
+        const match = friendlyError.match(/(\d+)\s*(second|minute|hour)/i);
+        if (match) {
+          const value = parseInt(match[1], 10);
+          const unit = match[2].toLowerCase();
+
+          let durationSeconds = 30; // fallback
+          if (unit.startsWith("second")) {
+            durationSeconds = value;
+          } else if (unit.startsWith("minute")) {
+            durationSeconds = value * 60;
+          } else if (unit.startsWith("hour")) {
+            durationSeconds = value * 3600;
+          }
+
+          setLockoutRemaining(durationSeconds);
+          setFailedAttempts(0);
+        } else {
+          setLockoutRemaining(5 * 60);
+          setFailedAttempts(0);
+        }
+      }
     } finally {
       setLocalLoading(false);
     }
