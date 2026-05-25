@@ -1,5 +1,21 @@
 # Memory
-> Last updated: 2026-05-25 14:36 NPT
+> Last updated: 2026-05-25 15:07 NPT
+
+## Beta V1.1 Staff, Activity, and Delegated Privilege Research (2026-05-25)
+
+**Observation:** Beta V1 is live and should remain unchanged while V1.1 explores the owner/cashier trust model more deeply. The product problem is not just "roles"; boutique owners need staff continuity when they are away, plus accountability so every sale, catalog edit, stock adjustment, invite, and delegated admin action clearly shows who did it, when, and under whose authority.
+
+**Action:**
+- **Feature Research Package:** Created [FEATURE_STAFF_ACTIVITY_ACCOUNTABILITY.md](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/PaisaPOS_OS/FEATURE_STAFF_ACTIVITY_ACCOUNTABILITY.md) as the A-to-Z product and architecture plan for Staff, Activity, and Accountability. It defines owner-first/staff-optional UX, no shared staff accounts, delegation without permanent role mutation, permission scopes, proposed schema, Server Action/DAL routes, UI surfaces, implementation phases, source-backed research notes, and open product decisions.
+- **Security & Privacy Design:** Created [FEATURE_STAFF_ACTIVITY_SECURITY_PRIVACY.md](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/PaisaPOS_OS/FEATURE_STAFF_ACTIVITY_SECURITY_PRIVACY.md) covering trust boundaries, RLS/Data API hardening, staff invitation security, temporary delegation security, step-up auth/MFA guidance, immutable activity logging, retention/privacy rules, rate limits, conflict controls, and acceptance criteria.
+- **Test & Confirmation Plan:** Created [FEATURE_STAFF_ACTIVITY_TEST_PLAN.md](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/PaisaPOS_OS/FEATURE_STAFF_ACTIVITY_TEST_PLAN.md) covering local/dev Supabase setup, migration checks, RLS checks, unit/server action/live DB tests, Playwright flows, security abuse tests, performance checks, and release confirmation gates.
+- **Research Basis:** Grounded the plan in local Next 16 docs for Server Actions, server-only data access, and expected error handling; Supabase guidance for RLS, Auth Admin invitations, MFA/reauthentication, database functions, function grants, and RLS performance; and OWASP guidance for authorization, logging, and session management.
+
+**Decision:** V1.1 should not replace the simple boutique owner flow with heavyweight enterprise RBAC. The default remains owner-only and simple. Staff features appear only when the owner adds staff. Temporary high-level access should be implemented as short-lived, scope-limited delegation records checked from the database on every privileged action, not by changing `users.role` or storing delegation only in JWT/app metadata.
+
+**Next Build Order:** Phase 1 should implement the durable `activity_events` foundation first, then staff invitations, then temporary delegation. This prevents hidden privilege expansion and gives owners visibility before adding more power to cashier accounts.
+
+**Lesson:** A trust feature becomes one-of-a-kind for small shops when it is not just restrictive, but explanatory. The owner should be able to answer: who acted, what changed, what authority they used, whether the action succeeded, and how to revoke or prevent it next time.
 
 ## Beta V1.1 Development Lane Setup (2026-05-25)
 
