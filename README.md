@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PaisaPOS
+
+Next.js 16 + Supabase POS billing and inventory sync for beta store pilots.
 
 ## Getting Started
 
-First, run the development server:
+Install dependencies, configure `.env.local` from `.env.example`, then run:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Public Beta Release Gate
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Before approving a public beta build, run:
 
-## Learn More
+```bash
+npm run lint
+npm run build
+npm test
+npm run test:e2e
+npm audit --audit-level=high
 
-To learn more about Next.js, take a look at the following resources:
+supabase migration list --linked
+supabase db push --dry-run
+supabase db lint --linked --fail-on error
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Some Supabase CLI versions require `SUPABASE_DB_PASSWORD` for linked database lint or dry-run checks. Keep that value local to the release operator; it is not a browser/runtime env var.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+If the installed Supabase CLI supports advisors, also run:
 
-## Deploy on Vercel
+```bash
+supabase db advisors --linked
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Acceptance criteria:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- All npm gates pass.
+- E2E passes locally and against the deployed beta URL.
+- No unexpected pending Supabase migrations.
+- No Supabase lint/advisor error-level findings.
+- `/api/health` returns `200` in the deployed environment.
+- Security headers are present in the deployed environment.
+- No tracked cookies, auth state, secrets, or generated logs.
+
+## Deployed E2E
+
+Run browser tests against a Vercel preview or beta deployment without starting a local dev server:
+
+```powershell
+$env:PLAYWRIGHT_BASE_URL="https://your-preview-or-beta-url.example"
+npm run test:e2e
+```
+
+## Supabase Beta Checklist
+
+- Apply all committed migrations to the linked beta project.
+- Confirm Supabase Auth redirect URLs include `${APP_URL}/auth/callback`.
+- Confirm the beta onboarding policy intentionally allows or requires email confirmation.
+- Keep `SUPABASE_SERVICE_ROLE_KEY` server-only.
+- Keep Upstash Redis configured for production rate limiting with `RATE_LIMIT_FAIL_CLOSED=true`.

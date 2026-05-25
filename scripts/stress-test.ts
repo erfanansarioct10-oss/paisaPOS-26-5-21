@@ -37,6 +37,11 @@ function logError(msg: string) {
   console.log(`${red}[FAIL]${reset} ${msg}`);
 }
 
+function envInt(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
 async function main() {
   console.log(`
 ${bright}${green}┌────────────────────────────────────────────────────────┐
@@ -187,7 +192,7 @@ ${bright}${green}┌────────────────────
     logInfo("Initiating concurrent checkout floods in opposing locks order...");
     logInfo("Alternating cart sorting orders to trigger Postgres race conditions...");
 
-    const concurrencyThreshold = 20;
+    const concurrencyThreshold = envInt("AUDIT_CHECKOUT_CONCURRENCY", 20);
     const checkoutPromises: PromiseLike<{ duration: number; error: { message: string } | null; success: boolean }>[] = [];
 
     for (let i = 0; i < concurrencyThreshold; i++) {
@@ -266,7 +271,7 @@ ${bright}${green}┌────────────────────
       logWarning("Skipping Cashier Privilege Escalation flood (SUPABASE_SERVICE_ROLE_KEY missing).");
     } else {
       logInfo("Flooding product upsert RPC from Cashier session concurrently...");
-      const floodAttempts = 20;
+      const floodAttempts = envInt("AUDIT_PRIVILEGE_FLOOD_COUNT", 20);
       const attackPromises: PromiseLike<{ error: { message: string } | null }>[] = [];
 
       for (let i = 0; i < floodAttempts; i++) {
@@ -364,7 +369,7 @@ ${bright}${green}┌────────────────────
     } else {
       logInfo("Flooding unauthenticated brute force sign-ins to activate the anomaly scanner...");
       
-      const failedLoginsCount = 12;
+      const failedLoginsCount = envInt("AUDIT_FAILED_LOGIN_LOG_COUNT", 12);
       const failedLoginPromises: PromiseLike<{ error: { message: string } | null }>[] = [];
 
       for (let i = 0; i < failedLoginsCount; i++) {

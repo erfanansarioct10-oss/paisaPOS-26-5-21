@@ -327,6 +327,41 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
     await adminClient.from("users").delete().eq("id", signUp.user!.id);
     await client.auth.signOut();
   }, 20000);
+
+  // =========================================================================
+  // 5. RPC GRANT HARDENING
+  // =========================================================================
+  test("RPC Grants: blocks anon/authenticated callers from admin-only SECURITY DEFINER functions", async () => {
+    const anonClient = createClient(supabaseUrl, supabaseAnonKey);
+
+    const { error: anonThreatScanError } = await anonClient.rpc("detect_threat_anomalies");
+    expect(anonThreatScanError).not.toBeNull();
+    expect(anonThreatScanError!.message.toLowerCase()).toMatch(/permission|denied|not authorized|not found/);
+
+    const random = Math.random().toString(36).slice(2, 7) + Date.now();
+    const email = `test-rpc-grants-${random}@paisapos-qa.com`;
+    const password = "SecurityDefinerPass123!";
+    const authClient = createClient(supabaseUrl, supabaseAnonKey);
+
+    const { data: signUp } = await authClient.auth.signUp({ email, password });
+    expect(signUp.user).toBeDefined();
+
+    const { error: authThreatScanError } = await authClient.rpc("detect_threat_anomalies");
+    expect(authThreatScanError).not.toBeNull();
+    expect(authThreatScanError!.message.toLowerCase()).toMatch(/permission|denied|not authorized|not found/);
+
+    const { data: storeId, error: onboardError } = await authClient.rpc("register_store_and_user", {
+      p_full_name: "RPC Grant Owner",
+      p_store_name: `RPC Grant Store - ${random}`,
+    });
+    expect(onboardError).toBeNull();
+    expect(storeId).toBeDefined();
+
+    const adminClient = createClient(supabaseUrl, serviceRoleKey!);
+    await adminClient.from("stores").delete().eq("id", storeId);
+    await adminClient.from("users").delete().eq("id", signUp.user!.id);
+    await authClient.auth.signOut();
+  }, 20000);
 });
 
 // =========================================================================

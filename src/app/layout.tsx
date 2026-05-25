@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Outfit } from "next/font/google";
+import { connection } from "next/server";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
@@ -19,53 +20,42 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "PaisaPOS — Real-Time Billing & Inventory Sync",
+  metadataBase: new URL(process.env.APP_URL || "https://paisa-pos-26-5-21.vercel.app"),
+  title: "PaisaPOS - Real-Time Billing & Inventory Sync",
   description: "High-speed, inventory-first POS billing terminal for fashion boutiques and clothing stores in Nepal.",
+  applicationName: "PaisaPOS",
+  openGraph: {
+    title: "PaisaPOS",
+    description: "High-speed, inventory-first POS billing terminal for fashion boutiques and clothing stores in Nepal.",
+    url: "/",
+    siteName: "PaisaPOS",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "PaisaPOS",
+    description: "High-speed, inventory-first POS billing terminal for fashion boutiques and clothing stores in Nepal.",
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  await connection();
+
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${outfit.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function() {
-                try {
-                  var saved = localStorage.getItem('theme');
-                  var theme = saved || 'system';
-                  var resolved = theme;
-                  if (theme === 'system') {
-                    resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-                  }
-                  if (resolved === 'dark') {
-                    document.documentElement.classList.add('dark');
-                    document.documentElement.style.colorScheme = 'dark';
-                  } else {
-                    document.documentElement.classList.remove('dark');
-                    document.documentElement.style.colorScheme = 'light';
-                  }
-                } catch (e) {}
-              })();
-            `,
-          }}
-        />
-      </head>
       <body className="min-h-full flex flex-col bg-background text-foreground font-sans selection:bg-primary/20 selection:text-primary">
         <ThemeProvider>
           {children}
@@ -74,4 +64,3 @@ export default function RootLayout({
     </html>
   );
 }
-

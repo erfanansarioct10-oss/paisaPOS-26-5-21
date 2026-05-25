@@ -118,12 +118,21 @@ class UpstashRateLimiter {
   private readonly windowMs: number;
   private readonly restUrl: string;
   private readonly restToken: string;
+  private readonly failClosed: boolean;
 
-  constructor(maxRequests: number, windowMs: number, restUrl: string, restToken: string) {
+  constructor(maxRequests: number, windowMs: number, restUrl: string, restToken: string, failClosed: boolean) {
     this.maxRequests = maxRequests;
     this.windowMs = windowMs;
     this.restUrl = restUrl;
     this.restToken = restToken;
+    this.failClosed = failClosed;
+  }
+
+  private failureResult(now: number): RateLimitResult {
+    if (this.failClosed) {
+      return { success: false, remaining: 0, resetAt: now + this.windowMs };
+    }
+    return { success: true, remaining: this.maxRequests, resetAt: now + this.windowMs };
   }
 
   async check(identifier: string): Promise<RateLimitResult> {
@@ -149,9 +158,8 @@ class UpstashRateLimiter {
       });
 
       if (!response.ok) {
-        // On Upstash failure, allow the request (fail-open)
         console.error(`Upstash rate limiter error: ${response.status}`);
-        return { success: true, remaining: this.maxRequests, resetAt: now + this.windowMs };
+        return this.failureResult(now);
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -176,9 +184,8 @@ class UpstashRateLimiter {
         resetAt,
       };
     } catch {
-      // Fail-open: if Redis is unreachable, don't block legitimate traffic
-      console.error("Upstash rate limiter unreachable, failing open");
-      return { success: true, remaining: this.maxRequests, resetAt: now + this.windowMs };
+      console.error(`Upstash rate limiter unreachable, failing ${this.failClosed ? "closed" : "open"}`);
+      return this.failureResult(now);
     }
   }
 }
@@ -200,6 +207,7 @@ export class RateLimiter {
 
     const restUrl = process.env.UPSTASH_REDIS_REST_URL;
     const restToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+    const failClosed = process.env.RATE_LIMIT_FAIL_CLOSED === "true";
 
     // Strict production check (D2)
     if (process.env.NODE_ENV === "production" && process.env.VERCEL_ENV === "production") {
@@ -213,7 +221,7 @@ export class RateLimiter {
 
     this.upstashLimiter =
       restUrl && restToken
-        ? new UpstashRateLimiter(maxRequests, windowMs, restUrl, restToken)
+        ? new UpstashRateLimiter(maxRequests, windowMs, restUrl, restToken, failClosed)
         : null;
   }
 

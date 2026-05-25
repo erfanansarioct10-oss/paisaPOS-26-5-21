@@ -6,7 +6,7 @@ import { useAppStore } from "@/lib/store/useAppStore";
 import { supabase } from "@/lib/supabase";
 import { Store, Mail, Lock, User, AlertCircle, Loader2, CheckCircle } from "lucide-react";
 import { loginAction, signupAction, requestPasswordResetAction } from "@/app/auth-actions";
-import { getFriendlyErrorMessage } from "@/lib/security";
+import { getFriendlyErrorMessage, normalizeEmail } from "@/lib/security";
 
 // ---------------------------------------------------------------------------
 // Client-side rate-limiting constants (defense-in-depth, not a security boundary)
@@ -113,10 +113,11 @@ export default function LoginPage() {
     setLocalLoading(true);
 
     try {
+      const normalizedEmail = normalizeEmail(email);
       if (isLogin) {
         // Sign in using server action
         try {
-          const res = await loginAction({ email, password });
+          const res = await loginAction({ email: normalizedEmail, password });
           if (res?.error) {
             throw new Error(res.error);
           }
@@ -137,7 +138,7 @@ export default function LoginPage() {
         }
 
         const signupRes = await signupAction({
-          email,
+          email: normalizedEmail,
           password,
           fullName,
           storeName,
@@ -152,7 +153,7 @@ export default function LoginPage() {
         // so initializeSession() can find the user and redirect to dashboard.
         setSuccessMsg("Account registered successfully! Logging you in...");
         const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
+          email: normalizedEmail,
           password,
         });
         if (signInError) {
@@ -230,12 +231,12 @@ export default function LoginPage() {
     setLocalLoading(true);
 
     try {
-      const result = await requestPasswordResetAction(email);
+      const result = await requestPasswordResetAction(normalizeEmail(email));
       if (result?.error) throw new Error(result.error);
       if (!result.success) throw new Error("Failed to send reset email.");
 
       setSuccessMsg(
-        "Password reset link sent! Check your email inbox and click the link to set a new password."
+        "If an account exists for that email, a password reset link has been sent."
       );
     } catch (err: unknown) {
       const friendlyError = getFriendlyErrorMessage(err);

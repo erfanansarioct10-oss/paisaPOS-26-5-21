@@ -1,58 +1,100 @@
 "use server";
 
-import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
-import { cookies, headers } from "next/headers";
+import { headers } from "next/headers";
 import { z } from "zod";
 import { writeLog } from "@/lib/logger";
+import { getSupabaseServerClient } from "@/lib/server/dal";
 import { loginLimiter, loginIpLimiter, signupLimiter, passwordResetLimiter, enforceRateLimit, getClientIp } from "@/lib/rate-limiter";
-import { sanitizeString, formatZodError, getFriendlyErrorMessage } from "@/lib/security";
+import {
+  MAX_EMAIL_LENGTH,
+  MAX_PASSWORD_LENGTH,
+  sanitizeString,
+  formatZodError,
+  getFriendlyErrorMessage,
+  normalizeEmail,
+  validateAuthStringSafety,
+  validatePasswordComplexity,
+} from "@/lib/security";
+
+const normalizedEmailSchema = z.preprocess(
+  (val) => typeof val === "string" ? normalizeEmail(val) : val,
+  z.string()
+    .min(1, "Email is required")
+    .max(MAX_EMAIL_LENGTH, "Email must be 254 characters or fewer")
+    .refine(validateAuthStringSafety, "Email contains unsupported control characters")
+    .email("Invalid email address")
+);
+
+const passwordSchema = z.string()
+  .min(8, "Password must be at least 8 characters")
+  .max(MAX_PASSWORD_LENGTH, "Password must be 256 characters or fewer")
+  .refine(validateAuthStringSafety, "Password contains unsupported control characters");
+
+const strongPasswordSchema = passwordSchema.refine(
+  validatePasswordComplexity,
+  "Password must contain at least one lowercase letter, one uppercase letter, and one number."
+);
 
 const authSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  email: normalizedEmailSchema,
+  password: passwordSchema,
 });
 
 const signupSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string()
-    .min(8, "Password must be at least 8 characters")
-    .refine(
-      (val) => /[a-z]/.test(val) && /[A-Z]/.test(val) && /\d/.test(val),
-      "Password must contain at least one lowercase letter, one uppercase letter, and one number."
-    ),
+  email: normalizedEmailSchema,
+  password: strongPasswordSchema,
   fullName: z.string().min(1, "Full name is required").max(100).transform(sanitizeString),
   storeName: z.string().min(1, "Store name is required").max(100).transform(sanitizeString),
 });
 
-async function getSupabaseServerClient() {
-  const cookieStore = await cookies();
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const updatePasswordSchema = z.object({
+  password: strongPasswordSchema,
+  confirmPassword: z.string(),
+}).refine((data) => data.password === data.confirmPassword, {
+  path: ["confirmPassword"],
+  message: "Passwords do not match.",
+});
 
-  return createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value;
-      },
-      set(name: string, value: string, options: Record<string, unknown>) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          cookieStore.set({ name, value, ...options } as any);
-        } catch {
-          // Ignore in read-only environment context
-        }
-      },
-      remove(name: string, options: Record<string, unknown>) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          cookieStore.set({ name, value: "", ...options } as any);
-        } catch {
-          // Ignore
-        }
-      },
-    },
-  });
+const JWT_CLOCK_SKEW_RETRY_DELAYS_MS = [500, 1000, 2000];
+
+type SupabaseErrorLike = {
+  code?: string;
+  message?: string;
+} | null;
+
+type SupabaseResult<T> = {
+  data: T | null;
+  error: SupabaseErrorLike;
+};
+
+function isJwtIssuedAtFutureError(error: SupabaseErrorLike): boolean {
+  return Boolean(
+    error &&
+    (error.code === "PGRST303" ||
+      error.message?.toLowerCase().includes("jwt issued at future"))
+  );
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retryOnTransientJwtClockSkew<T>(
+  operation: () => PromiseLike<SupabaseResult<T>>
+): Promise<SupabaseResult<T>> {
+  let result = await operation();
+
+  for (const delayMs of JWT_CLOCK_SKEW_RETRY_DELAYS_MS) {
+    if (!isJwtIssuedAtFutureError(result.error)) {
+      return result;
+    }
+
+    await sleep(delayMs);
+    result = await operation();
+  }
+
+  return result;
 }
 
 /**
@@ -116,20 +158,7 @@ export async function loginAction(rawParams: unknown) {
       email,
     });
 
-    // Create immediate database success log
-    try {
-      await supabase.from("audit_logs").insert({
-        store_id: null, // Resolves to user's store via RLS if appropriate, or keeps null
-        user_id: data.user.id,
-        operation: "AUTH_LOGIN_SUCCESS",
-        affected_entity: `User ID: ${data.user.id}`,
-        result: "SUCCESS",
-      });
-    } catch (dbErr) {
-      console.error("Failed to record successful login to audit logs table:", dbErr);
-    }
-
-    return { success: true, user: data.user };
+    return { success: true };
   } catch (err: unknown) {
     return { error: getFriendlyErrorMessage(err) };
   }
@@ -179,10 +208,12 @@ export async function signupAction(rawParams: unknown) {
     }
 
     // 2. Perform the onboarding store registration RPC
-    const { data: storeId, error: onboardingError } = await supabase.rpc("register_store_and_user", {
-      p_full_name: fullName,
-      p_store_name: storeName,
-    });
+    const { data: storeId, error: onboardingError } = await retryOnTransientJwtClockSkew(() =>
+      supabase.rpc("register_store_and_user", {
+        p_full_name: fullName,
+        p_store_name: storeName,
+      })
+    );
 
     if (onboardingError) {
       await writeLog("SECURITY", "AUTH_ONBOARDING_FAILURE", `Failed onboarding store registration for user ${signUpData.user.id}`, {
@@ -200,7 +231,7 @@ export async function signupAction(rawParams: unknown) {
       email,
     });
 
-    return { success: true, user: signUpData.user, storeId };
+    return { success: true, storeId };
   } catch (err: unknown) {
     return { error: getFriendlyErrorMessage(err) };
   }
@@ -212,8 +243,7 @@ export async function signupAction(rawParams: unknown) {
  */
 export async function requestPasswordResetAction(email: string) {
   try {
-    const emailSchema = z.string().email("Invalid email address");
-    const validation = emailSchema.safeParse(email);
+    const validation = normalizedEmailSchema.safeParse(email);
     if (!validation.success) {
       return { error: formatZodError(validation.error) };
     }
@@ -250,10 +280,63 @@ export async function requestPasswordResetAction(email: string) {
         email: cleanEmail,
         errorMessage: error.message,
       });
-      return { error: getFriendlyErrorMessage(error.message) };
+      return { success: true };
     }
 
-    await writeLog("SECURITY", "AUTH_PASSWORD_RESET_SUCCESS", `Password reset link sent to: ${cleanEmail}`);
+    await writeLog("SECURITY", "AUTH_PASSWORD_RESET_REQUESTED", `Password reset requested for email: ${cleanEmail}`);
+    return { success: true };
+  } catch (err: unknown) {
+    return { error: getFriendlyErrorMessage(err) };
+  }
+}
+
+/**
+ * Update Password Action
+ * Validates the recovery session server-side, changes the password, then
+ * revokes refresh tokens globally so stale sessions cannot continue.
+ */
+export async function updatePasswordAction(rawParams: unknown) {
+  try {
+    const validation = updatePasswordSchema.safeParse(rawParams);
+    if (!validation.success) {
+      return { error: formatZodError(validation.error) };
+    }
+
+    const supabase = await getSupabaseServerClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      await writeLog("SECURITY", "AUTH_PASSWORD_UPDATE_DENIED", "Password update attempted without a valid recovery session", {
+        errorMessage: userError?.message,
+      });
+      return { error: "Your password reset session is invalid or expired. Please request a new reset link." };
+    }
+
+    const { error: updateError } = await supabase.auth.updateUser({
+      password: validation.data.password,
+    });
+
+    if (updateError) {
+      await writeLog("SECURITY", "AUTH_PASSWORD_UPDATE_FAILURE", `Password update failed for user ${user.id}`, {
+        userId: user.id,
+        errorMessage: updateError.message,
+      });
+      return { error: getFriendlyErrorMessage(updateError.message) };
+    }
+
+    const { error: signOutError } = await supabase.auth.signOut({ scope: "global" });
+    if (signOutError) {
+      await writeLog("SECURITY", "AUTH_PASSWORD_UPDATE_SIGNOUT_FAILURE", `Password changed but global signout failed for user ${user.id}`, {
+        userId: user.id,
+        errorMessage: signOutError.message,
+      });
+      return { error: "Password changed, but we could not revoke all sessions. Please sign in again and contact support if this repeats." };
+    }
+
+    await writeLog("SECURITY", "AUTH_PASSWORD_UPDATE_SUCCESS", `Password changed and sessions revoked for user ${user.id}`, {
+      userId: user.id,
+    });
+
     return { success: true };
   } catch (err: unknown) {
     return { error: getFriendlyErrorMessage(err) };

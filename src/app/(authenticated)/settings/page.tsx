@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useActionState, useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store/useAppStore";
-import { updateStoreAction, updateProfileAction } from "@/app/actions";
+import { updateProfileFormAction, updateStoreFormAction, type SettingsFormState } from "@/app/actions";
 import { useTheme } from "@/components/theme-provider";
 import {
   Settings,
@@ -17,6 +17,8 @@ import {
   Moon,
   Monitor,
 } from "lucide-react";
+
+const initialFormState: SettingsFormState = { success: false };
 
 export default function SettingsPage() {
   const { store, user, signOut, initializeSession, setTab } = useAppStore();
@@ -39,68 +41,23 @@ export default function SettingsPage() {
   const [storePhone, setStorePhone] = useState(store?.phone || "");
   const [storeAddress, setStoreAddress] = useState(store?.address || "");
   const [storePanVat, setStorePanVat] = useState(store?.pan_vat || "");
-  const [storeSaving, setStoreSaving] = useState(false);
-  const [storeSuccess, setStoreSuccess] = useState(false);
-  const [storeError, setStoreError] = useState<string | null>(null);
+  const [storeActionState, storeFormAction, storeSaving] = useActionState(updateStoreFormAction, initialFormState);
 
   // Profile fields
   const [profileName, setProfileName] = useState(user?.name || "");
-  const [profileSaving, setProfileSaving] = useState(false);
-  const [profileSuccess, setProfileSuccess] = useState(false);
-  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileActionState, profileFormAction, profileSaving] = useActionState(updateProfileFormAction, initialFormState);
 
-
-
-  const handleSaveStore = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setStoreError(null);
-    setStoreSuccess(false);
-
-    if (!storeName.trim()) {
-      setStoreError("Store name is required.");
-      return;
+  useEffect(() => {
+    if (storeActionState.success && storeActionState.savedAt) {
+      initializeSession();
     }
+  }, [storeActionState.success, storeActionState.savedAt, initializeSession]);
 
-    setStoreSaving(true);
-    try {
-      await updateStoreAction({
-        name: storeName.trim(),
-        phone: storePhone.trim(),
-        address: storeAddress.trim(),
-        panVat: storePanVat.trim(),
-      });
-      await initializeSession();
-      setStoreSuccess(true);
-      setTimeout(() => setStoreSuccess(false), 3000);
-    } catch (err: unknown) {
-      setStoreError(err instanceof Error ? err.message : "Failed to update store information.");
-    } finally {
-      setStoreSaving(false);
+  useEffect(() => {
+    if (profileActionState.success && profileActionState.savedAt) {
+      initializeSession();
     }
-  };
-
-  const handleSaveProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setProfileError(null);
-    setProfileSuccess(false);
-
-    if (!profileName.trim()) {
-      setProfileError("Display name is required.");
-      return;
-    }
-
-    setProfileSaving(true);
-    try {
-      await updateProfileAction({ name: profileName.trim() });
-      await initializeSession();
-      setProfileSuccess(true);
-      setTimeout(() => setProfileSuccess(false), 3000);
-    } catch (err: unknown) {
-      setProfileError(err instanceof Error ? err.message : "Failed to update profile.");
-    } finally {
-      setProfileSaving(false);
-    }
-  };
+  }, [profileActionState.success, profileActionState.savedAt, initializeSession]);
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -118,7 +75,7 @@ export default function SettingsPage() {
       {/* SETTINGS GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* STORE INFORMATION CARD */}
-        <form key={store?.id || "loading-store"} onSubmit={handleSaveStore} className="bg-card border border-border rounded-xl p-5 sm:p-6 shadow-sm space-y-5">
+        <form key={store?.id || "loading-store"} action={storeFormAction} className="bg-card border border-border rounded-xl p-5 sm:p-6 shadow-sm space-y-5">
           <div className="flex items-center gap-2.5 pb-3 border-b border-border">
             <div className="p-2 bg-primary/10 text-primary rounded-lg">
               <Store className="w-4 h-4" />
@@ -126,37 +83,37 @@ export default function SettingsPage() {
             <h2 className="font-semibold text-foreground">Store Information</h2>
           </div>
 
-          {storeSuccess && (
+          {storeActionState.success && storeActionState.message && (
             <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-3 flex items-center gap-2.5 text-xs text-emerald-400">
               <CheckCircle className="w-4 h-4 shrink-0" />
-              <p>Store information updated successfully.</p>
+              <p>{storeActionState.message}</p>
             </div>
           )}
-          {storeError && (
+          {storeActionState.error && (
             <div className="bg-red-500/10 border border-red-500/25 rounded-xl p-3 flex items-start gap-2.5 text-xs text-red-400">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <p>{storeError}</p>
+              <p>{storeActionState.error}</p>
             </div>
           )}
 
           <div>
             <label htmlFor="store-name" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Store Name *</label>
-            <input id="store-name" type="text" required value={storeName} onChange={(e) => setStoreName(e.target.value)} placeholder="e.g. KTM Boutique Hub" className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
+            <input id="store-name" name="name" type="text" required value={storeName} onChange={(e) => setStoreName(e.target.value)} placeholder="e.g. KTM Boutique Hub" className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
           </div>
 
           <div>
             <label htmlFor="store-phone" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Phone Number</label>
-            <input id="store-phone" type="text" value={storePhone} onChange={(e) => setStorePhone(e.target.value)} placeholder="e.g. +977-9812345678" className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
+            <input id="store-phone" name="phone" type="text" value={storePhone} onChange={(e) => setStorePhone(e.target.value)} placeholder="e.g. +977-9812345678" className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
           </div>
 
           <div>
             <label htmlFor="store-address" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Address</label>
-            <input id="store-address" type="text" value={storeAddress} onChange={(e) => setStoreAddress(e.target.value)} placeholder="e.g. New Road, Kathmandu" className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
+            <input id="store-address" name="address" type="text" value={storeAddress} onChange={(e) => setStoreAddress(e.target.value)} placeholder="e.g. New Road, Kathmandu" className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
           </div>
 
           <div>
             <label htmlFor="store-panvat" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">PAN / VAT Number</label>
-            <input id="store-panvat" type="text" value={storePanVat} onChange={(e) => setStorePanVat(e.target.value)} placeholder="e.g. 123456789" className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
+            <input id="store-panvat" name="panVat" type="text" value={storePanVat} onChange={(e) => setStorePanVat(e.target.value)} placeholder="e.g. 123456789" className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
           </div>
 
           <button type="submit" disabled={storeSaving} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:opacity-95 shadow transition-all disabled:opacity-50">
@@ -166,7 +123,7 @@ export default function SettingsPage() {
         </form>
 
         {/* ACCOUNT SETTINGS CARD */}
-        <form key={user?.id || "loading-profile"} onSubmit={handleSaveProfile} className="bg-card border border-border rounded-xl p-5 sm:p-6 shadow-sm space-y-5 h-fit">
+        <form key={user?.id || "loading-profile"} action={profileFormAction} className="bg-card border border-border rounded-xl p-5 sm:p-6 shadow-sm space-y-5 h-fit">
           <div className="flex items-center gap-2.5 pb-3 border-b border-border">
             <div className="p-2 bg-primary/10 text-primary rounded-lg">
               <User className="w-4 h-4" />
@@ -174,22 +131,22 @@ export default function SettingsPage() {
             <h2 className="font-semibold text-foreground">Account Settings</h2>
           </div>
 
-          {profileSuccess && (
+          {profileActionState.success && profileActionState.message && (
             <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-3 flex items-center gap-2.5 text-xs text-emerald-400">
               <CheckCircle className="w-4 h-4 shrink-0" />
-              <p>Profile updated successfully.</p>
+              <p>{profileActionState.message}</p>
             </div>
           )}
-          {profileError && (
+          {profileActionState.error && (
             <div className="bg-red-500/10 border border-red-500/25 rounded-xl p-3 flex items-start gap-2.5 text-xs text-red-400">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <p>{profileError}</p>
+              <p>{profileActionState.error}</p>
             </div>
           )}
 
           <div>
             <label htmlFor="profile-name" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Display Name *</label>
-            <input id="profile-name" type="text" required value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="e.g. Sunil Shrestha" className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
+            <input id="profile-name" name="name" type="text" required value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="e.g. Sunil Shrestha" className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" />
           </div>
 
           <div>

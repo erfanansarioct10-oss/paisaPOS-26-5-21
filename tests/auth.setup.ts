@@ -17,13 +17,19 @@ setup("authenticate and seed store session", async ({ page }) => {
 
   // Wait a short moment to see if we redirect or fail
   try {
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 4000 });
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15000 });
     console.log("Logged in successfully using pre-existing E2E test account.");
   } catch {
     console.log("Pre-existing login failed or timed out. Attempting dynamic registration...");
 
     // 2. If login fails, register a brand new store and user
     await page.goto("/");
+    if (/\/dashboard/.test(page.url())) {
+      console.log("Session became authenticated during fallback navigation.");
+      await page.context().storageState({ path: AUTH_FILE });
+      return;
+    }
+
     await page.getByText("Need a new store account? Register here").click();
 
     // Fill registration details

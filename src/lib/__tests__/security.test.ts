@@ -1,13 +1,43 @@
 import { describe, test, expect } from "vitest";
 import { z } from "zod";
 import {
+  MAX_EMAIL_LENGTH,
+  MAX_PASSWORD_LENGTH,
+  normalizeEmail,
   sanitizeString,
   sanitizeCSVCell,
   validateRedirectPath,
   formatZodError,
+  validateAuthStringSafety,
+  validatePasswordComplexity,
 } from "../security";
 
 describe("Security Sanitization & Validation Tests", () => {
+  describe("auth input hardening helpers", () => {
+    test("normalizes email case, whitespace, and fullwidth unicode with NFKC", () => {
+      expect(normalizeEmail("  ADMIN@example.com  ")).toBe("admin@example.com");
+      expect(normalizeEmail("admin@\uFF45xample.com")).toBe("admin@example.com");
+    });
+
+    test("rejects control characters and null bytes for auth strings", () => {
+      expect(validateAuthStringSafety("admin@example.com")).toBe(true);
+      expect(validateAuthStringSafety("admin\u0000@example.com")).toBe(false);
+      expect(validateAuthStringSafety("pass\u001Fword")).toBe(false);
+    });
+
+    test("documents conservative auth input size ceilings", () => {
+      expect(MAX_EMAIL_LENGTH).toBe(254);
+      expect(MAX_PASSWORD_LENGTH).toBe(256);
+    });
+
+    test("enforces password complexity without trusting the client form", () => {
+      expect(validatePasswordComplexity("PaisaPOS123")).toBe(true);
+      expect(validatePasswordComplexity("paisapos123")).toBe(false);
+      expect(validatePasswordComplexity("PAISAPOS123")).toBe(false);
+      expect(validatePasswordComplexity("PaisaPOSOnly")).toBe(false);
+    });
+  });
+
   describe("sanitizeString", () => {
     test("should strip standard HTML tags", () => {
       const dirty = "<script>alert('XSS')</script>Hello <img src=x onerror=alert(1)>World!";

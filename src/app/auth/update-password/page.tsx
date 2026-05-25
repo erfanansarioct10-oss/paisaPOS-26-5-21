@@ -2,9 +2,8 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 import { Store, Lock, AlertCircle, Loader2, CheckCircle } from "lucide-react";
-import { getFriendlyErrorMessage } from "@/lib/security";
+import { updatePasswordAction } from "@/app/auth-actions";
 
 export default function UpdatePasswordPage() {
   const router = useRouter();
@@ -18,41 +17,21 @@ export default function UpdatePasswordPage() {
     e.preventDefault();
     setError(null);
 
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters long.");
-      return;
-    }
-
-    const hasLowercase = /[a-z]/.test(password);
-    const hasUppercase = /[A-Z]/.test(password);
-    const hasDigit = /\d/.test(password);
-
-    if (!hasLowercase || !hasUppercase || !hasDigit) {
-      setError(
-        "Password must contain at least one lowercase letter, one uppercase letter, and one number."
-      );
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-
     setIsLoading(true);
 
     try {
-      const { error: updateError } = await supabase.auth.updateUser({
+      const result = await updatePasswordAction({
         password,
+        confirmPassword,
       });
 
-      if (updateError) {
-        throw updateError;
+      if (result?.error) {
+        throw new Error(result.error);
       }
 
       setIsSuccess(true);
     } catch (err: unknown) {
-      setError(getFriendlyErrorMessage(err));
+      setError(err instanceof Error ? err.message : "Unable to update password. Please try again.");
     } finally {
       setIsLoading(false);
     }

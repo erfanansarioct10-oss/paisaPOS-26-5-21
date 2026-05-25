@@ -31,6 +31,11 @@ function logError(msg: string) {
   console.log(`${red}[FAIL]${reset} ${msg}`);
 }
 
+function envInt(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
 async function runSecurityStressTests() {
   console.log(`
 ${bright}${magenta}┌────────────────────────────────────────────────────────┐
@@ -66,7 +71,7 @@ ${bright}${magenta}┌───────────────────�
     ];
 
     const startXss = Date.now();
-    const xssConcurrency = 1000;
+    const xssConcurrency = envInt("AUDIT_XSS_COUNT", 1000);
     let successfullySanitized = 0;
 
     for (let i = 0; i < xssConcurrency; i++) {
@@ -103,7 +108,7 @@ ${bright}${magenta}┌───────────────────�
     ];
 
     const startFormula = Date.now();
-    const formulaConcurrency = 1000;
+    const formulaConcurrency = envInt("AUDIT_FORMULA_COUNT", 1000);
     let successfullyEscaped = 0;
 
     for (let i = 0; i < formulaConcurrency; i++) {
@@ -144,7 +149,7 @@ ${bright}${magenta}┌───────────────────�
     ];
 
     const startRedirect = Date.now();
-    const redirectConcurrency = 1000;
+    const redirectConcurrency = envInt("AUDIT_REDIRECT_COUNT", 1000);
     let successfullyGuarded = 0;
 
     for (let i = 0; i < redirectConcurrency; i++) {
@@ -199,7 +204,7 @@ ${bright}${magenta}┌───────────────────�
     };
 
     const startHuman = Date.now();
-    const humanizeConcurrency = 1000;
+    const humanizeConcurrency = envInt("AUDIT_ZOD_COUNT", 1000);
     let successfullyHumanized = 0;
 
     for (let i = 0; i < humanizeConcurrency; i++) {
@@ -233,7 +238,8 @@ ${bright}${magenta}┌───────────────────�
     logHeader("Angle 5: Extreme Payload Memory Resilience & Size Ceiling Attack");
     logInfo("Simulating massive memory exhaustion attack with a 20MB file buffer catalog...");
 
-    const massiveCSVContent = "Product Name,Category,Size,Color,Price,Stock\n" + "A".repeat(20 * 1024 * 1024); // 20 MB string
+    const memoryPayloadMb = envInt("AUDIT_MEMORY_PAYLOAD_MB", 20);
+    const massiveCSVContent = "Product Name,Category,Size,Color,Price,Stock\n" + "A".repeat(memoryPayloadMb * 1024 * 1024);
     const startMemory = Date.now();
     
     // Simulate frontend drag & drop catalog file upload containing massive buffer

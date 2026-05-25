@@ -163,23 +163,11 @@ export async function parseCatalogFile(file: File): Promise<ParsedImport> {
   const fileType = file.name.split(".").pop()?.toLowerCase();
 
   if (fileType === "xlsx") {
-    // Dynamic import for bundle isolation
-    const XLSX = await import("xlsx");
-    const arrayBuffer = await file.arrayBuffer();
-    const workbook = XLSX.read(arrayBuffer, { type: "array" });
-    const firstSheetName = workbook.SheetNames[0];
-    if (!firstSheetName) {
-      throw new Error("The Excel workbook is empty or has no sheets.");
-    }
-    const worksheet = workbook.Sheets[firstSheetName];
-    if (!worksheet) {
-      throw new Error("First sheet is unreadable.");
-    }
-    
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sheetData = (XLSX.utils as any).sheet_to_json(worksheet, { header: 1, defval: "" }) as any[];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rawRows = sheetData.map((row: any) => (Array.isArray(row) ? row.map((cell: any) => String(cell).trim()) : []));
+    const { readSheet } = await import("read-excel-file/browser");
+    const sheetData = await readSheet(file, 1);
+    rawRows = sheetData.map((row) =>
+      row.map((cell) => cell === null || cell === undefined ? "" : String(cell).trim())
+    );
   } else if (fileType === "csv") {
     const text = await file.text();
     const lines = text.split(/\r?\n/);

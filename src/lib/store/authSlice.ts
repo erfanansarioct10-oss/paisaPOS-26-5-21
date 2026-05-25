@@ -37,22 +37,22 @@ const subscribeToRealtimeChanges = (
     .channel(`store-realtime-${storeId}`)
     .on(
       "postgres_changes",
-      { event: "*", schema: "public", table: "products" },
+      { event: "*", schema: "public", table: "products", filter: `store_id=eq.${storeId}` },
       debouncedFetch
     )
     .on(
       "postgres_changes",
-      { event: "*", schema: "public", table: "product_variants" },
+      { event: "*", schema: "public", table: "product_variants", filter: `store_id=eq.${storeId}` },
       debouncedFetch
     )
     .on(
       "postgres_changes",
-      { event: "*", schema: "public", table: "inventory" },
+      { event: "*", schema: "public", table: "inventory", filter: `store_id=eq.${storeId}` },
       debouncedFetch
     )
     .on(
       "postgres_changes",
-      { event: "*", schema: "public", table: "invoices" },
+      { event: "*", schema: "public", table: "invoices", filter: `store_id=eq.${storeId}` },
       debouncedFetch
     )
     .subscribe();
@@ -137,7 +137,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       // 2. Load User Profile from Supabase
       const { data: profile, error: profileError } = await supabase
         .from("users")
-        .select("*")
+        .select("id, name, store_id, role")
         .eq("id", authUser.id)
         .single();
 
@@ -150,7 +150,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       // 3. Load Store Meta
       const { data: store, error: storeError } = await supabase
         .from("stores")
-        .select("*")
+        .select("id, name, phone, address, pan_vat")
         .eq("id", profile.store_id)
         .single();
 
@@ -244,34 +244,42 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       set({ isLoading: true });
     }
     try {
-      // 1. Fetch products
-      const { data: dbProducts, error: prodError } = await supabase
-        .from("products")
-        .select("*")
-        .eq("store_id", store.id)
-        .order("created_at", { ascending: false });
+      const [productsResult, variantsResult, invoicesResult] = await Promise.all([
+        supabase
+          .from("products")
+          .select("id, store_id, name, category, image_url, low_stock_threshold, is_favorite, created_at")
+          .eq("store_id", store.id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("product_variants")
+          .select(`
+            id,
+            product_id,
+            size,
+            color,
+            sku,
+            price,
+            created_at,
+            inventory (quantity)
+          `)
+          .eq("store_id", store.id),
+        supabase
+          .from("invoices")
+          .select("id, store_id, invoice_number, customer_name, customer_phone, total_amount, discount_amount, paid_amount, payment_method, created_at")
+          .eq("store_id", store.id)
+          .order("created_at", { ascending: false })
+          .limit(50),
+      ]);
 
-      if (prodError) throw prodError;
+      if (productsResult.error) throw productsResult.error;
+      if (variantsResult.error) throw variantsResult.error;
+      if (invoicesResult.error) throw invoicesResult.error;
 
-      // 2. Fetch variants + inlined stock (tenant-scoped to prevent URL length limits and preflight CORS crashes on larger catalogs)
-      const { data: dbVariants, error: varError } = await supabase
-        .from("product_variants")
-        .select(`
-          id,
-          product_id,
-          size,
-          color,
-          sku,
-          price,
-          created_at,
-          inventory (quantity)
-        `)
-        .eq("store_id", store.id);
-
-      if (varError) throw varError;
-
+      const dbProducts = productsResult.data || [];
+      const dbVariants = variantsResult.data || [];
+      const dbInvoices = invoicesResult.data || [];
       // Map back to our structure (inlining inventory quantity)
-      const mappedVariants: ProductVariant[] = (dbVariants || []).map((v: unknown) => {
+      const mappedVariants: ProductVariant[] = dbVariants.map((v: unknown) => {
         const item = v as {
           id: string;
           product_id: string;
@@ -298,19 +306,9 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
         };
       });
 
-      // 3. Fetch Invoices (Paginating - Fetch 50 most recent records max)
-      const { data: dbInvoices, error: invError } = await supabase
-        .from("invoices")
-        .select("*")
-        .eq("store_id", store.id)
-        .order("created_at", { ascending: false })
-        .limit(50);
-
-      if (invError) throw invError;
-
       const invoiceItemsMap = { ...get().invoiceItems };
 
-      const mappedProducts = (dbProducts || []).map((p) => {
+      const mappedProducts = dbProducts.map((p) => {
         const pendingFav = get().pendingFavoriteUpdates[p.id];
         return {
           ...p,
@@ -321,7 +319,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       set({
         products: mappedProducts,
         variants: mappedVariants,
-        invoices: dbInvoices || [],
+        invoices: dbInvoices,
         invoiceItems: invoiceItemsMap,
       });
     } catch (e: unknown) {
@@ -339,14 +337,20 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
     const { store, invoices } = get();
     if (!store) return;
 
-    const offset = invoices.length;
+    const lastInvoice = invoices[invoices.length - 1];
     try {
-      const { data: moreInvoices, error } = await supabase
+      let query = supabase
         .from("invoices")
-        .select("*")
+        .select("id, store_id, invoice_number, customer_name, customer_phone, total_amount, discount_amount, paid_amount, payment_method, created_at")
         .eq("store_id", store.id)
         .order("created_at", { ascending: false })
-        .range(offset, offset + limit - 1);
+        .limit(limit);
+
+      if (lastInvoice?.created_at) {
+        query = query.lt("created_at", lastInvoice.created_at);
+      }
+
+      const { data: moreInvoices, error } = await query;
 
       if (error) throw error;
 
@@ -364,7 +368,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
     try {
       const { data: items, error } = await supabase
         .from("invoice_items")
-        .select("*")
+        .select("id, invoice_id, variant_id, custom_name, quantity, unit_price, subtotal")
         .eq("invoice_id", invoiceId);
 
       if (error) throw error;

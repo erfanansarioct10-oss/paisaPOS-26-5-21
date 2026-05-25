@@ -3,6 +3,18 @@ import path from "path";
 
 // Path to store auth credentials JSON
 export const AUTH_FILE = path.join(__dirname, "playwright/.auth/owner.json");
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000";
+const shouldStartLocalServer = !process.env.PLAYWRIGHT_BASE_URL;
+const vercelAutomationBypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+const extraHTTPHeaders: Record<string, string> = {
+  "x-paisapos-e2e-test": "true",
+  ...(vercelAutomationBypassSecret
+    ? {
+        "x-vercel-protection-bypass": vercelAutomationBypassSecret,
+        "x-vercel-set-bypass-cookie": "true",
+      }
+    : {}),
+};
 
 export default defineConfig({
   testDir: "./tests",
@@ -12,14 +24,12 @@ export default defineConfig({
   workers: 1, // Restrict to 1 worker locally to prevent database locks and auth overlaps
   reporter: "html",
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL,
     trace: "on-first-retry",
     viewport: { width: 1280, height: 720 },
     screenshot: "only-on-failure",
     // Inject testing header to bypass IP rate limits during local E2E test runs
-    extraHTTPHeaders: {
-      "x-paisapos-e2e-test": "true",
-    },
+    extraHTTPHeaders,
     // Override default HeadlessChrome User-Agent to match a real human Chrome browser
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
   },
@@ -40,11 +50,13 @@ export default defineConfig({
       dependencies: ["setup"],
     },
   ],
-  // Dynamically spin up the local Next.js dev server if port 3000 is inactive
-  webServer: {
-    command: "npm run dev",
-    url: "http://localhost:3000",
-    reuseExistingServer: true,
-    timeout: 120000,
-  },
+  // Dynamically spin up the local Next.js dev server unless a deployed beta URL is supplied.
+  webServer: shouldStartLocalServer
+    ? {
+        command: "npm run dev",
+        url: baseURL,
+        reuseExistingServer: true,
+        timeout: 120000,
+      }
+    : undefined,
 });

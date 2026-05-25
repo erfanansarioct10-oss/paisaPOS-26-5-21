@@ -1,5 +1,26 @@
 import { headers } from "next/headers";
 
+const SENSITIVE_KEY_PATTERN = /(password|token|secret|key|cookie|session|authorization|otp|refresh|access)/i;
+const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+
+function redactString(value: string): string {
+  return value.replace(EMAIL_PATTERN, "[redacted-email]");
+}
+
+function redactMetadata(metadata: Record<string, unknown> = {}): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(metadata).map(([key, value]) => {
+      if (SENSITIVE_KEY_PATTERN.test(key)) {
+        return [key, "[redacted]"];
+      }
+      if (typeof value === "string") {
+        return [key, redactString(value)];
+      }
+      return [key, value];
+    })
+  );
+}
+
 /**
  * Structured Security & Error Logger for PaisaPOS (Server-Side Only)
  * Writes structured JSON payloads to standard output, fully compatible with Vercel Log Drains.
@@ -25,10 +46,10 @@ export async function writeLog(
     timestamp: new Date().toISOString(),
     level,
     category,
-    message,
+    message: redactString(message),
     ip,
     userAgent,
-    ...metadata,
+    ...redactMetadata(metadata),
   };
 
   // Stringify to ensure atomic, single-line log emission for cloud logging routers

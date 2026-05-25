@@ -33,6 +33,11 @@ function logFail(msg: string) {
   console.log(`${red}[FAIL]${reset} ${msg}`);
 }
 
+function envInt(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
 async function runRateLimiterStressTest() {
   logHeader("1. Rate Limiter Class Concurrency Stress Test");
 
@@ -45,7 +50,7 @@ async function runRateLimiterStressTest() {
   // We will create a local limiter instance for this test: 20 requests per 10 seconds
   const testLimiter = new RateLimiter(20, 10 * 1000);
   const identifier = `stress-test-user-${Math.random().toString(36).slice(2, 7)}`;
-  const concurrencyCount = 100;
+  const concurrencyCount = envInt("AUDIT_RATE_LIMIT_CONCURRENCY", 100);
 
   logInfo(`Flooding ${concurrencyCount} concurrent checks to a rate limiter (limit = 20 / 10s)...`);
 
@@ -146,7 +151,7 @@ async function runHttpIntegrationSuite() {
   // ----------------------------------------------------
   logHeader("HTTP Test B: Global IP Rate Limiter (30 req / 10 sec)");
 
-  const requestsCount = 35;
+  const requestsCount = envInt("AUDIT_ROUTE_FLOOD_COUNT", 35);
   logInfo(`Sending ${requestsCount} HTTP requests rapidly to verify global IP threshold (30)...`);
 
   const fetchPromises = [];
@@ -205,7 +210,7 @@ async function runHttpIntegrationSuite() {
   // ----------------------------------------------------
   logHeader("HTTP Test C: Auth Callback Path Rate Limiter (10 req / 1 min)");
 
-  const callbackRequestsCount = 12;
+  const callbackRequestsCount = envInt("AUDIT_CALLBACK_FLOOD_COUNT", 12);
   logInfo(`Sending ${callbackRequestsCount} HTTP requests rapidly to /auth/callback...`);
 
   const callbackPromises = [];

@@ -1,7 +1,6 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Spotty Internet & Offline Resilience E2E Tests", () => {
-  
   test.beforeEach(async ({ page }) => {
     await page.goto("/billing");
     await expect(page.locator("#pos-search-input")).toBeVisible({ timeout: 10000 });
@@ -24,7 +23,7 @@ test.describe("Spotty Internet & Offline Resilience E2E Tests", () => {
     // 3. Verify that the global offline warning banner is displayed at the top
     const offlineBanner = page.locator("#offline-warning-banner");
     await expect(offlineBanner).toBeVisible();
-    await expect(offlineBanner).toContainText("Offline Mode — Connection lost");
+    await expect(offlineBanner).toContainText(/Offline Mode\s*[-\u2014]\s*Connection lost/i);
 
     // 4. Try clicking the checkout button in offline state
     await page.getByRole("button", { name: "Checkout" }).click();
@@ -43,9 +42,9 @@ test.describe("Spotty Internet & Offline Resilience E2E Tests", () => {
     // 8. Assert that the offline banner slides up and disappears
     await expect(offlineBanner).toBeHidden();
 
-    // 9. Click checkout and confirm transaction succeeds online!
+    // 9. Click checkout and confirm transaction succeeds online
     await page.getByRole("button", { name: "Checkout" }).click();
-    
+
     // Receipt modal must render Completed Sale
     await expect(page.getByText("Sale Completed")).toBeVisible({ timeout: 12000 });
     await expect(page.getByText("E2E Offline alter Fee")).toBeVisible();

@@ -12,6 +12,47 @@ const runLiveTests = !!(
   !process.env.SKIP_LIVE_TESTS
 );
 
+const JWT_CLOCK_SKEW_RETRY_DELAYS_MS = [500, 1000, 2000];
+
+type SupabaseErrorLike = {
+  code?: string;
+  message?: string;
+} | null;
+
+type SupabaseResult<T> = {
+  data: T | null;
+  error: SupabaseErrorLike;
+};
+
+function isJwtIssuedAtFutureError(error: SupabaseErrorLike): boolean {
+  return Boolean(
+    error &&
+    (error.code === "PGRST303" ||
+      error.message?.toLowerCase().includes("jwt issued at future"))
+  );
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retryOnTransientJwtClockSkew<T>(
+  operation: () => PromiseLike<SupabaseResult<T>>
+): Promise<SupabaseResult<T>> {
+  let result = await operation();
+
+  for (const delayMs of JWT_CLOCK_SKEW_RETRY_DELAYS_MS) {
+    if (!isJwtIssuedAtFutureError(result.error)) {
+      return result;
+    }
+
+    await sleep(delayMs);
+    result = await operation();
+  }
+
+  return result;
+}
+
 describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integration Verification", () => {
   let supabase: ReturnType<typeof createClient>;
 
@@ -41,10 +82,12 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
 
     // 2. Call the Security Definer registration RPC
     console.log("[QA] Triggering register_store_and_user onboarding RPC...");
-    const { data: storeId, error: onboardingError } = await supabase.rpc("register_store_and_user", {
-      p_full_name: fullName,
-      p_store_name: storeName,
-    });
+    const { data: storeId, error: onboardingError } = await retryOnTransientJwtClockSkew(() =>
+      supabase.rpc("register_store_and_user", {
+        p_full_name: fullName,
+        p_store_name: storeName,
+      })
+    );
 
     expect(onboardingError).toBeNull();
     expect(storeId).toBeDefined();

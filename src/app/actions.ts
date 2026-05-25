@@ -1,10 +1,15 @@
 "use server";
 
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
 import { z } from "zod";
 import { writeLog } from "@/lib/logger";
-import { sanitizeString, formatZodError } from "@/lib/security";
+import { sanitizeString, formatZodError, getFriendlyErrorMessage } from "@/lib/security";
+import {
+  assertStoreAccess,
+  getInvoiceReceiptDTO,
+  getSupabaseServerClient,
+  requireOwnerContext,
+  requireTenantContext,
+} from "@/lib/server/dal";
 import {
   checkoutLimiter,
   productMutationLimiter,
@@ -51,34 +56,12 @@ const upsertProductSchema = z.object({
   ).min(1),
 });
 
-async function getSupabaseServerClient() {
-  const cookieStore = await cookies();
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-  return createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value;
-      },
-      set(name: string, value: string, options: Record<string, unknown>) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          cookieStore.set({ name, value, ...options } as any);
-        } catch {
-          // Ignore if called in a context where cookies cannot be written
-        }
-      },
-      remove(name: string, options: Record<string, unknown>) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          cookieStore.set({ name, value: "", ...options } as any);
-        } catch {
-          // Ignore
-        }
-      },
-    },
-  });
+async function logAuthorizationDenied(
+  operation: string,
+  message: string,
+  metadata?: Record<string, unknown>,
+) {
+  await writeLog("SECURITY", operation, message, metadata);
 }
 
 export async function checkoutAction(rawParams: unknown) {
@@ -89,20 +72,14 @@ export async function checkoutAction(rawParams: unknown) {
   const params = validation.data;
 
   const supabase = await getSupabaseServerClient();
-  
-  // Server-side store ownership validation (BOLA / IDOR defense-in-depth)
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    throw new Error("Unauthenticated");
-  }
+  const { user, store } = await assertStoreAccess(params.storeId);
 
-  const { data: profile } = await supabase
-    .from("users")
-    .select("store_id")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile?.store_id || profile.store_id !== params.storeId) {
+  if (store.id !== params.storeId) {
+    await logAuthorizationDenied("CHECKOUT_AUTHZ_DENIED", "Checkout rejected due to store ownership mismatch", {
+      userId: user.id,
+      requestedStoreId: params.storeId,
+      actualStoreId: store.id,
+    });
     throw new Error("Unauthorized: Store ownership mismatch");
   }
 
@@ -136,36 +113,16 @@ export async function checkoutAction(rawParams: unknown) {
   if (rpcError) {
     // Audit failure in the database outside the rolled-back RPC transaction (MEDIUM-20)
     await writeLog("ERROR", "CHECKOUT_FAILURE", `Checkout failed for invoice ${params.invoiceNumber}`, {
-      storeId: profile.store_id,
+      storeId: store.id,
       userId: user.id,
       invoiceNumber: params.invoiceNumber,
       errorMessage: rpcError.message,
     });
 
-    await supabase.from("audit_logs").insert({
-      store_id: profile.store_id,
-      user_id: user.id,
-      operation: "CHECKOUT",
-      affected_entity: "Invoice: " + params.invoiceNumber,
-      result: "FAILED",
-      error_message: rpcError.message,
-    });
-
     throw new Error(rpcError.message);
   }
 
-  // Fetch the newly created invoice and its line items
-  const { data: dbInvoice, error: invFetchError } = await supabase
-    .from("invoices")
-    .select("*, invoice_items(*)")
-    .eq("id", returnedInvoiceId)
-    .single();
-
-  if (invFetchError) {
-    throw new Error(invFetchError.message);
-  }
-
-  return dbInvoice;
+  return getInvoiceReceiptDTO(returnedInvoiceId);
 }
 
 export async function upsertProductAction(rawParams: unknown) {
@@ -176,10 +133,7 @@ export async function upsertProductAction(rawParams: unknown) {
   const params = validation.data;
 
   const supabase = await getSupabaseServerClient();
-
-  // Auth check for rate limiting scope
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthenticated");
+  const { user } = await requireOwnerContext();
 
   // User-scoped rate limiting: 20 product mutations per minute
   await enforceRateLimit(productMutationLimiter, `product:${user.id}`, "PRODUCT_UPSERT");
@@ -197,6 +151,12 @@ export async function upsertProductAction(rawParams: unknown) {
   );
 
   if (error) {
+    if (error.message.toLowerCase().includes("unauthorized")) {
+      await logAuthorizationDenied("PRODUCT_UPSERT_AUTHZ_DENIED", "Product upsert authorization rejected by RPC", {
+        userId: user.id,
+        errorMessage: error.message,
+      });
+    }
     const msg = error.message.toLowerCase();
     if (
       msg.includes("product_variants_store_sku_key") ||
@@ -221,10 +181,7 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
   const total = products.length;
 
   const supabase = await getSupabaseServerClient();
-
-  // Auth check for rate limiting scope
-  const { data: { user: bulkUser } } = await supabase.auth.getUser();
-  if (!bulkUser) throw new Error("Unauthenticated");
+  const { user: bulkUser } = await requireOwnerContext();
 
   // User-scoped rate limiting: 2 bulk imports per 5 minutes
   await enforceRateLimit(bulkImportLimiter, `bulk:${bulkUser.id}`, "BULK_IMPORT");
@@ -260,6 +217,12 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
       );
 
       if (error) {
+        if (error.message.toLowerCase().includes("unauthorized")) {
+          await logAuthorizationDenied("BULK_IMPORT_AUTHZ_DENIED", "Bulk import authorization rejected by RPC", {
+            userId: bulkUser.id,
+            errorMessage: error.message,
+          });
+        }
         throw new Error(error.message);
       }
 
@@ -314,26 +277,7 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
 export async function deleteProductAction(productId: string) {
   const cleanProductId = z.string().uuid().parse(productId);
   const supabase = await getSupabaseServerClient();
-
-  // Enforce server-side store ownership check (defense-in-depth)
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    throw new Error("Unauthenticated");
-  }
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("store_id, role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile?.store_id) {
-    throw new Error("Store profile not found");
-  }
-
-  if (profile.role !== "owner") {
-    throw new Error("Unauthorized: Only store owners can delete products.");
-  }
+  const { user, store } = await requireOwnerContext();
 
   // User-scoped rate limiting: 20 product mutations per minute
   await enforceRateLimit(productMutationLimiter, `product:${user.id}`, "PRODUCT_DELETE");
@@ -342,24 +286,21 @@ export async function deleteProductAction(productId: string) {
     .from("products")
     .delete()
     .eq("id", cleanProductId)
-    .eq("store_id", profile.store_id);
+    .eq("store_id", store.id);
 
   if (error) {
     await writeLog("ERROR", "PRODUCT_DELETE_FAILURE", `Failed to delete product: ${cleanProductId}`, {
       productId: cleanProductId,
-      storeId: profile.store_id,
+      storeId: store.id,
       errorMessage: error.message,
     });
     throw new Error(error.message);
   }
 
-  // Record successful deletion to audit log
-  await supabase.from("audit_logs").insert({
-    store_id: profile.store_id,
-    user_id: user.id,
-    operation: "PRODUCT_DELETE",
-    affected_entity: "Product ID: " + cleanProductId,
-    result: "SUCCESS",
+  await writeLog("INFO", "PRODUCT_DELETE_SUCCESS", `Product deleted: ${cleanProductId}`, {
+    productId: cleanProductId,
+    storeId: store.id,
+    userId: user.id,
   });
 
   return true;
@@ -369,21 +310,7 @@ export async function adjustStockAction(variantId: string, newStock: number) {
   const cleanVariantId = z.string().uuid().parse(variantId);
   const cleanStock = z.number().int().nonnegative().parse(newStock);
   const supabase = await getSupabaseServerClient();
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    throw new Error("Unauthenticated");
-  }
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("store_id")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile?.store_id) {
-    throw new Error("Store profile not found");
-  }
+  const { user, store } = await requireOwnerContext();
 
   // User-scoped rate limiting: 30 stock/UI mutations per minute
   await enforceRateLimit(uiMutationLimiter, `ui:${user.id}`, "STOCK_ADJUST");
@@ -391,7 +318,7 @@ export async function adjustStockAction(variantId: string, newStock: number) {
   // Verify variant ownership before updating
   const { data: variant, error: varError } = await supabase
     .from("product_variants")
-    .select("id, products(store_id)")
+    .select("id, store_id")
     .eq("id", cleanVariantId)
     .single();
 
@@ -399,21 +326,26 @@ export async function adjustStockAction(variantId: string, newStock: number) {
     throw new Error("Variant not found");
   }
 
-  // @ts-expect-error products relationship type not fully resolved in raw DB schema
-  if (variant.products?.store_id !== profile.store_id) {
+  if (variant.store_id !== store.id) {
+    await logAuthorizationDenied("STOCK_ADJUST_AUTHZ_DENIED", "Stock adjustment rejected for cross-store variant", {
+      userId: user.id,
+      storeId: store.id,
+      variantId: cleanVariantId,
+    });
     throw new Error("Unauthorized");
   }
 
   const { error } = await supabase
     .from("inventory")
     .update({ quantity: cleanStock, updated_at: new Date().toISOString() })
-    .eq("variant_id", cleanVariantId);
+    .eq("variant_id", cleanVariantId)
+    .eq("store_id", store.id);
 
   if (error) {
     await writeLog("ERROR", "STOCK_ADJUST_FAILURE", `Failed to adjust stock for variant: ${cleanVariantId}`, {
       variantId: cleanVariantId,
       newStock: cleanStock,
-      storeId: profile.store_id,
+      storeId: store.id,
       errorMessage: error.message,
     });
     throw new Error(error.message);
@@ -426,21 +358,7 @@ export async function toggleProductFavoriteAction(productId: string, isFavorite:
   const cleanProductId = z.string().uuid().parse(productId);
   const cleanIsFavorite = z.boolean().parse(isFavorite);
   const supabase = await getSupabaseServerClient();
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    throw new Error("Unauthenticated");
-  }
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("store_id")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile?.store_id) {
-    throw new Error("Store profile not found");
-  }
+  const { user, store } = await requireOwnerContext();
 
   // Verify product ownership before updating to prevent cross-tenant parameter spoofing (BOLA)
   const { data: product, error: prodError } = await supabase
@@ -453,7 +371,13 @@ export async function toggleProductFavoriteAction(productId: string, isFavorite:
     throw new Error("Product not found");
   }
 
-  if (product.store_id !== profile.store_id) {
+  if (product.store_id !== store.id) {
+    await logAuthorizationDenied("FAVORITE_TOGGLE_AUTHZ_DENIED", "Favorite toggle rejected for cross-store product", {
+      userId: user.id,
+      storeId: store.id,
+      productId: cleanProductId,
+      productStoreId: product.store_id,
+    });
     throw new Error("Unauthorized");
   }
 
@@ -463,13 +387,14 @@ export async function toggleProductFavoriteAction(productId: string, isFavorite:
   const { error } = await supabase
     .from("products")
     .update({ is_favorite: cleanIsFavorite })
-    .eq("id", cleanProductId);
+    .eq("id", cleanProductId)
+    .eq("store_id", store.id);
 
   if (error) {
     await writeLog("ERROR", "FAVORITE_TOGGLE_FAILURE", `Failed to toggle favorite for product: ${cleanProductId}`, {
       productId: cleanProductId,
       isFavorite: cleanIsFavorite,
-      storeId: profile.store_id,
+      storeId: store.id,
       errorMessage: error.message,
     });
     throw new Error(error.message);
@@ -489,6 +414,15 @@ const updateProfileSchema = z.object({
   name: z.string().min(1, "Display name is required").max(100, "Display name must be under 100 characters").transform(sanitizeString),
 });
 
+export type SettingsFormState = {
+  success: boolean;
+  message?: string;
+  error?: string;
+  savedAt?: number;
+};
+
+const settingsInitialError = "We could not save those changes. Please try again.";
+
 export async function updateStoreAction(rawParams: unknown) {
   const validation = updateStoreSchema.safeParse(rawParams);
   if (!validation.success) {
@@ -497,24 +431,10 @@ export async function updateStoreAction(rawParams: unknown) {
   const data = validation.data;
 
   const supabase = await getSupabaseServerClient();
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthenticated");
+  const { user, store } = await requireOwnerContext();
 
   // Rate limit: UI mutations (30/min/user)
   await enforceRateLimit(uiMutationLimiter, `ui:${user.id}`, "STORE_UPDATE");
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("store_id, role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile?.store_id) throw new Error("Store profile not found");
-
-  if (profile.role !== "owner") {
-    throw new Error("Unauthorized: Only store owners can update store metadata.");
-  }
 
   const { error } = await supabase
     .from("stores")
@@ -524,7 +444,7 @@ export async function updateStoreAction(rawParams: unknown) {
       address: data.address || null,
       pan_vat: data.panVat || null,
     })
-    .eq("id", profile.store_id);
+    .eq("id", store.id);
 
   if (error) throw new Error(error.message);
   return true;
@@ -538,9 +458,7 @@ export async function updateProfileAction(rawParams: unknown) {
   const data = validation.data;
 
   const supabase = await getSupabaseServerClient();
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Unauthenticated");
+  const { user } = await requireTenantContext();
 
   // Rate limit: UI mutations (30/min/user)
   await enforceRateLimit(uiMutationLimiter, `ui:${user.id}`, "PROFILE_UPDATE");
@@ -552,4 +470,51 @@ export async function updateProfileAction(rawParams: unknown) {
 
   if (error) throw new Error(error.message);
   return true;
+}
+
+export async function updateStoreFormAction(
+  _prevState: SettingsFormState,
+  formData: FormData,
+): Promise<SettingsFormState> {
+  try {
+    await updateStoreAction({
+      name: String(formData.get("name") ?? ""),
+      phone: String(formData.get("phone") ?? ""),
+      address: String(formData.get("address") ?? ""),
+      panVat: String(formData.get("panVat") ?? ""),
+    });
+
+    return {
+      success: true,
+      message: "Store information updated successfully.",
+      savedAt: Date.now(),
+    };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: getFriendlyErrorMessage(err) || settingsInitialError,
+    };
+  }
+}
+
+export async function updateProfileFormAction(
+  _prevState: SettingsFormState,
+  formData: FormData,
+): Promise<SettingsFormState> {
+  try {
+    await updateProfileAction({
+      name: String(formData.get("name") ?? ""),
+    });
+
+    return {
+      success: true,
+      message: "Profile updated successfully.",
+      savedAt: Date.now(),
+    };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: getFriendlyErrorMessage(err) || settingsInitialError,
+    };
+  }
 }

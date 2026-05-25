@@ -27,9 +27,8 @@ test.describe("Authentication Lockout E2E Cooldown Tests", () => {
 
       if (i < 5) {
         // Wait for server-side auth response error or rate-limit error to update local DOM attempts
-        const errMessage = page.locator("text=Invalid login credentials")
-          .or(page.locator("text=Too many requests"))
-          .or(page.locator("text=rate limit"));
+        const errMessage = page
+          .getByText(/Invalid email or password|Too many attempts|Too many requests|rate limit/i);
         await expect(errMessage).toBeVisible({ timeout: 8000 });
       }
     }

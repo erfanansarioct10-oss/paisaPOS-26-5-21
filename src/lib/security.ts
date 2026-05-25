@@ -1,5 +1,26 @@
 import type { ZodError } from "zod";
 
+export const MAX_EMAIL_LENGTH = 254;
+export const MAX_PASSWORD_LENGTH = 256;
+
+const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001F\u007F-\u009F]/;
+
+export function hasControlCharacters(val: string): boolean {
+  return CONTROL_CHARACTER_PATTERN.test(val);
+}
+
+export function normalizeEmail(val: string): string {
+  if (typeof val !== "string") return "";
+  return val.normalize("NFKC").trim().toLowerCase();
+}
+
+export function validateAuthStringSafety(val: string): boolean {
+  return !hasControlCharacters(val);
+}
+
+export function validatePasswordComplexity(val: string): boolean {
+  return /[a-z]/.test(val) && /[A-Z]/.test(val) && /\d/.test(val);
+}
 
 /**
  * Sanitizes a string by removing control characters, stripping HTML tags,
@@ -8,8 +29,10 @@ import type { ZodError } from "zod";
 export function sanitizeString(val: string): string {
   if (typeof val !== "string") return "";
 
+  const normalized = val.normalize("NFKC");
+
   // 1. Remove control characters (Unicode range U+0000 - U+001F and U+007F - U+009F)
-  let clean = val.replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
+  let clean = normalized.replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
 
   // 2. Strip standard HTML and script tags to prevent Cross-Site Scripting (XSS)
   clean = clean.replace(/<[^>]*>/g, "");
