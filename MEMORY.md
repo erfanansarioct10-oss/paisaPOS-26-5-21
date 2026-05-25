@@ -1,5 +1,22 @@
 # Memory
-> Last updated: 2026-05-25 15:21 NPT
+> Last updated: 2026-05-25 16:08 NPT
+
+## Current Beta V1.1 Progress Snapshot (2026-05-25)
+
+**Current State:** The project is on `beta/v1.1`, tracking `origin/beta/v1.1`, with a clean working tree as of the latest check. Production Beta V1 remains anchored on `main` and tag `beta-v1.0-live` at commit `69db8c5 fix(security): allow Next script elements under CSP`. V1.1 planning work has been committed on the development branch only, so production users are not affected by the new staff/accountability planning.
+
+**Completed So Far:**
+- Created the Beta V1.1 development lane and documented the production/development separation strategy.
+- Confirmed remote Supabase branching is blocked by plan limits, so V1.1 implementation/testing will use local/dev Supabase unless a separate staging Supabase project is created later.
+- Completed A-to-Z research for Staff, Activity, Accountability, and Delegated Privileges across product UX, database/RLS, server authorization, privacy, and test strategy.
+- Created four planning documents under `PaisaPOS_OS/`: `FEATURE_STAFF_ACTIVITY_ACCOUNTABILITY.md`, `FEATURE_STAFF_ACTIVITY_SECURITY_PRIVACY.md`, `FEATURE_STAFF_ACTIVITY_TEST_PLAN.md`, and `FEATURE_STAFF_ACTIVITY_IMPLEMENTATION_SLICES.md`.
+- Decided to build the feature as small vertical slices rather than one large RBAC/delegation project.
+
+**Not Started Yet:** No Beta V1.1 staff/activity database migrations or application code changes have been implemented yet. The next work should begin with Slice 0 guardrail verification, then Slice 1 durable activity events.
+
+**Next Move:** Start the first implementation phase: verify the development guardrails, inspect the existing `audit_logs` and server authorization patterns, then implement the durable owner-visible activity foundation before building staff invitations or temporary owner delegation.
+
+**Lesson:** We now have the strategy in place; the next risk is execution discipline. Accountability must be implemented first so every future staff or delegation feature has a durable, tenant-scoped trail from day one.
 
 ## Beta V1.1 Implementation Slice Planning (2026-05-25)
 
