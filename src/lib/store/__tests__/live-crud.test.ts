@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { loadEnvConfig } from "@next/env";
+import { retryOnTransientJwtClockSkew } from "./supabase-test-utils";
 
 // Load environment variables using Next.js's loader
 loadEnvConfig(process.cwd());
@@ -11,47 +12,6 @@ const runLiveTests = !!(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
   !process.env.SKIP_LIVE_TESTS
 );
-
-const JWT_CLOCK_SKEW_RETRY_DELAYS_MS = [500, 1000, 2000];
-
-type SupabaseErrorLike = {
-  code?: string;
-  message?: string;
-} | null;
-
-type SupabaseResult<T> = {
-  data: T | null;
-  error: SupabaseErrorLike;
-};
-
-function isJwtIssuedAtFutureError(error: SupabaseErrorLike): boolean {
-  return Boolean(
-    error &&
-    (error.code === "PGRST303" ||
-      error.message?.toLowerCase().includes("jwt issued at future"))
-  );
-}
-
-async function sleep(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function retryOnTransientJwtClockSkew<T>(
-  operation: () => PromiseLike<SupabaseResult<T>>
-): Promise<SupabaseResult<T>> {
-  let result = await operation();
-
-  for (const delayMs of JWT_CLOCK_SKEW_RETRY_DELAYS_MS) {
-    if (!isJwtIssuedAtFutureError(result.error)) {
-      return result;
-    }
-
-    await sleep(delayMs);
-    result = await operation();
-  }
-
-  return result;
-}
 
 describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integration Verification", () => {
   let supabase: ReturnType<typeof createClient>;

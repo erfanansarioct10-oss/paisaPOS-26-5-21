@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { loadEnvConfig } from "@next/env";
 import { NextRequest } from "next/server";
 import { proxy } from "@/proxy";
+import { retryOnTransientJwtClockSkew } from "./supabase-test-utils";
 
 // Load environment variables
 loadEnvConfig(process.cwd());
@@ -40,10 +41,12 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
     const { data: signUpOwner } = await clientOwner.auth.signUp({ email: emailOwner, password });
     const ownerId = signUpOwner.user!.id;
 
-    const { data: storeId } = await clientOwner.rpc("register_store_and_user", {
-      p_full_name: `Store Owner`,
-      p_store_name: `Store - ${random}`,
-    });
+    const { data: storeId } = await retryOnTransientJwtClockSkew(() =>
+      clientOwner.rpc("register_store_and_user", {
+        p_full_name: `Store Owner`,
+        p_store_name: `Store - ${random}`,
+      })
+    );
 
     // 2. Sign up Cashier
     const { data: signUpCashier } = await clientCashier.auth.signUp({ email: emailCashier, password });
@@ -119,10 +122,12 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
 
     // Sign up & Onboard Tenant A
     const { data: signUpA } = await clientA.auth.signUp({ email: emailA, password });
-    const storeIdA = await clientA.rpc("register_store_and_user", {
-      p_full_name: `Owner A`,
-      p_store_name: `Store A - ${randomA}`,
-    });
+    const storeIdA = await retryOnTransientJwtClockSkew(() =>
+      clientA.rpc("register_store_and_user", {
+        p_full_name: `Owner A`,
+        p_store_name: `Store A - ${randomA}`,
+      })
+    );
 
     // Create a product variant in Store A for billing
     const { data: prodA } = await clientA
@@ -156,10 +161,12 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
 
     // Sign up & Onboard Tenant B
     const { data: signUpB } = await clientB.auth.signUp({ email: emailB, password });
-    const storeIdB = await clientB.rpc("register_store_and_user", {
-      p_full_name: `Owner B`,
-      p_store_name: `Store B - ${randomB}`,
-    });
+    const storeIdB = await retryOnTransientJwtClockSkew(() =>
+      clientB.rpc("register_store_and_user", {
+        p_full_name: `Owner B`,
+        p_store_name: `Store B - ${randomB}`,
+      })
+    );
 
     // TEST C: Tenant B queries Tenant A's invoices
     console.log("[QA Test] Verifying Tenant B is blocked from reading Tenant A's invoices by RLS...");
@@ -205,10 +212,12 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
 
     // Sign up & Onboard Owner
     const { data: signUp } = await client.auth.signUp({ email, password });
-    const storeId = await client.rpc("register_store_and_user", {
-      p_full_name: `Owner Constraints`,
-      p_store_name: `Store Constraints - ${random}`,
-    });
+    const storeId = await retryOnTransientJwtClockSkew(() =>
+      client.rpc("register_store_and_user", {
+        p_full_name: `Owner Constraints`,
+        p_store_name: `Store Constraints - ${random}`,
+      })
+    );
 
     const { data: prod } = await client
       .from("products")
@@ -278,10 +287,12 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
 
     // Sign up & Onboard Owner
     const { data: signUp } = await client.auth.signUp({ email, password });
-    const storeId = await client.rpc("register_store_and_user", {
-      p_full_name: `Owner Bulk`,
-      p_store_name: `Store Bulk - ${random}`,
-    });
+    const storeId = await retryOnTransientJwtClockSkew(() =>
+      client.rpc("register_store_and_user", {
+        p_full_name: `Owner Bulk`,
+        p_store_name: `Store Bulk - ${random}`,
+      })
+    );
 
     // Prepare a mock batch payload with two products:
     // Product 1: Valid SKU & Price
@@ -350,10 +361,12 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
     expect(authThreatScanError).not.toBeNull();
     expect(authThreatScanError!.message.toLowerCase()).toMatch(/permission|denied|not authorized|not found/);
 
-    const { data: storeId, error: onboardError } = await authClient.rpc("register_store_and_user", {
-      p_full_name: "RPC Grant Owner",
-      p_store_name: `RPC Grant Store - ${random}`,
-    });
+    const { data: storeId, error: onboardError } = await retryOnTransientJwtClockSkew(() =>
+      authClient.rpc("register_store_and_user", {
+        p_full_name: "RPC Grant Owner",
+        p_store_name: `RPC Grant Store - ${random}`,
+      })
+    );
     expect(onboardError).toBeNull();
     expect(storeId).toBeDefined();
 

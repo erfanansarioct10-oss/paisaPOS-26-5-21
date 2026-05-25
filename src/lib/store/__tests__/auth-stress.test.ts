@@ -7,6 +7,7 @@ import { AppState } from "../types";
 import { createAuthSlice } from "../authSlice";
 import { createInventorySlice } from "../inventorySlice";
 import { createCartSlice } from "../cartSlice";
+import { retryOnTransientJwtClockSkew } from "./supabase-test-utils";
 
 // Load environment variables
 loadEnvConfig(process.cwd());
@@ -332,10 +333,12 @@ describe.runIf(runLiveTests)("PaisaPOS — Authentication Hardening & Threat Res
 
     // 2. Call register_store_and_user onboarding RPC
     console.log(`[Auth Stress RPC] Call register_store_and_user for: ${email}`);
-    const { data: storeId, error: errOnboard } = await client.rpc("register_store_and_user", {
-      p_full_name: "Onboarding Test User",
-      p_store_name: `Transactional Store ${random}`,
-    });
+    const { data: storeId, error: errOnboard } = await retryOnTransientJwtClockSkew(() =>
+      client.rpc("register_store_and_user", {
+        p_full_name: "Onboarding Test User",
+        p_store_name: `Transactional Store ${random}`,
+      })
+    );
 
     expect(errOnboard).toBeNull();
     expect(storeId).toBeDefined();

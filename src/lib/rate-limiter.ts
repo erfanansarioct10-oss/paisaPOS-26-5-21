@@ -363,16 +363,23 @@ export async function enforceRateLimit(
   identifier: string,
   actionName: string,
 ): Promise<void> {
-  // Safe rate-limit bypass for E2E testing runs (strictly disabled in production)
-  if (process.env.NODE_ENV !== "production") {
-    try {
-      const head = await headers();
-      if (head.get("x-paisapos-e2e-test") === "true") {
-        return; // Skip checking rate limits during automated local test runs
-      }
-    } catch {
-      // Ignore header failures when run outside active HTTP requests
+  try {
+    const head = await headers();
+    const automationBypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+
+    if (
+      automationBypassSecret &&
+      head.get("x-vercel-protection-bypass") === automationBypassSecret
+    ) {
+      return;
     }
+
+    // Safe rate-limit bypass for local E2E testing runs.
+    if (process.env.NODE_ENV !== "production" && head.get("x-paisapos-e2e-test") === "true") {
+      return;
+    }
+  } catch {
+    // Ignore header failures when run outside active HTTP requests.
   }
 
   const result = await limiter.check(identifier);

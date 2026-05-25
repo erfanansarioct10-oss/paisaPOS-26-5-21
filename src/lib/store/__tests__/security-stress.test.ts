@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { loadEnvConfig } from "@next/env";
+import { retryOnTransientJwtClockSkew } from "./supabase-test-utils";
 
 // Load environment variables
 loadEnvConfig(process.cwd());
@@ -38,10 +39,12 @@ describe.runIf(runLiveTests)("PaisaPOS — Advanced Security & Concurrency Stres
     const { data: signUpOwner } = await clientOwner.auth.signUp({ email: emailOwner, password });
     const ownerId = signUpOwner.user!.id;
 
-    const { data: storeId } = await clientOwner.rpc("register_store_and_user", {
-      p_full_name: `Stress Store Owner`,
-      p_store_name: `Stress Store - ${random}`,
-    });
+    const { data: storeId } = await retryOnTransientJwtClockSkew(() =>
+      clientOwner.rpc("register_store_and_user", {
+        p_full_name: `Stress Store Owner`,
+        p_store_name: `Stress Store - ${random}`,
+      })
+    );
 
     // 2. Sign up Cashier
     const { data: signUpCashier } = await clientCashier.auth.signUp({ email: emailCashier, password });
@@ -122,10 +125,12 @@ describe.runIf(runLiveTests)("PaisaPOS — Advanced Security & Concurrency Stres
     const { data: signUp } = await client.auth.signUp({ email, password });
     const userId = signUp.user!.id;
 
-    const { data: storeId } = await client.rpc("register_store_and_user", {
-      p_full_name: `Tamper Owner`,
-      p_store_name: `Tamper Store - ${random}`,
-    });
+    const { data: storeId } = await retryOnTransientJwtClockSkew(() =>
+      client.rpc("register_store_and_user", {
+        p_full_name: `Tamper Owner`,
+        p_store_name: `Tamper Store - ${random}`,
+      })
+    );
 
     // 2. Owner creates a valid product variant (priced at Rs. 1500)
     const { data: product } = await client
@@ -190,10 +195,12 @@ describe.runIf(runLiveTests)("PaisaPOS — Advanced Security & Concurrency Stres
     const { data: signUp } = await client.auth.signUp({ email, password });
     const userId = signUp.user!.id;
 
-    const { data: storeId } = await client.rpc("register_store_and_user", {
-      p_full_name: `Deadlock Owner`,
-      p_store_name: `Deadlock Store - ${random}`,
-    });
+    const { data: storeId } = await retryOnTransientJwtClockSkew(() =>
+      client.rpc("register_store_and_user", {
+        p_full_name: `Deadlock Owner`,
+        p_store_name: `Deadlock Store - ${random}`,
+      })
+    );
 
     // 2. Create two variants
     const { data: product } = await client

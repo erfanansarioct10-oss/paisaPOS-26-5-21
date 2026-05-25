@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { loadEnvConfig } from "@next/env";
+import { retryOnTransientJwtClockSkew } from "./supabase-test-utils";
 
 // Load environment variables
 loadEnvConfig(process.cwd());
@@ -50,18 +51,22 @@ describe.runIf(runLiveTests)("PaisaPOS — Multi-Tenant Row Level Security (RLS)
 
     // 2. Onboard Store A and Store B
     console.log("[RLS QA] Calling register_store_and_user for Store A...");
-    const { data: storeIdA, error: errOnboardA } = await clientA.rpc("register_store_and_user", {
-      p_full_name: `Tenant A Owner`,
-      p_store_name: `Store A - ${randomA}`,
-    });
+    const { data: storeIdA, error: errOnboardA } = await retryOnTransientJwtClockSkew(() =>
+      clientA.rpc("register_store_and_user", {
+        p_full_name: `Tenant A Owner`,
+        p_store_name: `Store A - ${randomA}`,
+      })
+    );
     expect(errOnboardA).toBeNull();
     expect(storeIdA).toBeDefined();
 
     console.log("[RLS QA] Calling register_store_and_user for Store B...");
-    const { data: storeIdB, error: errOnboardB } = await clientB.rpc("register_store_and_user", {
-      p_full_name: `Tenant B Owner`,
-      p_store_name: `Store B - ${randomB}`,
-    });
+    const { data: storeIdB, error: errOnboardB } = await retryOnTransientJwtClockSkew(() =>
+      clientB.rpc("register_store_and_user", {
+        p_full_name: `Tenant B Owner`,
+        p_store_name: `Store B - ${randomB}`,
+      })
+    );
     expect(errOnboardB).toBeNull();
     expect(storeIdB).toBeDefined();
 
@@ -279,10 +284,12 @@ describe.runIf(runLiveTests)("PaisaPOS — Multi-Tenant Row Level Security (RLS)
     const { data: signUpOwner } = await clientOwner.auth.signUp({ email: emailOwner, password });
     const ownerId = signUpOwner.user!.id;
 
-    const { data: storeId } = await clientOwner.rpc("register_store_and_user", {
-      p_full_name: `Store Owner`,
-      p_store_name: `Store - ${random}`,
-    });
+    const { data: storeId } = await retryOnTransientJwtClockSkew(() =>
+      clientOwner.rpc("register_store_and_user", {
+        p_full_name: `Store Owner`,
+        p_store_name: `Store - ${random}`,
+      })
+    );
 
     // 2. Sign up Cashier
     const { data: signUpCashier } = await clientCashier.auth.signUp({ email: emailCashier, password });

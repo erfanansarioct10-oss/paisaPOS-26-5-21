@@ -18,17 +18,18 @@ test.describe("Authentication Lockout E2E Cooldown Tests", () => {
 
     const emailInput = page.locator("#email");
     const passwordInput = page.locator("#pass");
+    const invalidEmail = `unregistered-operator-${Date.now()}@pois.com`;
+    const authErrorMessage = /Invalid email or password|Too many failed login attempts|Too many attempts|Too many requests|rate limit/i;
 
     // 3. Flood the login form with 5 incorrect attempts
     for (let i = 1; i <= 5; i++) {
-      await emailInput.fill("unregistered-operator@pois.com");
+      await emailInput.fill(invalidEmail);
       await passwordInput.fill(`badpass-${i}`);
       await isLoginButton.click();
 
       if (i < 5) {
         // Wait for server-side auth response error or rate-limit error to update local DOM attempts
-        const errMessage = page
-          .getByText(/Invalid email or password|Too many attempts|Too many requests|rate limit/i);
+        const errMessage = page.getByText(authErrorMessage);
         await expect(errMessage).toBeVisible({ timeout: 8000 });
       }
     }
