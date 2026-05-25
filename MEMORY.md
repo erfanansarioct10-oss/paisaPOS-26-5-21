@@ -1,5 +1,21 @@
 # Memory
-> Last updated: 2026-05-25 15:07 NPT
+> Last updated: 2026-05-25 15:21 NPT
+
+## Beta V1.1 Implementation Slice Planning (2026-05-25)
+
+**Observation:** The Staff, Activity, and Delegated Privilege feature is too broad to implement safely as one large build. It crosses database migrations, RLS, Server Actions, staff onboarding, owner visibility, temporary authority, UI state, and test coverage. Building it as small end-to-end slices is the safest path because each slice can be proven before the next one adds more privilege.
+
+**Action:**
+- Created [FEATURE_STAFF_ACTIVITY_IMPLEMENTATION_SLICES.md](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/PaisaPOS_OS/FEATURE_STAFF_ACTIVITY_IMPLEMENTATION_SLICES.md) as the execution roadmap for Beta V1.1.
+- Defined operating rules for V1.1 work: stay on `beta/v1.1`, use local/dev Supabase, avoid production schema pushes, never introduce privilege without an audit trail, never implement temporary access by changing permanent roles, and commit after each proven slice.
+- Split the feature into eight implementation slices: development guardrails, durable activity events, invoice attribution, owner Activity Log page, staff invitations, permission helper unification, temporary delegation foundation, delegated action coverage, and final V1.1 release proof.
+- Set the first build phase to Slices 0 through 3 only: guardrails, activity foundation, invoice attribution, and owner Activity Log. Staff invitations and temporary delegation should wait until the accountability foundation is working.
+
+**Decision:** Build this feature as vertical slices, not as one large RBAC project. Each slice must include database/RLS, server authorization, UI behavior where applicable, tests, and confirmation proof before moving forward.
+
+**Next Build Order:** Start with Slice 0 verification, then implement Slice 1 `activity_events`. After durable activity events are proven, connect checkout attribution, then expose the owner Activity Log page.
+
+**Lesson:** For trust/accountability features, partial implementation can be more dangerous than no implementation. The safest rhythm is small, provable slices where the database, server, and UI all agree before new authority is granted.
 
 ## Beta V1.1 Staff, Activity, and Delegated Privilege Research (2026-05-25)
 
