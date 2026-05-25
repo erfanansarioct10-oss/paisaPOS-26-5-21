@@ -1,5 +1,37 @@
 # Memory
-> Last updated: 2026-05-24 14:10 NPT
+> Last updated: 2026-05-25 14:36 NPT
+
+## Beta V1.1 Development Lane Setup (2026-05-25)
+
+**Observation:** Beta V1 is live in production and should remain stable while real users test it. Future enhancements must be developed without accidentally shipping unfinished work to production or testing destructive schema changes against live customer data.
+
+**Action:**
+- **Frozen Production Baseline:** Created and pushed annotated Git tag `beta-v1.0-live` pointing at production commit `69db8c5 fix(security): allow Next script elements under CSP`. This tag is the rollback/reference point for the currently live Beta V1 code.
+- **Dedicated V1.1 Branch:** Created branch `beta/v1.1` from the same production baseline. V1.1 work should happen here, while `main` remains the production-safe branch.
+- **Memory Kept Off Production Lane:** The beta-transition notes and next planning documentation are being committed on `beta/v1.1`, not directly on `main`, so the production branch does not receive documentation-only churn or trigger unnecessary production deployment.
+- **Separation Status:** Git separation is now established. Production separation is complete only for code flow. Database/environment separation still requires Vercel Preview to use staging Supabase credentials instead of production Supabase credentials before running risky V1.1 database, staff, delegation, or audit-log development against preview deployments.
+
+**Operating Rule:** Use `main` only for production hotfixes and verified releases. Use `beta/v1.1` for V1.1 feature work. If a production bug is fixed from `main`, merge or cherry-pick that fix back into `beta/v1.1` immediately so the development lane does not drift.
+
+**Lesson:** A safe beta program needs two independent lanes: a stable live lane for real users and an experimental lane for product learning. Git branching alone protects code, but Supabase/Vercel environment separation protects customer data.
+
+## Public Beta Hardening, Deployment Proof, RBAC Clarification & Audit-Trail Strategy (2026-05-25)
+
+**Observation:** After the pre-launch audit, the app was no longer blocked by framework/build issues; the remaining risks were release proof, production environment correctness, Data API/RLS authorization drift, and product clarity around the owner/cashier split. A production-only CSP issue also appeared after deployment: one Next/Turbopack chunk loaded without a nonce, causing Chromium to block it under `script-src 'strict-dynamic'`. Separately, the production Inventory buttons were reported missing; investigation showed this was expected for cashier sessions because catalog management is owner-only.
+
+**Action:**
+- **Release Verification & Git/Vercel Alignment:** Stabilized and pushed beta-hardening commits to `origin/main`, including `9d361b2 Stabilize beta release verification`, `e9fe6d3 Harden beta release readiness`, and `69db8c5 fix(security): allow Next script elements under CSP`. Confirmed local `main` and `origin/main` were aligned before final reporting.
+- **Production Deployment Proof:** Verified the Vercel production deployment for `https://paisa-pos-26-5-21.vercel.app`, confirmed `/api/health` returns HTTP 200, confirmed security headers are present, and ran production Playwright E2E with Vercel automation bypass enabled, passing 15/15 tests.
+- **Supabase Release Proof:** Confirmed the linked Supabase project `zypvteouijcgmamegmdq` is the beta target, verified local/remote migration alignment through `20260525052151`, and previously passed Supabase migration/list/dry-run/lint/advisor checks except for the intentional backward-compatible unused checkout RPC parameter `p_invoice_number`.
+- **Environment Verification:** Confirmed Vercel has production/preview values for `APP_URL`, `DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `RATE_LIMIT_FAIL_CLOSED`, and `TRUST_PROXY_HEADERS`. Service-role and Redis secrets remain server-only and are not exposed as `NEXT_PUBLIC_` variables.
+- **CSP Production Fix:** Updated `src/proxy.ts` to include explicit `script-src-elem 'self' 'nonce-...'` and `script-src-attr 'none'` while preserving the nonce-based policy and `strict-dynamic` protections for script execution. Verified the production console no longer reports relevant CSP chunk-blocking errors after redeploy.
+- **Owner/Cashier RBAC Clarification:** Confirmed the app implements a two-role model: new store signups become `owner`; checkout is available to store users; catalog, bulk import, product delete/edit, stock adjustment, favorite toggles, and store settings are owner-gated through UI checks, Server Actions, RPCs, and RLS. The product gap is that Staff/Cashier invitations are not yet productized, so public beta should remain owner-first until staff management exists.
+- **Inventory Button Investigation:** Confirmed production Inventory management buttons are hidden when the current user is `cashier`, and visible for an owner session. Local dev differs because it points at local Supabase (`127.0.0.1:54321`) while production points at remote Supabase (`zypvteouijcgmamegmdq.supabase.co`).
+- **Audit-Trail Accountability Gap:** Verified the database already has `audit_logs` with `store_id`, `user_id`, `operation`, `affected_entity`, `result`, `error_message`, and `created_at`, and checkout/product upsert/bulk import/auth security events write accountability signals. However, owner-facing visibility is incomplete: there is no Activity Log screen, no staff attribution UI in invoice history, and some direct Server Actions still log to structured Vercel logs rather than durable `audit_logs` rows. Next accountability pass should add a store-scoped Activity Log, expose actor name/role by joining `audit_logs.user_id -> users.id`, and ensure all material actions write durable audit records.
+
+**Product Decision:** Keep the two-role model internally because it solves real boutique cases where the owner is away and a cashier or helper must sell without having permission to alter catalog/prices/history. For public beta, make the default experience owner-first. Staff access should be optional and introduced only with a complete Settings > Staff workflow: invite cashier, accept invite, list active staff, revoke access, and show activity by actor.
+
+**Lesson:** RBAC is valuable only when it is understandable to the shop owner. Owner/cashier permissions must be paired with visible accountability: every transaction, stock change, catalog edit, staff invite, and settings change should show who did it, when, from which role, and what entity changed. Security controls that are invisible become confusing product behavior; audit logs convert them into trust.
 
 ## Phase 1 Production Hardening, Spoof-Proof IP Extraction & Linter Cleanup (2026-05-24)
 
