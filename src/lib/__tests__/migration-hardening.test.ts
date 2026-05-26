@@ -27,6 +27,11 @@ const privilegeDelegationMigrationSql = readFileSync(
   "utf8"
 ).toLowerCase();
 
+const delegatedCatalogMigrationSql = readFileSync(
+  join(process.cwd(), "supabase/migrations/20260526020902_add_delegated_catalog_actions.sql"),
+  "utf8"
+).toLowerCase();
+
 describe("data api and tenant-integrity hardening migration", () => {
   test("revokes direct invoice and audit mutations from authenticated users", () => {
     expect(migrationSql).toContain("revoke insert, update, delete on table public.invoices from authenticated");
@@ -95,5 +100,22 @@ describe("data api and tenant-integrity hardening migration", () => {
     expect(privilegeDelegationMigrationSql).toContain("validate_privilege_delegation");
     expect(privilegeDelegationMigrationSql).toContain("activity_events_delegation_id_fkey");
     expect(privilegeDelegationMigrationSql).toContain("invoices_sold_with_delegation_id_fkey");
+  });
+
+  test("adds delegated catalog RPCs that are service-role-only and revalidate catalog delegation", () => {
+    expect(delegatedCatalogMigrationSql).toContain("upsert_product_and_variants_for_delegation");
+    expect(delegatedCatalogMigrationSql).toContain("bulk_upsert_products_and_variants_for_delegation");
+    expect(delegatedCatalogMigrationSql).toContain("delete_product_for_delegation");
+    expect(delegatedCatalogMigrationSql).toContain("set_product_favorite_for_delegation");
+    expect(delegatedCatalogMigrationSql).toContain("d.scope = 'catalog.manage'::public.privilege_scope");
+    expect(delegatedCatalogMigrationSql).toContain("d.revoked_at is null");
+    expect(delegatedCatalogMigrationSql).toContain("d.starts_at <= now()");
+    expect(delegatedCatalogMigrationSql).toContain("d.expires_at > now()");
+    expect(delegatedCatalogMigrationSql).toContain("revoke execute on function public.upsert_product_and_variants_for_delegation");
+    expect(delegatedCatalogMigrationSql).toContain("revoke execute on function public.bulk_upsert_products_and_variants_for_delegation");
+    expect(delegatedCatalogMigrationSql).toContain("revoke execute on function public.delete_product_for_delegation");
+    expect(delegatedCatalogMigrationSql).toContain("revoke execute on function public.set_product_favorite_for_delegation");
+    expect(delegatedCatalogMigrationSql).toContain("grant execute on function public.upsert_product_and_variants_for_delegation");
+    expect(delegatedCatalogMigrationSql).toContain("to service_role");
   });
 });

@@ -2,6 +2,8 @@ import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+
 type ActivityRole = "owner" | "cashier";
 type ActivityResult = "success" | "failure";
 type PrivilegeSource = "owner_role" | "cashier_role" | "delegation" | "system";
@@ -212,7 +214,50 @@ type AdminDatabase = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      upsert_product_and_variants_for_delegation: {
+        Args: {
+          p_store_id: string;
+          p_actor_user_id: string;
+          p_delegation_id: string;
+          p_product_id: string | null;
+          p_name: string;
+          p_category: string;
+          p_low_stock_threshold: number;
+          p_deleted_variant_ids: string[];
+          p_variants: Json;
+        };
+        Returns: string;
+      };
+      bulk_upsert_products_and_variants_for_delegation: {
+        Args: {
+          p_store_id: string;
+          p_actor_user_id: string;
+          p_delegation_id: string;
+          p_products: Json;
+        };
+        Returns: number;
+      };
+      delete_product_for_delegation: {
+        Args: {
+          p_store_id: string;
+          p_actor_user_id: string;
+          p_delegation_id: string;
+          p_product_id: string;
+        };
+        Returns: boolean;
+      };
+      set_product_favorite_for_delegation: {
+        Args: {
+          p_store_id: string;
+          p_actor_user_id: string;
+          p_delegation_id: string;
+          p_product_id: string;
+          p_is_favorite: boolean;
+        };
+        Returns: boolean;
+      };
+    };
   };
 };
 

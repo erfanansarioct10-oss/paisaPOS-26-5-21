@@ -42,10 +42,13 @@ export default function InventoryTab() {
   } = useAppStore();
 
   const capabilities = getStaffCapabilities(user);
+  const activeCatalogDelegation = activeDelegations.find((delegation) =>
+    hasActiveDelegatedPrivilege(user, "catalog.manage", [delegation]),
+  );
   const activeInventoryDelegation = activeDelegations.find((delegation) =>
     hasActiveDelegatedPrivilege(user, "inventory.adjust", [delegation]),
   );
-  const canManageCatalog = capabilities.canManageCatalog;
+  const canManageCatalog = capabilities.canManageCatalog || Boolean(activeCatalogDelegation);
   const canAdjustInventory = capabilities.canAdjustInventory || Boolean(activeInventoryDelegation);
 
   const [isOpen, setIsOpen] = useState(false);
@@ -401,6 +404,25 @@ export default function InventoryTab() {
             <Clock3 className="h-3.5 w-3.5 shrink-0" />
             <span>
               Until {new Date(activeInventoryDelegation.expires_at).toLocaleTimeString("en-NP", {
+                timeZone: "Asia/Kathmandu",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {activeCatalogDelegation && (
+        <div className="flex flex-col gap-2 rounded-lg border border-sky-500/20 bg-sky-500/10 px-4 py-3 text-xs text-sky-800 shadow-sm dark:text-sky-200 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 font-semibold">
+            <KeyRound className="h-4 w-4 shrink-0" />
+            <span>Temporary access: {formatStaffPrivilege("catalog.manage")}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-[11px] font-medium">
+            <Clock3 className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              Until {new Date(activeCatalogDelegation.expires_at).toLocaleTimeString("en-NP", {
                 timeZone: "Asia/Kathmandu",
                 hour: "2-digit",
                 minute: "2-digit",

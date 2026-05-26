@@ -203,10 +203,36 @@ describe("permission helper", () => {
     expect(query.eq).toHaveBeenCalledWith("scope", "inventory.adjust");
   });
 
+  test("loads database-backed catalog delegations for cashier catalog actions", async () => {
+    mockContext(cashier);
+    const { from, query } = mockDelegationRows([
+      {
+        id: "88888888-8888-4888-8888-888888888888",
+        scope: "catalog.manage",
+        granted_by_user_id: "11111111-1111-4111-8111-111111111111",
+        starts_at: "2026-05-25T00:00:00.000Z",
+        expires_at: "2999-05-25T00:00:00.000Z",
+        revoked_at: null,
+      },
+    ]);
+
+    await expect(requirePrivilege("catalog.manage")).resolves.toMatchObject({
+      privilege: "catalog.manage",
+      privilegeSource: "delegation",
+      delegationId: "88888888-8888-4888-8888-888888888888",
+      delegationGrantorUserId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    expect(from).toHaveBeenCalledWith("privilege_delegations");
+    expect(query.eq).toHaveBeenCalledWith("store_id", storeId);
+    expect(query.eq).toHaveBeenCalledWith("granted_to_user_id", cashier.id);
+    expect(query.eq).toHaveBeenCalledWith("scope", "catalog.manage");
+  });
+
   test("does not authorize unreleased database-backed delegation scopes", async () => {
     mockContext(cashier);
 
-    await expect(requirePrivilege("catalog.manage")).rejects.toMatchObject({
+    await expect(requirePrivilege("reports.export")).rejects.toMatchObject({
       reason: "insufficient_role",
     });
 

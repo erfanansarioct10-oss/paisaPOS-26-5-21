@@ -202,7 +202,11 @@ function createActiveDelegationLookup(rows: Array<Record<string, unknown>>) {
   return query;
 }
 
-function createDelegationLookup(rows: Array<Record<string, unknown>>, error: { message: string } | null = null) {
+function createDelegationLookup(
+  rows: Array<Record<string, unknown>>,
+  error: { message: string } | null = null,
+  clientExtras: Record<string, unknown> = {},
+) {
   const query: {
     select: ReturnType<typeof vi.fn>;
     eq: ReturnType<typeof vi.fn>;
@@ -217,7 +221,7 @@ function createDelegationLookup(rows: Array<Record<string, unknown>>, error: { m
     then: (resolve, reject) => Promise.resolve({ data: rows, error }).then(resolve, reject),
   };
   const from = vi.fn(() => query);
-  vi.mocked(getSupabaseAdminClient).mockReturnValue({ from } as never);
+  vi.mocked(getSupabaseAdminClient).mockReturnValue({ from, ...clientExtras } as never);
   return { from, query };
 }
 
@@ -230,6 +234,17 @@ function expectNoPrivilegedSideEffects(options: { allowDelegationLookup?: boolea
   expect(recordActivityEvent).not.toHaveBeenCalled();
 }
 
+function activeDelegationRow(scope: "catalog.manage" | "inventory.adjust") {
+  return {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    scope,
+    granted_by_user_id: ownerId,
+    starts_at: "2026-05-25T00:00:00.000Z",
+    expires_at: "2999-05-25T00:00:00.000Z",
+    revoked_at: null,
+  };
+}
+
 describe("Server Action permission abuse gates", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -240,25 +255,25 @@ describe("Server Action permission abuse gates", () => {
       name: "upsert product",
       call: () => upsertProductAction(validProductPayload),
       reason: "insufficient_role",
-      delegationLookup: false,
+      delegationLookup: true,
     },
     {
       name: "bulk catalog import",
       call: () => bulkUpsertProductsAction([validProductPayload]),
       reason: "insufficient_role",
-      delegationLookup: false,
+      delegationLookup: true,
     },
     {
       name: "delete product",
       call: () => deleteProductAction(productId),
       reason: "insufficient_role",
-      delegationLookup: false,
+      delegationLookup: true,
     },
     {
       name: "toggle product favorite",
       call: () => toggleProductFavoriteAction(productId, true),
       reason: "insufficient_role",
-      delegationLookup: false,
+      delegationLookup: true,
     },
     {
       name: "adjust inventory",
@@ -365,7 +380,7 @@ describe("Server Action permission abuse gates", () => {
       { success: false },
       makeForm({
         userId: staffUserId,
-        scope: "catalog.manage",
+        scope: "reports.export",
         durationHours: "2",
         reason: "Owner away",
         confirmText: "GRANT",
@@ -526,6 +541,148 @@ describe("Server Action permission abuse gates", () => {
     );
   });
 
+  test("allows a delegated cashier catalog upsert through the internal RPC", async () => {
+    mockTenant("cashier");
+    const rpc = vi.fn(async () => ({ data: productId, error: null }));
+    createDelegationLookup([activeDelegationRow("catalog.manage")], null, { rpc });
+
+    await expect(upsertProductAction(validProductPayload)).resolves.toBe(productId);
+
+    expect(getSupabaseServerClient).not.toHaveBeenCalled();
+    expect(enforceRateLimit).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith(
+      "upsert_product_and_variants_for_delegation",
+      expect.objectContaining({
+        p_store_id: storeId,
+        p_actor_user_id: cashierId,
+        p_delegation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        p_product_id: null,
+        p_name: "Cotton Tee",
+        p_variants: [
+          expect.objectContaining({
+            sku: "TEE-BLK-M",
+            stock: 10,
+          }),
+        ],
+      }),
+    );
+    expect(recordActivityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "product.created",
+        actionScope: "catalog.manage",
+        privilegeSource: "delegation",
+        delegationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        metadata: expect.objectContaining({
+          delegationGrantorUserId: ownerId,
+          variantCount: 1,
+        }),
+      }),
+    );
+  });
+
+  test("allows a delegated cashier catalog import through the internal RPC", async () => {
+    mockTenant("cashier");
+    const rpc = vi.fn(async () => ({ data: 1, error: null }));
+    createDelegationLookup([activeDelegationRow("catalog.manage")], null, { rpc });
+
+    await expect(bulkUpsertProductsAction([validProductPayload])).resolves.toMatchObject({
+      succeededCount: 1,
+      failedProducts: [],
+    });
+
+    expect(getSupabaseServerClient).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith(
+      "bulk_upsert_products_and_variants_for_delegation",
+      expect.objectContaining({
+        p_store_id: storeId,
+        p_actor_user_id: cashierId,
+        p_delegation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        p_products: [
+          expect.objectContaining({
+            name: "Cotton Tee",
+            variants: [
+              expect.objectContaining({
+                sku: "TEE-BLK-M",
+                stock: 10,
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(recordActivityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "product.imported",
+        privilegeSource: "delegation",
+        delegationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        metadata: expect.objectContaining({
+          delegationGrantorUserId: ownerId,
+          requestedCount: 1,
+          succeededCount: 1,
+        }),
+      }),
+    );
+  });
+
+  test("allows a delegated cashier product delete through the internal RPC", async () => {
+    mockTenant("cashier");
+    const rpc = vi.fn(async () => ({ data: true, error: null }));
+    createDelegationLookup([activeDelegationRow("catalog.manage")], null, { rpc });
+
+    await expect(deleteProductAction(productId)).resolves.toBe(true);
+
+    expect(getSupabaseServerClient).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith(
+      "delete_product_for_delegation",
+      expect.objectContaining({
+        p_store_id: storeId,
+        p_actor_user_id: cashierId,
+        p_delegation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        p_product_id: productId,
+      }),
+    );
+    expect(recordActivityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "product.deleted",
+        privilegeSource: "delegation",
+        delegationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        metadata: {
+          delegationGrantorUserId: ownerId,
+        },
+      }),
+    );
+  });
+
+  test("allows a delegated cashier favorite toggle through the internal RPC", async () => {
+    mockTenant("cashier");
+    const rpc = vi.fn(async () => ({ data: true, error: null }));
+    createDelegationLookup([activeDelegationRow("catalog.manage")], null, { rpc });
+
+    await expect(toggleProductFavoriteAction(productId, true)).resolves.toBe(true);
+
+    expect(getSupabaseServerClient).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith(
+      "set_product_favorite_for_delegation",
+      expect.objectContaining({
+        p_store_id: storeId,
+        p_actor_user_id: cashierId,
+        p_delegation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        p_product_id: productId,
+        p_is_favorite: true,
+      }),
+    );
+    expect(recordActivityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "favorite.toggled",
+        privilegeSource: "delegation",
+        delegationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        metadata: {
+          delegationGrantorUserId: ownerId,
+        },
+      }),
+    );
+  });
+
   test("allows an owner to grant temporary access with activity proof", async () => {
     mockTenant("owner");
     const profileQuery = createMaybeSingleQuery({
@@ -565,7 +722,7 @@ describe("Server Action permission abuse gates", () => {
       { success: false },
       makeForm({
         userId: staffUserId,
-        scope: "inventory.adjust",
+        scope: "catalog.manage",
         durationHours: "2",
         reason: "Owner away",
         confirmText: "GRANT",
@@ -578,7 +735,7 @@ describe("Server Action permission abuse gates", () => {
         store_id: storeId,
         granted_to_user_id: staffUserId,
         granted_by_user_id: ownerId,
-        scope: "inventory.adjust",
+        scope: "catalog.manage",
         reason: "Owner away",
       }),
     );

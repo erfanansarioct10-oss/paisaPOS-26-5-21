@@ -64,6 +64,22 @@ async function logAuthorizationDenied(
   await writeLog("SECURITY", operation, message, metadata);
 }
 
+function requireResolvedDelegationId(delegationId: string | null) {
+  if (!delegationId) {
+    throw new Error("Delegated action is missing authorization proof.");
+  }
+  return delegationId;
+}
+
+function withDelegationGrantor(
+  delegationGrantorUserId: string | null,
+  metadata: Record<string, unknown> = {},
+) {
+  return delegationGrantorUserId
+    ? { ...metadata, delegationGrantorUserId }
+    : metadata;
+}
+
 export async function checkoutAction(rawParams: unknown) {
   const validation = checkoutSchema.safeParse(rawParams);
   if (!validation.success) {
@@ -166,23 +182,58 @@ export async function upsertProductAction(rawParams: unknown) {
   }
   const params = validation.data;
 
-  const { user, store, privilegeSource, delegationId } = await requirePrivilege("catalog.manage");
-  const supabase = await getSupabaseServerClient();
+  const { user, store, privilegeSource, delegationId, delegationGrantorUserId } =
+    await requirePrivilege("catalog.manage");
 
   // User-scoped rate limiting: 20 product mutations per minute
   await enforceRateLimit(productMutationLimiter, `product:${user.id}`, "PRODUCT_UPSERT");
-  
-  const { data: productId, error } = await supabase.rpc(
-    "upsert_product_and_variants",
-    {
-      p_product_id: params.productId,
-      p_name: params.name,
-      p_category: params.category,
-      p_low_stock_threshold: params.lowStockThreshold,
-      p_deleted_variant_ids: params.deletedVariantIds,
-      p_variants: params.variants,
-    }
-  );
+
+  const rpcVariants = params.variants.map((variant) => ({
+    ...(variant.id ? { id: variant.id } : {}),
+    size: variant.size,
+    color: variant.color,
+    sku: variant.sku,
+    price: variant.price,
+    stock: variant.stock,
+  }));
+
+  let productId: string | null = null;
+  let error: { message: string } | null = null;
+
+  if (privilegeSource === "delegation") {
+    const adminClient = getSupabaseAdminClient();
+    const result = await adminClient.rpc(
+      "upsert_product_and_variants_for_delegation",
+      {
+        p_store_id: store.id,
+        p_actor_user_id: user.id,
+        p_delegation_id: requireResolvedDelegationId(delegationId),
+        p_product_id: params.productId,
+        p_name: params.name,
+        p_category: params.category,
+        p_low_stock_threshold: params.lowStockThreshold,
+        p_deleted_variant_ids: params.deletedVariantIds,
+        p_variants: rpcVariants,
+      },
+    );
+    productId = result.data;
+    error = result.error;
+  } else {
+    const supabase = await getSupabaseServerClient();
+    const result = await supabase.rpc(
+      "upsert_product_and_variants",
+      {
+        p_product_id: params.productId,
+        p_name: params.name,
+        p_category: params.category,
+        p_low_stock_threshold: params.lowStockThreshold,
+        p_deleted_variant_ids: params.deletedVariantIds,
+        p_variants: rpcVariants,
+      },
+    );
+    productId = result.data;
+    error = result.error;
+  }
 
   if (error) {
     if (error.message.toLowerCase().includes("unauthorized")) {
@@ -204,10 +255,10 @@ export async function upsertProductAction(rawParams: unknown) {
       result: "failure",
       errorCode: "product_upsert_rpc_error",
       summary: `${user.name} failed to save product ${params.name}.`,
-      metadata: {
+      metadata: withDelegationGrantor(delegationGrantorUserId, {
         variantCount: params.variants.length,
         deletedVariantCount: params.deletedVariantIds.length,
-      },
+      }),
     });
     const msg = error.message.toLowerCase();
     if (
@@ -232,12 +283,14 @@ export async function upsertProductAction(rawParams: unknown) {
     targetId: productId,
     targetLabel: params.name,
     result: "success",
-    summary: `${user.name} ${params.productId ? "updated" : "created"} product ${params.name}.`,
-    metadata: {
+    summary: privilegeSource === "delegation"
+      ? `${user.name} ${params.productId ? "updated" : "created"} product ${params.name} with temporary access.`
+      : `${user.name} ${params.productId ? "updated" : "created"} product ${params.name}.`,
+    metadata: withDelegationGrantor(delegationGrantorUserId, {
       category: params.category,
       variantCount: params.variants.length,
       deletedVariantCount: params.deletedVariantIds.length,
-    },
+    }),
   });
 
   return productId;
@@ -251,8 +304,8 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
   const products = validation.data;
   const total = products.length;
 
-  const { user: bulkUser, store, privilegeSource, delegationId } = await requirePrivilege("catalog.manage");
-  const supabase = await getSupabaseServerClient();
+  const { user: bulkUser, store, privilegeSource, delegationId, delegationGrantorUserId } =
+    await requirePrivilege("catalog.manage");
 
   // User-scoped rate limiting: 2 bulk imports per 5 minutes
   await enforceRateLimit(bulkImportLimiter, `bulk:${bulkUser.id}`, "BULK_IMPORT");
@@ -263,6 +316,7 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
   let skippedRemainder: string[] | undefined = undefined;
 
   const CHUNK_SIZE = 100;
+  const ownerScopedClient = privilegeSource === "delegation" ? null : await getSupabaseServerClient();
 
   for (let i = 0; i < total; i += CHUNK_SIZE) {
     const chunk = products.slice(i, i + CHUNK_SIZE);
@@ -280,12 +334,32 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
     }));
 
     try {
-      const { data: count, error } = await supabase.rpc(
-        "bulk_upsert_products_and_variants",
-        {
-          p_products: rpcPayload,
-        }
-      );
+      let count: number | null = null;
+      let error: { message: string } | null = null;
+
+      if (privilegeSource === "delegation") {
+        const adminClient = getSupabaseAdminClient();
+        const result = await adminClient.rpc(
+          "bulk_upsert_products_and_variants_for_delegation",
+          {
+            p_store_id: store.id,
+            p_actor_user_id: bulkUser.id,
+            p_delegation_id: requireResolvedDelegationId(delegationId),
+            p_products: rpcPayload,
+          },
+        );
+        count = result.data;
+        error = result.error;
+      } else {
+        const result = await ownerScopedClient!.rpc(
+          "bulk_upsert_products_and_variants",
+          {
+            p_products: rpcPayload,
+          },
+        );
+        count = result.data;
+        error = result.error;
+      }
 
       if (error) {
         if (error.message.toLowerCase().includes("unauthorized")) {
@@ -348,14 +422,14 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
     result: failedChunkError ? "failure" : "success",
     errorCode: failedChunkError ? "bulk_import_chunk_error" : null,
     summary: failedChunkError
-      ? `${bulkUser.name} imported ${succeededCount} products before a catalog import failure.`
-      : `${bulkUser.name} imported ${succeededCount} products.`,
-    metadata: {
+      ? `${bulkUser.name} imported ${succeededCount} products before a catalog import failure${privilegeSource === "delegation" ? " with temporary access" : ""}.`
+      : `${bulkUser.name} imported ${succeededCount} products${privilegeSource === "delegation" ? " with temporary access" : ""}.`,
+    metadata: withDelegationGrantor(delegationGrantorUserId, {
       requestedCount: total,
       succeededCount,
       failedCount: failedProducts.length,
       skippedCount: skippedRemainder?.length ?? 0,
-    },
+    }),
   });
 
   return {
@@ -368,17 +442,35 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
 
 export async function deleteProductAction(productId: string) {
   const cleanProductId = z.string().uuid().parse(productId);
-  const { user, store, privilegeSource, delegationId } = await requirePrivilege("catalog.manage");
-  const supabase = await getSupabaseServerClient();
+  const { user, store, privilegeSource, delegationId, delegationGrantorUserId } =
+    await requirePrivilege("catalog.manage");
 
   // User-scoped rate limiting: 20 product mutations per minute
   await enforceRateLimit(productMutationLimiter, `product:${user.id}`, "PRODUCT_DELETE");
 
-  const { error } = await supabase
-    .from("products")
-    .delete()
-    .eq("id", cleanProductId)
-    .eq("store_id", store.id);
+  let error: { message: string } | null = null;
+
+  if (privilegeSource === "delegation") {
+    const adminClient = getSupabaseAdminClient();
+    const result = await adminClient.rpc(
+      "delete_product_for_delegation",
+      {
+        p_store_id: store.id,
+        p_actor_user_id: user.id,
+        p_delegation_id: requireResolvedDelegationId(delegationId),
+        p_product_id: cleanProductId,
+      },
+    );
+    error = result.error;
+  } else {
+    const supabase = await getSupabaseServerClient();
+    const result = await supabase
+      .from("products")
+      .delete()
+      .eq("id", cleanProductId)
+      .eq("store_id", store.id);
+    error = result.error;
+  }
 
   if (error) {
     await writeLog("ERROR", "PRODUCT_DELETE_FAILURE", `Failed to delete product: ${cleanProductId}`, {
@@ -398,6 +490,7 @@ export async function deleteProductAction(productId: string) {
       result: "failure",
       errorCode: "product_delete_error",
       summary: `${user.name} failed to delete product.`,
+      metadata: withDelegationGrantor(delegationGrantorUserId),
     });
     throw new Error(error.message);
   }
@@ -417,7 +510,10 @@ export async function deleteProductAction(productId: string) {
     targetType: "product",
     targetId: cleanProductId,
     result: "success",
-    summary: `${user.name} deleted a product.`,
+    summary: privilegeSource === "delegation"
+      ? `${user.name} deleted a product with temporary access.`
+      : `${user.name} deleted a product.`,
+    metadata: withDelegationGrantor(delegationGrantorUserId),
   });
 
   return true;
@@ -515,38 +611,58 @@ export async function adjustStockAction(variantId: string, newStock: number) {
 export async function toggleProductFavoriteAction(productId: string, isFavorite: boolean) {
   const cleanProductId = z.string().uuid().parse(productId);
   const cleanIsFavorite = z.boolean().parse(isFavorite);
-  const { user, store, privilegeSource, delegationId } = await requirePrivilege("catalog.manage");
-  const supabase = await getSupabaseServerClient();
-
-  // Verify product ownership before updating to prevent cross-tenant parameter spoofing (BOLA)
-  const { data: product, error: prodError } = await supabase
-    .from("products")
-    .select("id, store_id")
-    .eq("id", cleanProductId)
-    .single();
-
-  if (prodError || !product) {
-    throw new Error("Product not found");
-  }
-
-  if (product.store_id !== store.id) {
-    await logAuthorizationDenied("FAVORITE_TOGGLE_AUTHZ_DENIED", "Favorite toggle rejected for cross-store product", {
-      userId: user.id,
-      storeId: store.id,
-      productId: cleanProductId,
-      productStoreId: product.store_id,
-    });
-    throw new Error("Unauthorized");
-  }
+  const { user, store, privilegeSource, delegationId, delegationGrantorUserId } =
+    await requirePrivilege("catalog.manage");
 
   // User-scoped rate limiting: 30 stock/UI mutations per minute
   await enforceRateLimit(uiMutationLimiter, `ui:${user.id}`, "FAVORITE_TOGGLE");
 
-  const { error } = await supabase
-    .from("products")
-    .update({ is_favorite: cleanIsFavorite })
-    .eq("id", cleanProductId)
-    .eq("store_id", store.id);
+  let error: { message: string } | null = null;
+
+  if (privilegeSource === "delegation") {
+    const adminClient = getSupabaseAdminClient();
+    const result = await adminClient.rpc(
+      "set_product_favorite_for_delegation",
+      {
+        p_store_id: store.id,
+        p_actor_user_id: user.id,
+        p_delegation_id: requireResolvedDelegationId(delegationId),
+        p_product_id: cleanProductId,
+        p_is_favorite: cleanIsFavorite,
+      },
+    );
+    error = result.error;
+  } else {
+    const supabase = await getSupabaseServerClient();
+
+    // Verify product ownership before updating to prevent cross-tenant parameter spoofing (BOLA)
+    const { data: product, error: prodError } = await supabase
+      .from("products")
+      .select("id, store_id")
+      .eq("id", cleanProductId)
+      .single();
+
+    if (prodError || !product) {
+      throw new Error("Product not found");
+    }
+
+    if (product.store_id !== store.id) {
+      await logAuthorizationDenied("FAVORITE_TOGGLE_AUTHZ_DENIED", "Favorite toggle rejected for cross-store product", {
+        userId: user.id,
+        storeId: store.id,
+        productId: cleanProductId,
+        productStoreId: product.store_id,
+      });
+      throw new Error("Unauthorized");
+    }
+
+    const result = await supabase
+      .from("products")
+      .update({ is_favorite: cleanIsFavorite })
+      .eq("id", cleanProductId)
+      .eq("store_id", store.id);
+    error = result.error;
+  }
 
   if (error) {
     await writeLog("ERROR", "FAVORITE_TOGGLE_FAILURE", `Failed to toggle favorite for product: ${cleanProductId}`, {
@@ -567,9 +683,9 @@ export async function toggleProductFavoriteAction(productId: string, isFavorite:
       result: "failure",
       errorCode: "favorite_toggle_error",
       summary: `${user.name} failed to update a product favorite.`,
-      metadata: {
+      metadata: withDelegationGrantor(delegationGrantorUserId, {
         isFavorite: cleanIsFavorite,
-      },
+      }),
     });
     throw new Error(error.message);
   }
@@ -584,10 +700,13 @@ export async function toggleProductFavoriteAction(productId: string, isFavorite:
     targetType: "product",
     targetId: cleanProductId,
     result: "success",
-    summary: `${user.name} ${cleanIsFavorite ? "marked" : "unmarked"} a product as favorite.`,
+    summary: privilegeSource === "delegation"
+      ? `${user.name} ${cleanIsFavorite ? "marked" : "unmarked"} a product as favorite with temporary access.`
+      : `${user.name} ${cleanIsFavorite ? "marked" : "unmarked"} a product as favorite.`,
     afterState: {
       isFavorite: cleanIsFavorite,
     },
+    metadata: withDelegationGrantor(delegationGrantorUserId),
   });
 
   return true;

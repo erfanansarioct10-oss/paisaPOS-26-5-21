@@ -1,6 +1,6 @@
 # BETA V1.1 IMPLEMENTATION SLICES: STAFF, ACTIVITY, AND ACCOUNTABILITY
 
-Last updated: 2026-05-26 07:25 NPT
+Last updated: 2026-05-26 08:03 NPT
 
 ## 1. WHY WE SHOULD BUILD THIS IN SLICES
 
@@ -54,9 +54,9 @@ Current implementation status as of 2026-05-25 21:31 NPT:
 - Slice 4 Staff Directory and Invitations is implemented locally and verified with database reset, focused migration/store/RLS tests, Staff + Activity Playwright smoke, full Vitest, lint, build, Supabase DB lint, and whitespace check.
 - Slice 5 Permission Helper Unification is verified locally: central server permission helper, shared UI capability flags, selected Server Action rewiring, activity delegation-id plumbing, permission matrix tests, direct Server Action abuse tests, full Vitest, lint, build, Playwright, and prior Supabase DB lint are passing.
 - Slice 6 Temporary Delegation Foundation is implemented locally and verified with a clean Supabase reset, delegation migration/RLS/action tests, database-backed permission lookup tests, full Vitest, lint, build, Supabase DB lint, migration list, and Chromium Playwright.
-- Slice 7 Delegated Action Coverage has its first inventory-adjustment pass implemented locally and verified: delegated cashiers can see stock controls, `adjustStockAction()` re-checks `inventory.adjust`, delegated writes use a server/admin path after authorization, activity shows delegated authority, direct Data API mutation remains denied by RLS, and current grant/action lookup is restricted to the proven `inventory.adjust` scope.
+- Slice 7 Delegated Action Coverage now has inventory adjustment and catalog management passes implemented locally and verified: delegated cashiers can see stock controls with `inventory.adjust`, see catalog/import/edit/delete/favorite controls with `catalog.manage`, and catalog writes use service-role-only internal RPCs after server authorization plus SQL-side delegation revalidation.
 - The work is still uncommitted in the local worktree.
-- Next recommended step is a checkpoint commit for Slices 1-6 plus the Slice 7 inventory pass and grant-surface restriction, then continue Slice 7 with catalog edit/import coverage.
+- Next recommended step is a checkpoint commit for the Slice 7 catalog pass, then decide whether to defer reports/invoice/settings delegation to a later release or build one more delegated scope.
 
 ### Slice 0: Development Guardrails
 
@@ -442,14 +442,15 @@ Confirmation:
 - Owner can distinguish "cashier sold item" from "cashier edited catalog using temporary permission from owner".
 
 Implementation status:
-- Partially implemented locally for `inventory.adjust`.
-- Active cashier delegations are refreshed into client state during session initialization and store sync, and the Inventory page shows stock adjustment controls only when an active `inventory.adjust` delegation exists.
-- `requirePrivilege()` now carries the delegation grantor user id into the action context when a database-backed delegation authorizes the request.
+- Implemented locally for `inventory.adjust` and `catalog.manage`.
+- Active cashier delegations are refreshed into client state during session initialization and store sync. The Inventory page shows stock adjustment controls only when an active `inventory.adjust` delegation exists, and catalog add/import/edit/delete/favorite controls only when an active `catalog.manage` delegation exists.
+- `requirePrivilege()` carries the delegation grantor user id into the action context when a database-backed delegation authorizes the request.
 - `adjustStockAction()` uses the normal user-scoped Supabase path for role-based owner access, but uses the server/admin client for delegated inventory writes after `requirePrivilege("inventory.adjust")`, variant ownership validation, and rate limiting.
-- Inventory adjustment activity events now include `privilegeSource: "delegation"`, the delegation id, grantor user id metadata, and the Activity Log displays delegated events with a delegated badge.
-- The current Staff grant form/action and database-backed action lookup are restricted to `inventory.adjust`; broader future delegatable scopes remain modeled but cannot be granted or used for real Server Actions until their delegated-safe paths are implemented.
-- Verified with focused capability/permission/action/activity tests, full Vitest, live RLS verification, lint, build, and Chromium Playwright.
-- Catalog edit, catalog import, favorite toggles, and any settings delegation remain pending and should not be exposed to delegated cashiers until their write paths are explicitly proven.
+- Catalog create/update/import/delete/favorite actions keep owner behavior on the existing owner-gated RPC/RLS paths, but delegated cashier behavior uses new service-role-only internal RPCs after `requirePrivilege("catalog.manage")`. Those RPCs revalidate the active `catalog.manage` delegation, actor, grantor, store, and target ownership in SQL before writing.
+- Inventory and catalog activity events now include `privilegeSource: "delegation"`, the delegation id, grantor user id metadata, delegated summary copy, and the Activity Log displays delegated events with a delegated badge.
+- The current Staff grant form/action and database-backed action lookup expose only proven delegated action scopes: `catalog.manage` and `inventory.adjust`. Report export and invoice correction remain modeled but unreleased.
+- Verified with focused capability/permission/action/migration tests (4 files, 51 tests), full Vitest (17 files, 153 tests), live RLS verification, Supabase DB reset/lint/migration list, direct SQL function-grant proof, lint, build, Chromium Playwright, `git diff --check`, and npm audit.
+- Reports, invoice correction, and settings delegation remain pending and should not be exposed until their write paths are explicitly proven.
 
 Rollback note:
 - Disable delegated action buttons if any permission ambiguity appears.

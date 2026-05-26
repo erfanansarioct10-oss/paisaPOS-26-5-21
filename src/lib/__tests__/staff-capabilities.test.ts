@@ -62,8 +62,8 @@ describe("staff capability helper", () => {
     expect(formatStaffPrivilege("inventory.adjust")).toBe("Inventory Adjustment");
   });
 
-  test("exposes only proven delegated action scopes for current staff grants", () => {
-    expect(ACTIVE_STAFF_DELEGATION_PRIVILEGES).toEqual(["inventory.adjust"]);
+  test("exposes proven delegated action scopes for current staff grants", () => {
+    expect(ACTIVE_STAFF_DELEGATION_PRIVILEGES).toEqual(["catalog.manage", "inventory.adjust"]);
   });
 
   test("recognizes only active cashier delegations for UI affordances", () => {
@@ -102,5 +102,20 @@ describe("staff capability helper", () => {
     ).toBe(false);
     expect(hasActiveDelegatedPrivilege({ role: "owner", status: "active" }, "inventory.adjust", [], now)).toBe(false);
     expect(hasActiveDelegatedPrivilege(cashier, "staff.manage", [], now)).toBe(false);
+
+    expect(
+      hasActiveDelegatedPrivilege(
+        cashier,
+        "catalog.manage",
+        [
+          {
+            scope: "catalog.manage",
+            starts_at: "2026-05-25T11:00:00.000Z",
+            expires_at: "2026-05-25T13:00:00.000Z",
+          },
+        ],
+        now,
+      ),
+    ).toBe(true);
   });
 });

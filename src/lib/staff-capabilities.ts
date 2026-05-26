@@ -70,6 +70,7 @@ export const DELEGATABLE_STAFF_PRIVILEGES = [
 ] as const satisfies readonly StaffPrivilege[];
 
 export const ACTIVE_STAFF_DELEGATION_PRIVILEGES = [
+  "catalog.manage",
   "inventory.adjust",
 ] as const satisfies readonly StaffPrivilege[];
 
