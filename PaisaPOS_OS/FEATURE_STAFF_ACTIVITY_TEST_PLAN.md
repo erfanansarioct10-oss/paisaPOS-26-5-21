@@ -1,8 +1,8 @@
 # TEST AND CONFIRMATION PLAN: STAFF, ACTIVITY, AND ACCOUNTABILITY
 
 Version: 1.1
-Status: IN PROGRESS - SLICES 1-6 VERIFIED, SLICE 7 INVENTORY AND CATALOG PASSES VERIFIED LOCALLY
-Last Updated: 2026-05-26 08:03 NPT
+Status: SLICE 8 RELEASE PROOF PASSED LOCALLY - V1.1 STAFF SCOPE FROZEN AT CATALOG + INVENTORY DELEGATION
+Last Updated: 2026-05-26 08:27 NPT
 
 ---
 
@@ -29,12 +29,19 @@ Current progress snapshot:
 | Slice 4 staff directory/invites | Verified locally | Staff migration hardening, invitation RLS, suspended cashier denial, Playwright Staff smoke |
 | Slice 5 permission helper | Verified locally | Central helper, shared UI capability flags, selected Server Action rewiring, permission matrix tests, and direct Server Action abuse tests |
 | Slice 6 delegation foundation | Verified locally | Delegation schema/RLS, owner grant/revoke actions, database-backed `requirePrivilege()`, Staff UI controls, cashier banner, migration/action/RLS tests |
-| Slice 7 delegated action coverage | Mostly verified locally | Inventory adjustment plus catalog create/update/import/delete/favorite now work through delegated UI/state, Server Action authz, service-role-only internal RPCs, and activity delegation proof; reports/invoice/settings delegation remain pending |
-| Slice 8 release proof | Not started | Runs after feature/test coverage is complete |
+| Slice 7 delegated action coverage | Verified locally | Inventory adjustment plus catalog create/update/import/delete/favorite work through delegated UI/state, Server Action authz, service-role-only internal RPCs, and activity delegation proof; reports/invoice/settings delegation remain unreleased |
+| Slice 8 release proof | Passed locally | Full local release gate passed on `beta/v1.1`; no linked Supabase or production backend command was run |
 
 Latest local gate status:
 
 ```bash
+git status -sb                                  # passed: beta/v1.1 clean and ahead of origin by 2 before docs update
+supabase status                                 # passed: local development setup running
+supabase db reset --local                       # passed through 20260526020902_add_delegated_catalog_actions.sql
+supabase migration list --local                 # local migration list includes 20260526020902
+supabase db lint --local --fail-on error        # passed: no schema errors
+supabase db advisors --local --type all --level warn --fail-on error
+                                                # passed: no advisor errors; warnings reviewed below
 npm run lint                                      # passed
 npm run build                                     # passed
 npx vitest run src/lib/__tests__/staff-capabilities.test.ts src/lib/server/__tests__/permissions.test.ts src/app/__tests__/server-action-permissions.test.ts src/lib/__tests__/migration-hardening.test.ts
@@ -43,12 +50,22 @@ npx vitest run src/lib/store/__tests__/rls-verification.test.ts --sequence.concu
                                                   # passed: 1 file, 4 live RLS tests
 npm test                                          # passed: 17 files, 153 tests
 npm run test:e2e -- --project=chromium            # passed: 17 tests
-supabase db reset --local                         # passed through 20260526020902_add_delegated_catalog_actions.sql
-supabase db lint --local --fail-on error          # passed: no schema errors
-supabase migration list --local                   # local migration list includes 20260526020902
 supabase db query --local <function grant check>  # passed: delegated catalog RPCs are service_role-only and SECURITY INVOKER
-git diff --check                                  # passed: CRLF warnings only
 npm audit --audit-level=high                      # passed: 0 vulnerabilities
+git diff --check                                  # passed: clean
+```
+
+Advisor review:
+
+- Non-blocking performance warnings remain for older `users` and `stores` RLS policies that call auth/current-setting helpers without initplan wrapping.
+- Non-blocking performance warnings remain for intentional split owner/cashier `SELECT` policies on `activity_events` and `privilege_delegations`.
+- Non-blocking mutable search-path warnings remain on older audit helper functions: `protect_user_store_id`, `log_inventory_adjustment`, `log_price_update`, `log_store_registration`, and `archive_and_purge_old_audit_logs`.
+- No advisor error-level findings blocked the Slice 8 local release proof.
+
+Production/backend proof:
+
+```text
+No `supabase db push --linked`, linked migration/lint/advisor command, or production backend command was run during Slice 8.
 ```
 
 Production rule:

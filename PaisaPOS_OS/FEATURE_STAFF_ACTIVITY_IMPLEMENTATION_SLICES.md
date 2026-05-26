@@ -1,6 +1,6 @@
 # BETA V1.1 IMPLEMENTATION SLICES: STAFF, ACTIVITY, AND ACCOUNTABILITY
 
-Last updated: 2026-05-26 08:03 NPT
+Last updated: 2026-05-26 08:27 NPT
 
 ## 1. WHY WE SHOULD BUILD THIS IN SLICES
 
@@ -45,7 +45,7 @@ Each slice should follow this template:
 
 ## 4. RECOMMENDED V1.1 BUILD ORDER
 
-Current implementation status as of 2026-05-25 21:31 NPT:
+Current implementation status as of 2026-05-26 08:27 NPT:
 
 - Slice 0 guardrail verification is complete for the first implementation pass.
 - Slice 1 durable activity event foundation is implemented locally and verified with database reset, activity/migration/RLS tests, full Vitest, lint, build, and Supabase DB lint.
@@ -55,8 +55,9 @@ Current implementation status as of 2026-05-25 21:31 NPT:
 - Slice 5 Permission Helper Unification is verified locally: central server permission helper, shared UI capability flags, selected Server Action rewiring, activity delegation-id plumbing, permission matrix tests, direct Server Action abuse tests, full Vitest, lint, build, Playwright, and prior Supabase DB lint are passing.
 - Slice 6 Temporary Delegation Foundation is implemented locally and verified with a clean Supabase reset, delegation migration/RLS/action tests, database-backed permission lookup tests, full Vitest, lint, build, Supabase DB lint, migration list, and Chromium Playwright.
 - Slice 7 Delegated Action Coverage now has inventory adjustment and catalog management passes implemented locally and verified: delegated cashiers can see stock controls with `inventory.adjust`, see catalog/import/edit/delete/favorite controls with `catalog.manage`, and catalog writes use service-role-only internal RPCs after server authorization plus SQL-side delegation revalidation.
-- The work is still uncommitted in the local worktree.
-- Next recommended step is a checkpoint commit for the Slice 7 catalog pass, then decide whether to defer reports/invoice/settings delegation to a later release or build one more delegated scope.
+- Slice 7 is committed locally in `93e21ae feat(staff): add delegated catalog actions`; before Slice 8 doc updates, `beta/v1.1` was clean and ahead of `origin/beta/v1.1` by 2 commits.
+- Slice 8 Release Proof passed locally. V1.1 staff scope is frozen at `catalog.manage` and `inventory.adjust`; reports, invoice correction, and settings delegation remain deferred.
+- Next recommended step is to review/push the local `beta/v1.1` commits or run a production-like preview only against a separate dev/staging backend. Do not run linked production Supabase commands without release approval.
 
 ### Slice 0: Development Guardrails
 
@@ -490,6 +491,13 @@ Tests:
 Confirmation:
 - We can explain exactly what changed from Beta V1 to V1.1 and prove it through tests.
 
+Implementation status:
+- Passed locally on `beta/v1.1` at 2026-05-26 08:27 NPT with no public API, schema, permission-scope, or UI capability changes.
+- Gate passed: `git status -sb`, `supabase status`, `supabase db reset --local`, `supabase migration list --local`, `supabase db lint --local --fail-on error`, `supabase db advisors --local --type all --level warn --fail-on error`, focused staff/action/migration tests, live RLS verification, full `npm test`, `npm run lint`, `npm run build`, Chromium Playwright, `npm run audit`, and `git diff --check`.
+- Delegated catalog RPC grant proof passed: all delegated catalog helper functions are `SECURITY INVOKER`, not executable by `anon` or `authenticated`, and executable by `service_role`.
+- Supabase advisors returned warning-level findings only: older RLS initplan performance warnings, split owner/cashier permissive `SELECT` policy warnings for staff activity/delegation tables, and mutable search-path warnings on older audit helper functions. No advisor error blocked release proof.
+- No `supabase db push --linked`, linked Supabase migration/lint/advisor command, or production backend command was run.
+
 Rollback note:
 - V1 production remains `main` and tag `beta-v1.0-live`.
 
@@ -519,6 +527,6 @@ These are not polish issues. They are release blockers.
 
 ## 7. NEXT IMMEDIATE ACTION
 
-Start Slice 0, then Slice 1.
+Review the local Slice 8 release-proof commit and decide whether to push `beta/v1.1` for preview/QA.
 
-The first real code/migration task should be the `activity_events` foundation. Once that is proven, we can safely connect checkout and inventory/catalog mutations to the event stream, then expose a clean owner Activity page.
+Keep V1.1 staff scope frozen at `catalog.manage` and `inventory.adjust` until release approval. Reports export, invoice correction, and settings delegation should remain unreleased until a separate slice proves their write paths, UI affordances, activity proof, and tests.
