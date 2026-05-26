@@ -18,12 +18,16 @@ import {
   Upload,
   CheckCircle,
   RefreshCw,
+  KeyRound,
+  Clock3,
 } from "lucide-react";
 import { parseCatalogFile, type ParsedImport } from "@/lib/importer";
+import { formatStaffPrivilege, getStaffCapabilities, hasActiveDelegatedPrivilege } from "@/lib/staff-capabilities";
 
 export default function InventoryTab() {
   const {
     user,
+    activeDelegations,
     products,
     variants,
     addProduct,
@@ -36,6 +40,13 @@ export default function InventoryTab() {
     clearError,
     bulkImportProducts,
   } = useAppStore();
+
+  const capabilities = getStaffCapabilities(user);
+  const activeInventoryDelegation = activeDelegations.find((delegation) =>
+    hasActiveDelegatedPrivilege(user, "inventory.adjust", [delegation]),
+  );
+  const canManageCatalog = capabilities.canManageCatalog;
+  const canAdjustInventory = capabilities.canAdjustInventory || Boolean(activeInventoryDelegation);
 
   const [isOpen, setIsOpen] = useState(false);
 
@@ -80,16 +91,18 @@ export default function InventoryTab() {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       if (params.get("add") === "true") {
-        // Defer updating state to avoid synchronous cascading renders inside effect
-        setTimeout(() => {
-          setIsOpen(true);
-        }, 0);
+        if (canManageCatalog) {
+          // Defer updating state to avoid synchronous cascading renders inside effect
+          setTimeout(() => {
+            setIsOpen(true);
+          }, 0);
+        }
         // Clear param from URL without reload for premium feel
         const newUrl = window.location.pathname;
         window.history.replaceState({ path: newUrl }, "", newUrl);
       }
     }
-  }, []);
+  }, [canManageCatalog]);
 
   // Bulk Catalog Importer Wizard State
   const [isImportWizardOpen, setIsImportWizardOpen] = useState(false);
@@ -343,7 +356,7 @@ export default function InventoryTab() {
           </p>
         </div>
 
-        {user?.role === "owner" && (
+        {canManageCatalog && (
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
@@ -378,6 +391,25 @@ export default function InventoryTab() {
         </div>
       )}
 
+      {activeInventoryDelegation && (
+        <div className="flex flex-col gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-800 shadow-sm dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 font-semibold">
+            <KeyRound className="h-4 w-4 shrink-0" />
+            <span>Temporary access: {formatStaffPrivilege("inventory.adjust")}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-[11px] font-medium">
+            <Clock3 className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              Until {new Date(activeInventoryDelegation.expires_at).toLocaleTimeString("en-NP", {
+                timeZone: "Asia/Kathmandu",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* PRODUCTS DIRECTORY */}
       <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
         {products.length === 0 ? (
@@ -385,7 +417,9 @@ export default function InventoryTab() {
             <Package className="w-12 h-12 text-muted-foreground mb-3 opacity-30 animate-pulse" />
             <h3 className="text-base font-bold text-foreground">No Products Tracked</h3>
             <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
-              Your inventory is empty. Click &quot;Add Product&quot; to quickly generate size and color variants in seconds.
+              {canManageCatalog
+                ? "Your inventory is empty. Click \"Add Product\" to quickly generate size and color variants in seconds."
+                : "Your inventory is empty. Owner-created products will appear here once catalog setup begins."}
             </p>
           </div>
         ) : (
@@ -419,27 +453,29 @@ export default function InventoryTab() {
                               <span className="font-semibold text-sm sm:text-base text-foreground leading-tight truncate block">
                                 {p.name}
                               </span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleProductFavorite(p.id, !p.is_favorite);
-                                }}
-                                className="p-1 text-slate-400 dark:text-slate-600 hover:text-amber-500 rounded-md transition-all active:scale-95 shrink-0"
-                                title={p.is_favorite ? "Remove from Favorites" : "Add to Favorites"}
-                              >
-                                <Star
-                                  className={`w-3.5 h-3.5 ${
-                                    p.is_favorite
-                                      ? "fill-amber-500 text-amber-500"
-                                      : "text-slate-400 dark:text-slate-600 hover:text-amber-500"
-                                  }`}
-                                />
-                              </button>
+                              {canManageCatalog && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleProductFavorite(p.id, !p.is_favorite);
+                                  }}
+                                  className="p-1 text-slate-400 dark:text-slate-600 hover:text-amber-500 rounded-md transition-all active:scale-95 shrink-0"
+                                  title={p.is_favorite ? "Remove from Favorites" : "Add to Favorites"}
+                                >
+                                  <Star
+                                    className={`w-3.5 h-3.5 ${
+                                      p.is_favorite
+                                        ? "fill-amber-500 text-amber-500"
+                                        : "text-slate-400 dark:text-slate-600 hover:text-amber-500"
+                                    }`}
+                                  />
+                                </button>
+                              )}
                             </div>
                             
                             {/* Mobile-only Action Buttons */}
-                            {user?.role === "owner" && (
+                            {canManageCatalog && (
                               <div className="flex sm:hidden items-center gap-1 shrink-0">
                                 <button
                                   onClick={(e) => {
@@ -501,7 +537,7 @@ export default function InventoryTab() {
                           )}
 
                           {/* Desktop-only Action Buttons */}
-                          {user?.role === "owner" && (
+                          {canManageCatalog && (
                             <div className="hidden sm:flex items-center gap-1">
                               <button
                                 onClick={(e) => {
@@ -568,23 +604,29 @@ export default function InventoryTab() {
                                   </td>
                                   <td className="py-2.5 text-center">
                                     {/* INLINE STOCK ADJUSTMENT CONTROLS */}
-                                    <div className="inline-flex items-center border border-border bg-card rounded-md shadow-sm">
-                                      <button
-                                        onClick={() => updateStockDirect(v.id, Math.max(0, (v.stock ?? 0) - 1))}
-                                        className="px-2 py-1 hover:bg-secondary text-muted-foreground hover:text-foreground font-extrabold focus:outline-none transition-colors border-r border-border"
-                                      >
-                                        -
-                                      </button>
-                                      <span className={`px-3 py-1 font-bold font-mono text-center text-xs ${isLowStock ? "text-amber-500 font-extrabold" : "text-foreground"}`}>
+                                    {canAdjustInventory ? (
+                                      <div className="inline-flex items-center border border-border bg-card rounded-md shadow-sm">
+                                        <button
+                                          onClick={() => updateStockDirect(v.id, Math.max(0, (v.stock ?? 0) - 1))}
+                                          className="px-2 py-1 hover:bg-secondary text-muted-foreground hover:text-foreground font-extrabold focus:outline-none transition-colors border-r border-border"
+                                        >
+                                          -
+                                        </button>
+                                        <span className={`px-3 py-1 font-bold font-mono text-center text-xs ${isLowStock ? "text-amber-500 font-extrabold" : "text-foreground"}`}>
+                                          {v.stock ?? 0}
+                                        </span>
+                                        <button
+                                          onClick={() => updateStockDirect(v.id, (v.stock ?? 0) + 1)}
+                                          className="px-2 py-1 hover:bg-secondary text-muted-foreground hover:text-foreground font-extrabold focus:outline-none transition-colors border-l border-border"
+                                        >
+                                          +
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span className={`inline-flex min-w-14 justify-center rounded-md border border-border bg-card px-3 py-1 font-bold font-mono text-xs ${isLowStock ? "text-amber-500 font-extrabold" : "text-foreground"}`}>
                                         {v.stock ?? 0}
                                       </span>
-                                      <button
-                                        onClick={() => updateStockDirect(v.id, (v.stock ?? 0) + 1)}
-                                        className="px-2 py-1 hover:bg-secondary text-muted-foreground hover:text-foreground font-extrabold focus:outline-none transition-colors border-l border-border"
-                                      >
-                                        +
-                                      </button>
-                                    </div>
+                                    )}
                                   </td>
                                 </tr>
                               );
@@ -609,23 +651,29 @@ export default function InventoryTab() {
                                 <span className="font-bold text-foreground">Rs. {v.price.toLocaleString()}</span>
                                 
                                 {/* 44x44px Touch Target Compliant Adjustment Strip */}
-                                <div className="inline-flex items-center border border-border bg-slate-50 dark:bg-slate-950 rounded-lg shadow-sm">
-                                  <button
-                                    onClick={() => updateStockDirect(v.id, Math.max(0, (v.stock ?? 0) - 1))}
-                                    className="w-11 h-11 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-900 text-muted-foreground hover:text-foreground font-extrabold text-sm focus:outline-none transition-colors border-r border-border"
-                                  >
-                                    -
-                                  </button>
-                                  <span className={`w-10 text-center font-bold font-mono text-xs ${isLowStock ? "text-amber-500 font-extrabold" : "text-slate-900 dark:text-white"}`}>
+                                {canAdjustInventory ? (
+                                  <div className="inline-flex items-center border border-border bg-slate-50 dark:bg-slate-950 rounded-lg shadow-sm">
+                                    <button
+                                      onClick={() => updateStockDirect(v.id, Math.max(0, (v.stock ?? 0) - 1))}
+                                      className="w-11 h-11 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-900 text-muted-foreground hover:text-foreground font-extrabold text-sm focus:outline-none transition-colors border-r border-border"
+                                    >
+                                      -
+                                    </button>
+                                    <span className={`w-10 text-center font-bold font-mono text-xs ${isLowStock ? "text-amber-500 font-extrabold" : "text-slate-900 dark:text-white"}`}>
+                                      {v.stock ?? 0}
+                                    </span>
+                                    <button
+                                      onClick={() => updateStockDirect(v.id, (v.stock ?? 0) + 1)}
+                                      className="w-11 h-11 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-900 text-muted-foreground hover:text-foreground font-extrabold text-sm focus:outline-none transition-colors border-l border-border"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className={`inline-flex h-11 min-w-12 items-center justify-center rounded-lg border border-border bg-slate-50 px-3 font-bold font-mono text-xs dark:bg-slate-950 ${isLowStock ? "text-amber-500 font-extrabold" : "text-slate-900 dark:text-white"}`}>
                                     {v.stock ?? 0}
                                   </span>
-                                  <button
-                                    onClick={() => updateStockDirect(v.id, (v.stock ?? 0) + 1)}
-                                    className="w-11 h-11 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-900 text-muted-foreground hover:text-foreground font-extrabold text-sm focus:outline-none transition-colors border-l border-border"
-                                  >
-                                    +
-                                  </button>
-                                </div>
+                                )}
                               </div>
                             </div>
                           );
@@ -642,7 +690,7 @@ export default function InventoryTab() {
       </div>
 
       {/* QUICK ADD MODAL WITH MATRIX BUILDER */}
-      {isOpen && (
+      {isOpen && canManageCatalog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-card border border-border rounded-xl w-full max-w-xl flex flex-col shadow-lg max-h-[92vh] overflow-hidden">
             {/* Modal Header */}
@@ -906,7 +954,7 @@ export default function InventoryTab() {
       )}
 
       {/* EDIT PRODUCT MODAL */}
-      {isEditOpen && (
+      {isEditOpen && canManageCatalog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-card border border-border rounded-xl w-full max-w-2xl flex flex-col shadow-lg max-h-[92vh] overflow-hidden">
             {/* Modal Header */}
@@ -1221,7 +1269,7 @@ export default function InventoryTab() {
       )}
 
       {/* BULK CATALOG IMPORT WIZARD */}
-      {isImportWizardOpen && (
+      {isImportWizardOpen && canManageCatalog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-card border border-border rounded-xl w-full max-w-4xl flex flex-col shadow-lg max-h-[92vh] overflow-hidden">
             {/* Header */}

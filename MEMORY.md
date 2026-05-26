@@ -1,9 +1,9 @@
 # Memory
-> Last updated: 2026-05-25 16:08 NPT
+> Last updated: 2026-05-26 07:25 NPT
 
 ## Current Beta V1.1 Progress Snapshot (2026-05-25)
 
-**Current State:** The project is on `beta/v1.1`, tracking `origin/beta/v1.1`, with a clean working tree as of the latest check. Production Beta V1 remains anchored on `main` and tag `beta-v1.0-live` at commit `69db8c5 fix(security): allow Next script elements under CSP`. V1.1 planning work has been committed on the development branch only, so production users are not affected by the new staff/accountability planning.
+**Current State:** The project is on `beta/v1.1`, tracking `origin/beta/v1.1`. Production Beta V1 remains anchored on `main` and tag `beta-v1.0-live` at commit `69db8c5 fix(security): allow Next script elements under CSP`. V1.1 implementation has now started locally with the first accountability foundation changes in the worktree; nothing has been pushed to production.
 
 **Completed So Far:**
 - Created the Beta V1.1 development lane and documented the production/development separation strategy.
@@ -11,12 +11,58 @@
 - Completed A-to-Z research for Staff, Activity, Accountability, and Delegated Privileges across product UX, database/RLS, server authorization, privacy, and test strategy.
 - Created four planning documents under `PaisaPOS_OS/`: `FEATURE_STAFF_ACTIVITY_ACCOUNTABILITY.md`, `FEATURE_STAFF_ACTIVITY_SECURITY_PRIVACY.md`, `FEATURE_STAFF_ACTIVITY_TEST_PLAN.md`, and `FEATURE_STAFF_ACTIVITY_IMPLEMENTATION_SLICES.md`.
 - Decided to build the feature as small vertical slices rather than one large RBAC/delegation project.
+- Completed Slice 0 guardrail verification for this implementation pass on `beta/v1.1`.
+- Implemented the Slice 1 durable activity foundation locally:
+  - Added migration `20260525112112_add_activity_events_foundation.sql` for `activity_events`, enums, RLS, grants, indexes, and an immutable-update trigger.
+  - Added server-only service-role client helper and `recordActivityEvent()` with metadata redaction and bounded event payloads.
+  - Connected durable activity logging to checkout, product create/update/delete/import, inventory adjustment, favorite toggles, store settings, and profile updates.
+  - Added unit/migration/RLS tests for activity redaction, schema hardening, owner/cashier visibility, denied browser writes, and immutable updates.
+- Implemented Slice 2 invoice seller attribution locally:
+  - Added migration `20260525114332_add_invoice_seller_attribution.sql` for `sold_by_user_id`, `sold_by_name`, `sold_by_role`, future `sold_with_delegation_id`, and seller lookup index.
+  - Replaced `create_invoice_and_deduct_stock()` so checkout captures seller identity from `auth.uid()` and `public.users`, not from client-submitted payloads.
+  - Threaded sold-by fields through invoice DTOs, Zustand invoice types, store sync, receipt DTOs, invoice history, recent dashboard invoices, and the receipt modal.
+  - Added live DB/RLS tests proving owner checkout attribution, cashier checkout attribution, and denied direct browser invoice spoofing.
+- Implemented Slice 3 owner Activity Log page locally:
+  - Added owner-only `/activity` route and sidebar item.
+  - Added `getActivityEventsDTO()` in the server DAL with owner authorization, minimal DTO mapping, actor/action/result/date/search filters, and cursor pagination.
+  - Added dense desktop/mobile activity UI showing actor, event, entity, result, time, summary, and older/newest navigation.
+  - Added focused tests for activity filter/cursor helpers and extended RLS coverage for activity cursor pagination.
+- Implemented Slice 4 Staff Directory and Invitations locally:
+  - Added migration `20260525121333_add_staff_invitations.sql` for `user_status`, `staff_invitation_status`, `staff_invitations`, user lifecycle fields, owner-visible invitation RLS, explicit grants, no browser DML on invitations, status-aware `get_user_store_id()`, protected staff lifecycle fields, and active-status checkout enforcement.
+  - Added owner-only `/staff` route and Staff sidebar item, plus a public `/staff/accept` invite acceptance route.
+  - Added staff server DTO loading and Server Actions for inviting cashiers, accepting invites, revoking invites, suspending staff, and reactivating staff.
+  - Added staff activity events for invite, accept, revoke, suspend, and reactivate flows.
+  - Added Staff page UI with cashier invite form, active/suspended directory, pending/recent invitations, and suspend/reactivate/revoke actions.
+- Advanced Slice 5 Permission Helper Unification locally:
+  - Added `src/lib/server/permissions.ts` with a central privilege model for `checkout.create`, `catalog.manage`, `inventory.adjust`, `staff.manage`, `store.settings`, `activity.read`, and future release/delegation scopes.
+  - Added shared UI capability flags in `src/lib/staff-capabilities.ts` so client UI and server permission checks use the same base role-to-privilege vocabulary without crossing server-only boundaries.
+  - Refactored selected Server Actions to call `requirePrivilege()` for checkout, product/catalog/import/favorite mutations, inventory adjustment, store/profile updates, and staff invite/lifecycle actions.
+  - Added permission source and future delegation id plumbing into durable activity event payloads.
+  - Added permission matrix tests covering owner privileges, active cashier checkout, cashier catalog denial, active/expired/revoked delegation evaluation, suspended profile denial, missing profile denial, and store mismatch denial.
+  - Added direct Server Action abuse tests in `src/app/__tests__/server-action-permissions.test.ts` for unauthorized cashier catalog/import/delete/favorite/inventory/store/staff management calls, missing auth, suspended cashier checkout, store-id tampering, forged actor/role payloads, and allowed cashier checkout/profile updates.
+  - Moved business action `requirePrivilege()` calls before Supabase server-client creation so denied direct calls stop before database client, rate-limit, mutation, or activity side effects.
+  - Replaced practical owner-role UI gates with capability names in Inventory, Sidebar, Settings, and Staff/Activity route gates.
+- Implemented Slice 6 Temporary Delegation Foundation locally:
+  - Added migration `20260525151258_add_privilege_delegations.sql` for one-row-per-scope temporary privilege grants, max 24-hour duration, same-store owner/cashier validation trigger, allowed delegatable scopes, active lookup indexes, RLS, explicit grants, no browser DML, and FK links from future activity/invoice delegation references.
+  - Extended `requirePrivilege()` so active cashier requests for delegatable scopes consult `privilege_delegations` from the database at action time after baseline role checks fail.
+  - Added owner grant/revoke Server Actions with reason, duration, explicit `GRANT` confirmation, rate limits, and durable `delegation.granted` / `delegation.revoked` activity events.
+  - Added Staff page temporary access controls, active delegation list/revoke controls, Staff count metric, and a cashier temporary-access banner loaded from own active delegation reads.
+  - Added tests for database-backed active/expired/revoked delegation decisions, direct Server Action abuse, owner grant/revoke activity proof, migration hardening, live RLS delegation isolation, and forbidden `staff.manage` delegation.
+- Started Slice 7 Delegated Action Coverage with the inventory adjustment pass:
+  - Added a client-safe active delegation capability helper and wired Inventory stock controls to active `inventory.adjust` delegations without exposing catalog/import buttons.
+  - Refreshed cashier active delegations during session initialization, store sync, and realtime-backed store refreshes.
+  - Extended `requirePrivilege()` to carry the delegation grantor user id for activity proof.
+  - Updated `adjustStockAction()` so delegated inventory writes use a server/admin path only after `requirePrivilege("inventory.adjust")`, store/variant ownership validation, and rate limiting.
+  - Added delegated activity proof: `privilegeSource: "delegation"`, delegation id, grantor user id metadata, delegated summary copy, and a delegated badge in the owner Activity Log.
+  - Restricted the current Staff temporary-access grant form/action and database-backed delegated action lookup to `inventory.adjust` only, so broader future delegation scopes remain modeled but cannot be exposed before their write paths are proven.
 
-**Not Started Yet:** No Beta V1.1 staff/activity database migrations or application code changes have been implemented yet. The next work should begin with Slice 0 guardrail verification, then Slice 1 durable activity events.
+**Verification Completed:** For Slices 1-2: `supabase db reset`, focused migration/live checkout/RLS Vitest, full `npm test` (102 tests), `npm run lint`, `npm run build`, `supabase db lint --local --fail-on error`, and `supabase migration list --local` all passed. For Slice 3: focused activity/store tests passed, activity RLS test passed, full `npm test` passed with 105 tests, owner Activity Playwright smoke passed, `npm run lint` passed, `npm run build` passed, `supabase db lint --local --fail-on error` passed, `git diff --check` passed with only CRLF warnings, and local dev server health returned HTTP 200 at `http://localhost:3000/api/health`. For Slice 4: `supabase db reset` passed; focused migration/activity/store tests passed (38 tests); live RLS verification passed (4 tests); full `npm test` passed (107 tests); `npm run lint` passed; `npm run build` passed with `/staff` and `/staff/accept`; `supabase db lint --local --fail-on error` passed; Staff + Activity Playwright smoke passed (3 tests); `git diff --check` passed with only CRLF warnings. For Slice 5 helper, abuse-test, and UI capability cleanup work: focused capability/permission/action tests passed (3 files, 26 tests); full `npm test` passed (17 files, 134 tests); `npm run lint` passed; `npm run build` passed; full Chromium Playwright passed (17 tests); `git diff --check` passed with only CRLF warnings; prior `supabase db lint --local --fail-on error` passed with no schema changes in the UI cleanup update. For Slice 6 delegation foundation: `supabase db reset` passed through `20260525151258_add_privilege_delegations.sql`; focused capability/permission/action/migration tests passed (4 files, 41 tests); live RLS verification passed (1 file, 4 tests); full `npm test` passed (17 files, 143 tests); `npm run lint` passed; `npm run build` passed; `supabase db lint --local --fail-on error` passed; `supabase migration list --local` shows the delegation migration; full Chromium Playwright passed (17 tests); `git diff --check` passed with only CRLF warnings. For the Slice 7 inventory pass: focused capability/permission/action/activity tests passed (4 files, 38 tests); live RLS verification passed (1 file, 4 tests); full `npm test` passed (17 files, 144 tests); `npm run lint` passed; `npm run build` passed; full Chromium Playwright passed (17 tests); `git diff --check` passed with only CRLF warnings. For the grant-surface restriction update: focused capability/permission/action/activity tests passed (4 files, 41 tests), full `npm test` passed (17 files, 147 tests), `npm run lint` passed, and `npm run build` passed. No new database migration was added for this pass.
 
-**Next Move:** Start the first implementation phase: verify the development guardrails, inspect the existing `audit_logs` and server authorization patterns, then implement the durable owner-visible activity foundation before building staff invitations or temporary owner delegation.
+**Not Done Yet:** Slice 7 is partially complete. Inventory adjustment is now delegated end to end, but catalog edit/import/favorite coverage and any settings delegation still need deliberate delegated-safe write paths, UI affordances, activity proof, and tests before being exposed.
 
-**Lesson:** We now have the strategy in place; the next risk is execution discipline. Accountability must be implemented first so every future staff or delegation feature has a durable, tenant-scoped trail from day one.
+**Next Move:** Checkpoint Slices 1-6 plus the Slice 7 inventory pass and grant-surface restriction, then continue Slice 7 with catalog edit/import delegated action coverage.
+
+**Lesson:** Temporary authority must be a database record checked at action time, not a role mutation or stale claim. The UI can show active delegation state, but the server remains the source of truth for whether a cashier can use a delegated scope.
 
 ## Beta V1.1 Implementation Slice Planning (2026-05-25)
 

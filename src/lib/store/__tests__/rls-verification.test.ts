@@ -333,12 +333,550 @@ describe.runIf(runLiveTests)("PaisaPOS — Multi-Tenant Row Level Security (RLS)
     expect(errCashierUpsert).not.toBeNull();
     expect(errCashierUpsert!.message).toContain("Only store owners can add or modify products");
 
-    // 5. Clean up
+    // 5. Cashier can checkout and the invoice is attributed to the cashier from auth.uid()
+    const { data: ownerProduct, error: ownerProductError } = await clientOwner
+      .from("products")
+      .insert({
+        store_id: storeId,
+        name: "Attribution Tee",
+        category: "Tops",
+        low_stock_threshold: 2,
+      })
+      .select()
+      .single();
+    expect(ownerProductError).toBeNull();
+
+    const { data: ownerVariant, error: ownerVariantError } = await clientOwner
+      .from("product_variants")
+      .insert({
+        product_id: ownerProduct.id,
+        size: "M",
+        color: "Green",
+        sku: `SKU-ATTR-${random}`,
+        price: 1200.00,
+      })
+      .select()
+      .single();
+    expect(ownerVariantError).toBeNull();
+
+    const { error: ownerInventoryError } = await clientOwner
+      .from("inventory")
+      .insert({
+        variant_id: ownerVariant.id,
+        quantity: 3,
+      });
+    expect(ownerInventoryError).toBeNull();
+
+    const { data: cashierInvoiceId, error: cashierCheckoutError } = await clientCashier.rpc(
+      "create_invoice_and_deduct_stock",
+      {
+        p_store_id: storeId,
+        p_invoice_number: "INV-PRE-GENERATED",
+        p_customer_name: "Walk-in Customer",
+        p_customer_phone: null,
+        p_total_amount: 1200.00,
+        p_discount_amount: 0.00,
+        p_paid_amount: 1200.00,
+        p_payment_method: "Cash",
+        p_items: [
+          {
+            variant_id: ownerVariant.id,
+            quantity: 1,
+            unit_price: 1200.00,
+            subtotal: 1200.00,
+          },
+        ],
+      }
+    );
+    expect(cashierCheckoutError).toBeNull();
+
+    const { data: cashierInvoice, error: cashierInvoiceError } = await clientCashier
+      .from("invoices")
+      .select("id, sold_by_user_id, sold_by_name, sold_by_role")
+      .eq("id", cashierInvoiceId)
+      .single();
+    expect(cashierInvoiceError).toBeNull();
+    expect(cashierInvoice).toMatchObject({
+      id: cashierInvoiceId,
+      sold_by_user_id: cashierId,
+      sold_by_name: "Store Cashier",
+      sold_by_role: "cashier",
+    });
+
+    const { error: spoofInvoiceError } = await clientCashier
+      .from("invoices")
+      .insert({
+        store_id: storeId,
+        invoice_number: `INV-SPOOF-${random}`,
+        customer_name: "Spoofed Customer",
+        total_amount: 1,
+        discount_amount: 0,
+        paid_amount: 1,
+        payment_method: "Cash",
+        sold_by_user_id: ownerId,
+        sold_by_name: "Fake Owner",
+        sold_by_role: "owner",
+      });
+    expect(spoofInvoiceError).not.toBeNull();
+
+    // 6. Clean up
     console.log("[RLS QA] Cleaning up role test records...");
     await adminClient.from("stores").delete().eq("id", storeId);
     await adminClient.from("users").delete().eq("id", ownerId);
     await adminClient.from("users").delete().eq("id", cashierId);
     await clientOwner.auth.signOut();
+    await clientCashier.auth.signOut();
+  });
+
+  test("Protects staff invitations and suspended cashier access", async () => {
+    const random = Math.random().toString(36).slice(2, 7) + Date.now();
+    const password = "SecurityDefinerPass123!";
+    const ownerAEmail = `test-staff-owner-a-${random}@paisapos-qa.com`;
+    const ownerBEmail = `test-staff-owner-b-${random}@paisapos-qa.com`;
+    const cashierEmail = `test-staff-cashier-${random}@paisapos-qa.com`;
+    const invitedEmail = `test-staff-invite-${random}@paisapos-qa.com`;
+
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!serviceRoleKey) {
+      console.log("[RLS QA] Skipping staff invitation RLS test (SUPABASE_SERVICE_ROLE_KEY not set)");
+      return;
+    }
+
+    const clientOwnerA = createClient(supabaseUrl, supabaseAnonKey);
+    const clientOwnerB = createClient(supabaseUrl, supabaseAnonKey);
+    const clientCashier = createClient(supabaseUrl, supabaseAnonKey);
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
+
+    const { data: signUpOwnerA } = await clientOwnerA.auth.signUp({ email: ownerAEmail, password });
+    const ownerAId = signUpOwnerA.user!.id;
+    const { data: storeAId } = await retryOnTransientJwtClockSkew(() =>
+      clientOwnerA.rpc("register_store_and_user", {
+        p_full_name: "Staff Owner A",
+        p_store_name: `Staff Store A ${random}`,
+      })
+    );
+
+    const { data: signUpOwnerB } = await clientOwnerB.auth.signUp({ email: ownerBEmail, password });
+    const ownerBId = signUpOwnerB.user!.id;
+    const { data: storeBId } = await retryOnTransientJwtClockSkew(() =>
+      clientOwnerB.rpc("register_store_and_user", {
+        p_full_name: "Staff Owner B",
+        p_store_name: `Staff Store B ${random}`,
+      })
+    );
+
+    const { data: signUpCashier } = await clientCashier.auth.signUp({ email: cashierEmail, password });
+    const cashierId = signUpCashier.user!.id;
+    await adminClient.from("users").insert({
+      id: cashierId,
+      name: "Staff Cashier",
+      store_id: storeAId,
+      role: "cashier",
+      status: "active",
+      invited_by_user_id: ownerAId,
+    });
+
+    const { data: product, error: productError } = await clientOwnerA
+      .from("products")
+      .insert({
+        store_id: storeAId,
+        name: "Suspension Test Tee",
+        category: "Tops",
+        low_stock_threshold: 2,
+      })
+      .select()
+      .single();
+    expect(productError).toBeNull();
+
+    const { data: variant, error: variantError } = await clientOwnerA
+      .from("product_variants")
+      .insert({
+        product_id: product.id,
+        size: "M",
+        color: "Black",
+        sku: `SKU-STAFF-${random}`,
+        price: 900.00,
+      })
+      .select()
+      .single();
+    expect(variantError).toBeNull();
+
+    const { error: inventoryError } = await clientOwnerA
+      .from("inventory")
+      .insert({
+        variant_id: variant.id,
+        quantity: 2,
+      });
+    expect(inventoryError).toBeNull();
+
+    const { data: invitation, error: invitationError } = await adminClient
+      .from("staff_invitations")
+      .insert({
+        store_id: storeAId,
+        email: invitedEmail,
+        role: "cashier",
+        status: "pending",
+        invited_by_user_id: ownerAId,
+        expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+      })
+      .select()
+      .single();
+    expect(invitationError).toBeNull();
+
+    const { data: ownerAInvites, error: ownerAInvitesError } = await clientOwnerA
+      .from("staff_invitations")
+      .select("id, email")
+      .eq("id", invitation.id);
+    expect(ownerAInvitesError).toBeNull();
+    expect(ownerAInvites).toEqual([{ id: invitation.id, email: invitedEmail }]);
+
+    const { data: ownerBInvites, error: ownerBInvitesError } = await clientOwnerB
+      .from("staff_invitations")
+      .select("id")
+      .eq("store_id", storeAId);
+    expect(ownerBInvitesError).toBeNull();
+    expect(ownerBInvites).toHaveLength(0);
+
+    const { data: cashierInvites, error: cashierInvitesError } = await clientCashier
+      .from("staff_invitations")
+      .select("id");
+    expect(cashierInvitesError).toBeNull();
+    expect(cashierInvites).toHaveLength(0);
+
+    const { error: ownerDirectInsertError } = await clientOwnerA
+      .from("staff_invitations")
+      .insert({
+        store_id: storeAId,
+        email: `direct-owner-${random}@paisapos-qa.com`,
+        invited_by_user_id: ownerAId,
+        expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+      });
+    expect(ownerDirectInsertError).not.toBeNull();
+
+    const { error: cashierDirectInsertError } = await clientCashier
+      .from("staff_invitations")
+      .insert({
+        store_id: storeAId,
+        email: `direct-cashier-${random}@paisapos-qa.com`,
+        invited_by_user_id: cashierId,
+        expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+      });
+    expect(cashierDirectInsertError).not.toBeNull();
+
+    const delegationExpiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    const { data: delegation, error: delegationError } = await adminClient
+      .from("privilege_delegations")
+      .insert({
+        store_id: storeAId,
+        granted_to_user_id: cashierId,
+        granted_by_user_id: ownerAId,
+        scope: "inventory.adjust",
+        reason: "Owner away from shop",
+        expires_at: delegationExpiresAt,
+      })
+      .select()
+      .single();
+    expect(delegationError).toBeNull();
+
+    const { data: ownerADelegations, error: ownerADelegationsError } = await clientOwnerA
+      .from("privilege_delegations")
+      .select("id, scope")
+      .eq("id", delegation.id);
+    expect(ownerADelegationsError).toBeNull();
+    expect(ownerADelegations).toEqual([{ id: delegation.id, scope: "inventory.adjust" }]);
+
+    const { data: ownerBDelegations, error: ownerBDelegationsError } = await clientOwnerB
+      .from("privilege_delegations")
+      .select("id")
+      .eq("store_id", storeAId);
+    expect(ownerBDelegationsError).toBeNull();
+    expect(ownerBDelegations).toHaveLength(0);
+
+    const { data: cashierDelegations, error: cashierDelegationsError } = await clientCashier
+      .from("privilege_delegations")
+      .select("id, scope")
+      .eq("id", delegation.id);
+    expect(cashierDelegationsError).toBeNull();
+    expect(cashierDelegations).toEqual([{ id: delegation.id, scope: "inventory.adjust" }]);
+
+    const { error: cashierDelegationInsertError } = await clientCashier
+      .from("privilege_delegations")
+      .insert({
+        store_id: storeAId,
+        granted_to_user_id: cashierId,
+        granted_by_user_id: ownerAId,
+        scope: "inventory.adjust",
+        reason: "Forged grant attempt",
+        expires_at: delegationExpiresAt,
+      });
+    expect(cashierDelegationInsertError).not.toBeNull();
+
+    const { error: cashierStaffManageDelegationError } = await adminClient
+      .from("privilege_delegations")
+      .insert({
+        store_id: storeAId,
+        granted_to_user_id: cashierId,
+        granted_by_user_id: ownerAId,
+        scope: "staff.manage",
+        reason: "Forbidden scope attempt",
+        expires_at: delegationExpiresAt,
+      });
+    expect(cashierStaffManageDelegationError).not.toBeNull();
+
+    const { error: ownerDirectDelegationInsertError } = await clientOwnerA
+      .from("privilege_delegations")
+      .insert({
+        store_id: storeAId,
+        granted_to_user_id: cashierId,
+        granted_by_user_id: ownerAId,
+        scope: "inventory.adjust",
+        reason: "Browser grant attempt",
+        expires_at: delegationExpiresAt,
+      });
+    expect(ownerDirectDelegationInsertError).not.toBeNull();
+
+    const { error: revokeDelegationError } = await adminClient
+      .from("privilege_delegations")
+      .update({
+        revoked_at: new Date().toISOString(),
+        revoked_by_user_id: ownerAId,
+      })
+      .eq("id", delegation.id);
+    expect(revokeDelegationError).toBeNull();
+
+    const { data: cashierRevokedDelegations, error: cashierRevokedDelegationsError } = await clientCashier
+      .from("privilege_delegations")
+      .select("id")
+      .eq("id", delegation.id);
+    expect(cashierRevokedDelegationsError).toBeNull();
+    expect(cashierRevokedDelegations).toHaveLength(0);
+
+    const { error: suspendError } = await adminClient
+      .from("users")
+      .update({
+        status: "suspended",
+        suspended_at: new Date().toISOString(),
+        suspended_by_user_id: ownerAId,
+      })
+      .eq("id", cashierId);
+    expect(suspendError).toBeNull();
+
+    const { data: suspendedProducts, error: suspendedProductsError } = await clientCashier
+      .from("products")
+      .select("id")
+      .eq("store_id", storeAId);
+    expect(suspendedProductsError).toBeNull();
+    expect(suspendedProducts).toHaveLength(0);
+
+    const { error: suspendedCheckoutError } = await clientCashier.rpc("create_invoice_and_deduct_stock", {
+      p_store_id: storeAId,
+      p_invoice_number: "INV-PRE-GENERATED",
+      p_customer_name: "Suspended Customer",
+      p_customer_phone: null,
+      p_total_amount: 900.00,
+      p_discount_amount: 0.00,
+      p_paid_amount: 900.00,
+      p_payment_method: "Cash",
+      p_items: [
+        {
+          variant_id: variant.id,
+          quantity: 1,
+          unit_price: 900.00,
+          subtotal: 900.00,
+        },
+      ],
+    });
+    expect(suspendedCheckoutError).not.toBeNull();
+    expect(suspendedCheckoutError!.message).toContain("Unauthorized");
+
+    await adminClient.from("stores").delete().eq("id", storeAId);
+    await adminClient.from("stores").delete().eq("id", storeBId);
+    await adminClient.from("users").delete().eq("id", ownerAId);
+    await adminClient.from("users").delete().eq("id", ownerBId);
+    await adminClient.from("users").delete().eq("id", cashierId);
+    await clientOwnerA.auth.signOut();
+    await clientOwnerB.auth.signOut();
+    await clientCashier.auth.signOut();
+  });
+
+  test("Protects activity events with owner timeline reads and no direct browser writes", async () => {
+    const random = Math.random().toString(36).slice(2, 7) + Date.now();
+    const password = "SecurityDefinerPass123!";
+    const ownerAEmail = `test-activity-owner-a-${random}@paisapos-qa.com`;
+    const ownerBEmail = `test-activity-owner-b-${random}@paisapos-qa.com`;
+    const cashierEmail = `test-activity-cashier-${random}@paisapos-qa.com`;
+
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!serviceRoleKey) {
+      console.log("[RLS QA] Skipping activity_events RLS test (SUPABASE_SERVICE_ROLE_KEY not set)");
+      return;
+    }
+
+    const clientOwnerA = createClient(supabaseUrl, supabaseAnonKey);
+    const clientOwnerB = createClient(supabaseUrl, supabaseAnonKey);
+    const clientCashier = createClient(supabaseUrl, supabaseAnonKey);
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
+
+    const { data: signUpOwnerA } = await clientOwnerA.auth.signUp({ email: ownerAEmail, password });
+    const ownerAId = signUpOwnerA.user!.id;
+    const { data: storeAId } = await retryOnTransientJwtClockSkew(() =>
+      clientOwnerA.rpc("register_store_and_user", {
+        p_full_name: "Activity Owner A",
+        p_store_name: `Activity Store A ${random}`,
+      })
+    );
+
+    const { data: signUpOwnerB } = await clientOwnerB.auth.signUp({ email: ownerBEmail, password });
+    const ownerBId = signUpOwnerB.user!.id;
+    const { data: storeBId } = await retryOnTransientJwtClockSkew(() =>
+      clientOwnerB.rpc("register_store_and_user", {
+        p_full_name: "Activity Owner B",
+        p_store_name: `Activity Store B ${random}`,
+      })
+    );
+
+    const { data: signUpCashier } = await clientCashier.auth.signUp({ email: cashierEmail, password });
+    const cashierId = signUpCashier.user!.id;
+    await adminClient.from("users").insert({
+      id: cashierId,
+      name: "Activity Cashier",
+      store_id: storeAId,
+      role: "cashier",
+    });
+    await clientCashier.auth.signInWithPassword({ email: cashierEmail, password });
+
+    const ownerEventTime = new Date(Date.now() + 1000).toISOString();
+    const cashierEventTime = new Date().toISOString();
+
+    const { data: ownerEvent, error: ownerEventError } = await adminClient
+      .from("activity_events")
+      .insert({
+        store_id: storeAId,
+        actor_user_id: ownerAId,
+        actor_name: "Activity Owner A",
+        actor_email: ownerAEmail,
+        actor_role: "owner",
+        privilege_source: "owner_role",
+        action: "store.updated",
+        action_scope: "store.settings",
+        target_type: "store",
+        target_id: storeAId,
+        target_label: "Activity Store A",
+        summary: "Owner updated store settings.",
+        metadata: { changedFields: ["name"] },
+        result: "success",
+        occurred_at: ownerEventTime,
+      })
+      .select()
+      .single();
+    expect(ownerEventError).toBeNull();
+
+    const { data: cashierEvent, error: cashierEventError } = await adminClient
+      .from("activity_events")
+      .insert({
+        store_id: storeAId,
+        actor_user_id: cashierId,
+        actor_name: "Activity Cashier",
+        actor_email: cashierEmail,
+        actor_role: "cashier",
+        privilege_source: "cashier_role",
+        action: "checkout.created",
+        action_scope: "checkout.create",
+        target_type: "invoice",
+        summary: "Cashier created invoice.",
+        metadata: { itemCount: 1 },
+        result: "success",
+        occurred_at: cashierEventTime,
+      })
+      .select()
+      .single();
+    expect(cashierEventError).toBeNull();
+
+    const { data: ownerAEvents, error: ownerAReadError } = await clientOwnerA
+      .from("activity_events")
+      .select("id, actor_user_id, action")
+      .order("occurred_at", { ascending: false });
+    expect(ownerAReadError).toBeNull();
+    expect(ownerAEvents?.map((event) => event.id).sort()).toEqual(
+      [ownerEvent.id, cashierEvent.id].sort()
+    );
+
+    const { data: firstActivityPage, error: firstActivityPageError } = await clientOwnerA
+      .from("activity_events")
+      .select("id, occurred_at")
+      .order("occurred_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(1);
+    expect(firstActivityPageError).toBeNull();
+    expect(firstActivityPage?.[0]?.id).toBe(ownerEvent.id);
+
+    const { data: secondActivityPage, error: secondActivityPageError } = await clientOwnerA
+      .from("activity_events")
+      .select("id")
+      .or(`occurred_at.lt.${firstActivityPage![0].occurred_at},and(occurred_at.eq.${firstActivityPage![0].occurred_at},id.lt.${firstActivityPage![0].id})`)
+      .order("occurred_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(1);
+    expect(secondActivityPageError).toBeNull();
+    expect(secondActivityPage).toEqual([{ id: cashierEvent.id }]);
+
+    const { data: ownerBEvents, error: ownerBReadError } = await clientOwnerB
+      .from("activity_events")
+      .select("id")
+      .eq("store_id", storeAId);
+    expect(ownerBReadError).toBeNull();
+    expect(ownerBEvents).toHaveLength(0);
+
+    const { data: cashierEvents, error: cashierReadError } = await clientCashier
+      .from("activity_events")
+      .select("id, actor_user_id");
+    expect(cashierReadError).toBeNull();
+    expect(cashierEvents).toEqual([{ id: cashierEvent.id, actor_user_id: cashierId }]);
+
+    const { error: ownerInsertError } = await clientOwnerA
+      .from("activity_events")
+      .insert({
+        store_id: storeAId,
+        actor_user_id: ownerAId,
+        actor_name: "Fake Owner Event",
+        actor_role: "owner",
+        privilege_source: "owner_role",
+        action: "fake.event",
+        target_type: "store",
+        summary: "Forged browser event.",
+        result: "success",
+      });
+    expect(ownerInsertError).not.toBeNull();
+
+    const { error: cashierInsertError } = await clientCashier
+      .from("activity_events")
+      .insert({
+        store_id: storeAId,
+        actor_user_id: cashierId,
+        actor_name: "Fake Cashier Event",
+        actor_role: "cashier",
+        privilege_source: "cashier_role",
+        action: "fake.event",
+        target_type: "store",
+        summary: "Forged browser event.",
+        result: "success",
+      });
+    expect(cashierInsertError).not.toBeNull();
+
+    const { error: adminUpdateError } = await adminClient
+      .from("activity_events")
+      .update({ summary: "Tampered summary" })
+      .eq("id", ownerEvent.id);
+    expect(adminUpdateError).not.toBeNull();
+    expect(adminUpdateError!.message).toContain("Activity events are immutable");
+
+    await adminClient.from("stores").delete().eq("id", storeAId);
+    await adminClient.from("stores").delete().eq("id", storeBId);
+    await adminClient.from("users").delete().eq("id", ownerAId);
+    await adminClient.from("users").delete().eq("id", ownerBId);
+    await adminClient.from("users").delete().eq("id", cashierId);
+    await clientOwnerA.auth.signOut();
+    await clientOwnerB.auth.signOut();
     await clientCashier.auth.signOut();
   });
 });

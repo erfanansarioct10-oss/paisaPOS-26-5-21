@@ -4,12 +4,15 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useAppStore } from "@/lib/store/useAppStore";
 import { useTheme } from "@/components/theme-provider";
+import { getStaffCapabilities } from "@/lib/staff-capabilities";
 import {
   LayoutDashboard,
+  Activity,
   Calculator,
   Package,
   History,
   Settings,
+  UsersRound,
   LogOut,
   Store,
   Menu,
@@ -25,6 +28,7 @@ export default function Sidebar() {
   const { theme, resolvedTheme, setTheme } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const capabilities = getStaffCapabilities(user);
 
   useEffect(() => {
     setTimeout(() => setMounted(true), 0);
@@ -37,6 +41,12 @@ export default function Sidebar() {
     { id: "billing", name: "Billing POS", icon: Calculator, path: "/billing" },
     { id: "inventory", name: "Inventory", icon: Package, path: "/inventory" },
     { id: "history", name: "Invoices", icon: History, path: "/invoices" },
+    ...(capabilities.canReadActivity
+      ? [{ id: "activity", name: "Activity", icon: Activity, path: "/activity" } as const]
+      : []),
+    ...(capabilities.canManageStaff
+      ? [{ id: "staff", name: "Staff", icon: UsersRound, path: "/staff" } as const]
+      : []),
     { id: "settings", name: "Settings", icon: Settings, path: "/settings" },
   ] as const;
 

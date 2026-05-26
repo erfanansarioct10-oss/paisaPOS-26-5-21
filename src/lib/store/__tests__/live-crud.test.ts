@@ -218,6 +218,9 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
     expect(readInvoiceError).toBeNull();
     expect(checkInvoice.customer_name).toBe("John Doe Nepal");
     expect(checkInvoice.total_amount).toBe(10100.00);
+    expect(checkInvoice.sold_by_user_id).toBe(userId);
+    expect(checkInvoice.sold_by_name).toBe(fullName);
+    expect(checkInvoice.sold_by_role).toBe("owner");
     // Invoice number should follow sequential format: e.g. INV-YYYY-0001
     const currentYear = new Date().getFullYear().toString();
     expect(checkInvoice.invoice_number).toBe(`INV-${currentYear}-0001`);

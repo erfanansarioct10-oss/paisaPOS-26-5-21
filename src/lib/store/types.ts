@@ -16,6 +16,7 @@ export interface Profile {
   store_id: string;
   email?: string;
   role?: "owner" | "cashier";
+  status?: "active" | "suspended";
 }
 
 export interface Product {
@@ -70,7 +71,20 @@ export interface Invoice {
   discount_amount: number;
   paid_amount: number;
   payment_method: string;
+  sold_by_user_id?: string | null;
+  sold_by_name?: string | null;
+  sold_by_role?: "owner" | "cashier" | null;
+  sold_with_delegation_id?: string | null;
   created_at: string;
+}
+
+export interface ActivePrivilegeDelegation {
+  id: string;
+  scope: string;
+  reason: string;
+  granted_by_user_id: string;
+  starts_at: string;
+  expires_at: string;
 }
 
 export interface InvoiceItem {
@@ -93,7 +107,7 @@ export interface InvoiceItem {
 
 export interface AppState {
   // Navigation & Core UI
-  activeTab: "dashboard" | "billing" | "inventory" | "history" | "settings";
+  activeTab: "dashboard" | "billing" | "inventory" | "history" | "activity" | "staff" | "settings";
   user: Profile | null;
   store: StoreMetadata | null;
   isLoading: boolean;
@@ -104,6 +118,7 @@ export interface AppState {
   variants: ProductVariant[];
   invoices: Invoice[];
   invoiceItems: Record<string, InvoiceItem[]>; // Keyed by invoice_id
+  activeDelegations: ActivePrivilegeDelegation[];
 
   // Active Billing POS Cart
   cart: CartItem[];
@@ -131,7 +146,7 @@ export interface AppState {
 
 
   // ACTIONS
-  setTab: (tab: "dashboard" | "billing" | "inventory" | "history" | "settings") => void;
+  setTab: (tab: "dashboard" | "billing" | "inventory" | "history" | "activity" | "staff" | "settings") => void;
   initializeSession: () => Promise<void>;
   signOut: () => Promise<void>;
 

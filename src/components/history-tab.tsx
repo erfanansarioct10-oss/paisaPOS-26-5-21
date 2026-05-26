@@ -32,6 +32,16 @@ export default function HistoryTab() {
     }
   };
 
+  const formatSeller = (invoice: Invoice) => ({
+    name: invoice.sold_by_name?.trim() || "Not recorded",
+    role:
+      invoice.sold_by_role === "owner"
+        ? "Owner"
+        : invoice.sold_by_role === "cashier"
+          ? "Cashier"
+          : null,
+  });
+
   // Page is reset to 1 in the respective filter change handlers to avoid effect-based cascading renders
 
   // Filter invoices based on customer details, invoice number, payment method, and date boundaries
@@ -41,7 +51,16 @@ export default function HistoryTab() {
     const matchesName = inv.customer_name?.toLowerCase().includes(query) ?? false;
     const matchesPhone = inv.customer_phone?.toLowerCase().includes(query) ?? false;
     const matchesMethod = inv.payment_method.toLowerCase().includes(query);
-    const matchesSearch = searchQuery === "" || matchesNumber || matchesName || matchesPhone || matchesMethod;
+    const matchesSellerName = inv.sold_by_name?.toLowerCase().includes(query) ?? false;
+    const matchesSellerRole = inv.sold_by_role?.toLowerCase().includes(query) ?? false;
+    const matchesSearch =
+      searchQuery === "" ||
+      matchesNumber ||
+      matchesName ||
+      matchesPhone ||
+      matchesMethod ||
+      matchesSellerName ||
+      matchesSellerRole;
 
     const matchesPaymentMethod =
       paymentMethodFilter === "All" ||
@@ -284,6 +303,7 @@ export default function HistoryTab() {
                   <tr className="border-b border-border bg-muted/20 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     <th className="px-5 py-3">Invoice No</th>
                     <th className="px-5 py-3">Customer Details</th>
+                    <th className="px-5 py-3">Sold By</th>
                     <th className="px-5 py-3">Date & Time</th>
                     <th className="px-5 py-3 text-right">Discount</th>
                     <th className="px-5 py-3 text-right">Net Total</th>
@@ -292,70 +312,89 @@ export default function HistoryTab() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {paginatedInvoices.map((inv) => (
-                    <tr key={inv.id} className="hover:bg-muted/10 transition-colors">
-                      <td className="px-5 py-4 font-mono text-xs font-bold text-foreground">{inv.invoice_number}</td>
-                      <td className="px-5 py-4">
-                        <p className="text-sm font-semibold text-foreground leading-normal">{inv.customer_name || "General Customer"}</p>
-                        {inv.customer_phone && <p className="text-xs text-muted-foreground mt-0.5 font-mono">{inv.customer_phone}</p>}
-                      </td>
-                      <td className="px-5 py-4 text-xs text-muted-foreground">{formatDate(inv.created_at)}</td>
-                      <td className="px-5 py-4 text-right font-mono text-xs text-red-500 font-bold">
-                        {inv.discount_amount > 0 ? `- Rs. ${inv.discount_amount.toLocaleString()}` : "Rs. 0"}
-                      </td>
-                      <td className="px-5 py-4 text-right font-bold text-foreground">{formatCurrency(inv.total_amount)}</td>
-                      <td className="px-5 py-4 text-center">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-semibold bg-primary/10 text-primary border border-primary/10">{inv.payment_method}</span>
-                      </td>
-                      <td className="px-5 py-4 text-right">
-                        <button onClick={() => handleReprint(inv)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-border hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground transition-all">
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>View & Reprint</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {paginatedInvoices.map((inv) => {
+                    const seller = formatSeller(inv);
+
+                    return (
+                      <tr key={inv.id} className="hover:bg-muted/10 transition-colors">
+                        <td className="px-5 py-4 font-mono text-xs font-bold text-foreground">{inv.invoice_number}</td>
+                        <td className="px-5 py-4">
+                          <p className="text-sm font-semibold text-foreground leading-normal">{inv.customer_name || "General Customer"}</p>
+                          {inv.customer_phone && <p className="text-xs text-muted-foreground mt-0.5 font-mono">{inv.customer_phone}</p>}
+                        </td>
+                        <td className="px-5 py-4">
+                          <p className="text-sm font-semibold text-foreground leading-normal">{seller.name}</p>
+                          {seller.role && <p className="text-xs text-muted-foreground mt-0.5">{seller.role}</p>}
+                        </td>
+                        <td className="px-5 py-4 text-xs text-muted-foreground">{formatDate(inv.created_at)}</td>
+                        <td className="px-5 py-4 text-right font-mono text-xs text-red-500 font-bold">
+                          {inv.discount_amount > 0 ? `- Rs. ${inv.discount_amount.toLocaleString()}` : "Rs. 0"}
+                        </td>
+                        <td className="px-5 py-4 text-right font-bold text-foreground">{formatCurrency(inv.total_amount)}</td>
+                        <td className="px-5 py-4 text-center">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-semibold bg-primary/10 text-primary border border-primary/10">{inv.payment_method}</span>
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          <button onClick={() => handleReprint(inv)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-border hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground transition-all">
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View & Reprint</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
             {/* Mobile Card Stack View */}
             <div className="block md:hidden divide-y divide-border">
-              {paginatedInvoices.map((inv) => (
-                <div key={inv.id} className="p-4 space-y-3 hover:bg-muted/5 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-bold text-foreground">{inv.invoice_number}</span>
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-primary/10 text-primary border border-primary/10">{inv.payment_method}</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <p className="text-muted-foreground font-medium">Customer</p>
-                      <p className="font-semibold text-foreground truncate">{inv.customer_name || "General Customer"}</p>
-                      {inv.customer_phone && <p className="font-mono text-[10px] text-muted-foreground mt-0.5">{inv.customer_phone}</p>}
+              {paginatedInvoices.map((inv) => {
+                const seller = formatSeller(inv);
+
+                return (
+                  <div key={inv.id} className="p-4 space-y-3 hover:bg-muted/5 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs font-bold text-foreground">{inv.invoice_number}</span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-primary/10 text-primary border border-primary/10">{inv.payment_method}</span>
                     </div>
-                    <div>
-                      <p className="text-muted-foreground font-medium">Date & Time</p>
-                      <p className="text-foreground mt-0.5">{formatDate(inv.created_at)}</p>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <p className="text-muted-foreground font-medium">Customer</p>
+                        <p className="font-semibold text-foreground truncate">{inv.customer_name || "General Customer"}</p>
+                        {inv.customer_phone && <p className="font-mono text-[10px] text-muted-foreground mt-0.5">{inv.customer_phone}</p>}
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground font-medium">Date & Time</p>
+                        <p className="text-foreground mt-0.5">{formatDate(inv.created_at)}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-border/50">
+                      <div>
+                        <p className="text-muted-foreground font-medium">Sold By</p>
+                        <p className="font-semibold text-foreground truncate">{seller.name}</p>
+                        {seller.role && <p className="text-[10px] text-muted-foreground mt-0.5">{seller.role}</p>}
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground font-medium">Net Total</p>
+                        <p className="font-bold text-foreground text-sm mt-0.5">{formatCurrency(inv.total_amount)}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-border/50">
+                      <div>
+                        <p className="text-muted-foreground font-medium">Discount</p>
+                        <p className="font-mono text-red-500 font-bold mt-0.5">{inv.discount_amount > 0 ? `- Rs. ${inv.discount_amount.toLocaleString()}` : "Rs. 0"}</p>
+                      </div>
+                      <div className="flex items-end">
+                        <button onClick={() => handleReprint(inv)} className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold border border-border hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground transition-all h-11">
+                          <Eye className="w-4 h-4" />
+                          <span>View Receipt</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-border/50">
-                    <div>
-                      <p className="text-muted-foreground font-medium">Discount</p>
-                      <p className="font-mono text-red-500 font-bold mt-0.5">{inv.discount_amount > 0 ? `- Rs. ${inv.discount_amount.toLocaleString()}` : "Rs. 0"}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground font-medium">Net Total</p>
-                      <p className="font-bold text-foreground text-sm mt-0.5">{formatCurrency(inv.total_amount)}</p>
-                    </div>
-                  </div>
-                  <div className="pt-1">
-                    <button onClick={() => handleReprint(inv)} className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold border border-border hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground transition-all h-11">
-                      <Eye className="w-4 h-4" />
-                      <span>View & Reprint Receipt</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* LOAD MORE FROM DATABASE BUTTON */}

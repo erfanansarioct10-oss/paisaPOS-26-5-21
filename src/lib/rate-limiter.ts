@@ -272,6 +272,18 @@ export const bulkImportLimiter = new RateLimiter(2, 5 * 60 * 1000);
 /** Stock/UI mutations (adjust stock, toggle favorite): 30 per minute per user */
 export const uiMutationLimiter = new RateLimiter(30, 60 * 1000);
 
+/** Staff invites: 10 per day per owner */
+export const staffInviteLimiter = new RateLimiter(10, 24 * 60 * 60 * 1000);
+
+/** Staff lifecycle actions: 20 per hour per owner */
+export const staffLifecycleLimiter = new RateLimiter(20, 60 * 60 * 1000);
+
+/** Temporary privilege grants: 10 per day per owner */
+export const delegationGrantLimiter = new RateLimiter(10, 24 * 60 * 60 * 1000);
+
+/** Temporary privilege revocations: 30 per hour per owner */
+export const delegationRevokeLimiter = new RateLimiter(30, 60 * 60 * 1000);
+
 /** Global request flood protection: 30 per 10 seconds per IP */
 export const globalLimiter = new RateLimiter(30, 10 * 1000);
 

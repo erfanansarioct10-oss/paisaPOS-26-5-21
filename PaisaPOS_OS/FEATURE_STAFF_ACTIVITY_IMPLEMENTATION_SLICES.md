@@ -1,6 +1,6 @@
 # BETA V1.1 IMPLEMENTATION SLICES: STAFF, ACTIVITY, AND ACCOUNTABILITY
 
-Last updated: 2026-05-25 15:21 NPT
+Last updated: 2026-05-26 07:25 NPT
 
 ## 1. WHY WE SHOULD BUILD THIS IN SLICES
 
@@ -44,6 +44,19 @@ Each slice should follow this template:
 - Rollback note: how to disable or revert safely during beta development.
 
 ## 4. RECOMMENDED V1.1 BUILD ORDER
+
+Current implementation status as of 2026-05-25 21:31 NPT:
+
+- Slice 0 guardrail verification is complete for the first implementation pass.
+- Slice 1 durable activity event foundation is implemented locally and verified with database reset, activity/migration/RLS tests, full Vitest, lint, build, and Supabase DB lint.
+- Slice 2 invoice attribution is implemented locally and verified with database reset, migration/live checkout/RLS tests, full Vitest, lint, build, and Supabase DB lint.
+- Slice 3 owner Activity Log page is implemented locally and verified with activity helper tests, activity RLS cursor coverage, owner Activity Playwright smoke, full Vitest, lint, build, Supabase DB lint, and local dev server health.
+- Slice 4 Staff Directory and Invitations is implemented locally and verified with database reset, focused migration/store/RLS tests, Staff + Activity Playwright smoke, full Vitest, lint, build, Supabase DB lint, and whitespace check.
+- Slice 5 Permission Helper Unification is verified locally: central server permission helper, shared UI capability flags, selected Server Action rewiring, activity delegation-id plumbing, permission matrix tests, direct Server Action abuse tests, full Vitest, lint, build, Playwright, and prior Supabase DB lint are passing.
+- Slice 6 Temporary Delegation Foundation is implemented locally and verified with a clean Supabase reset, delegation migration/RLS/action tests, database-backed permission lookup tests, full Vitest, lint, build, Supabase DB lint, migration list, and Chromium Playwright.
+- Slice 7 Delegated Action Coverage has its first inventory-adjustment pass implemented locally and verified: delegated cashiers can see stock controls, `adjustStockAction()` re-checks `inventory.adjust`, delegated writes use a server/admin path after authorization, activity shows delegated authority, direct Data API mutation remains denied by RLS, and current grant/action lookup is restricted to the proven `inventory.adjust` scope.
+- The work is still uncommitted in the local worktree.
+- Next recommended step is a checkpoint commit for Slices 1-6 plus the Slice 7 inventory pass and grant-surface restriction, then continue Slice 7 with catalog edit/import coverage.
 
 ### Slice 0: Development Guardrails
 
@@ -99,7 +112,7 @@ Out of scope:
 
 Database:
 - Create `activity_events`.
-- Include `store_id`, `actor_user_id`, `actor_role`, `event_type`, `entity_type`, `entity_id`, `result`, `metadata`, `created_at`.
+- Include `store_id`, `actor_user_id`, `actor_role`, `action`, `action_scope`, `target_type`, `target_id`, `result`, `metadata`, `occurred_at`, `created_at`, and optional request/delegation references.
 - Store small actor snapshots like display name/email where needed for historical clarity.
 - Enable RLS.
 - Owner can read store events.
@@ -126,6 +139,12 @@ Tests:
 Confirmation:
 - An owner can perform one existing action and a durable event appears.
 - A cashier cannot create fake audit events through Supabase REST.
+
+Implementation status:
+- Implemented locally in migration `20260525112112_add_activity_events_foundation.sql`.
+- Server helper added at `src/lib/server/activity.ts`.
+- Existing checkout/catalog/inventory/settings/profile actions now emit durable events.
+- Activity redaction, migration hardening, and RLS behavior are covered by tests.
 
 Rollback note:
 - Keep the table unused if needed; do not drop it once events may exist in shared dev data.
@@ -169,6 +188,13 @@ Tests:
 Confirmation:
 - A checkout made by cashier visibly differs from a checkout made by owner.
 
+Implementation status:
+- Implemented locally in migration `20260525114332_add_invoice_seller_attribution.sql`.
+- Checkout RPC now captures `sold_by_user_id`, `sold_by_name`, and `sold_by_role` from `auth.uid()` plus `public.users`.
+- Invoice DTOs and client store selects include sold-by fields.
+- Invoice History, Recent Invoices, and Receipt display seller attribution with nullable legacy fallbacks.
+- Live DB/RLS tests cover owner attribution, cashier attribution, and denied direct invoice spoofing.
+
 Rollback note:
 - Keep attribution columns nullable during V1.1 migration so old invoices remain valid.
 
@@ -207,6 +233,12 @@ Tests:
 
 Confirmation:
 - Owner can answer who changed/sold/failed something without opening database logs.
+
+Implementation status:
+- Implemented locally with the owner-only `/activity` route and owner-only sidebar navigation item.
+- Added `getActivityEventsDTO()` in `src/lib/server/dal.ts` with server-side owner authorization, minimal DTO mapping, actor/event/result/date/search filters, and cursor pagination.
+- Added `src/components/activity-log-page.tsx` with dense desktop table and mobile card views for actor, event, entity, result, time, and summary.
+- Added activity filter/cursor unit tests, extended live RLS verification to prove cursor pagination works over owner-visible activity, and added a Playwright owner Activity smoke test.
 
 Rollback note:
 - Hide navigation behind feature flag if UI needs more polish.
@@ -251,6 +283,13 @@ Tests:
 Confirmation:
 - A new cashier can be invited, accept, log in, and sell.
 
+Implementation status:
+- Implemented locally in migration `20260525121333_add_staff_invitations.sql`.
+- Added `user_status`, `staff_invitation_status`, `staff_invitations`, user lifecycle fields, owner-visible invitation RLS, explicit Data API grants, no authenticated browser DML on invitations, status-aware `get_user_store_id()`, protected staff lifecycle fields, and active-status checkout enforcement.
+- Added server-only staff DTO loading, owner invite/revoke/suspend/reactivate actions, accept-invite action, and staff activity events.
+- Added owner-only `/staff` route, `/staff/accept` route, owner-only Staff sidebar item, Staff page directory/invitation UI, and accept-invite UI.
+- Added migration hardening coverage, live RLS coverage for staff invitation isolation and suspended cashier checkout denial, and Staff Playwright smoke.
+
 Rollback note:
 - Keep invited users as cashier only; no automatic owner grants.
 
@@ -291,6 +330,18 @@ Tests:
 
 Confirmation:
 - One permission helper explains the same behavior enforced by UI, Server Actions, and tests.
+
+Implementation status:
+- Implemented locally at `src/lib/server/permissions.ts`.
+- Added explicit privilege names matching the existing activity scopes: `checkout.create`, `catalog.manage`, `inventory.adjust`, `staff.manage`, `store.settings`, `activity.read`, plus release/future scopes.
+- Current production behavior remains conservative: active owners receive management privileges; active cashiers receive checkout/profile privileges; suspended or missing profiles receive no privileges.
+- Delegation evaluation is modeled for future Slice 6, but trusted database-backed delegation lookup is not enabled yet.
+- Selected Server Actions now call `requirePrivilege()` for checkout, catalog/product/import/favorite mutations, inventory adjustment, store/profile updates, and staff invite/lifecycle actions.
+- Business actions now check `requirePrivilege()` before opening the Supabase server client, so denied direct calls stop before database client, rate-limit, mutation, or activity side effects.
+- Added permission matrix tests, activity delegation-id payload coverage, and direct Server Action abuse tests for unauthorized cashier calls, missing auth, suspended cashier checkout, store-id tampering, forged actor/role payloads, and allowed cashier checkout/profile updates.
+- Added `src/lib/staff-capabilities.ts` so client UI and server permission checks share the same base role-to-privilege vocabulary without importing server-only modules into client components.
+- Replaced practical owner-role UI gates with capability booleans: Inventory add/import/edit/delete/favorite uses `canManageCatalog`, stock adjustment uses `canAdjustInventory`, Sidebar Staff/Activity links use `canManageStaff`/`canReadActivity`, and Settings store/profile forms use `canManageStoreSettings`/`canUpdateProfile`.
+- Existing Staff/Activity route gates now use named privilege checks before rendering owner-only pages.
 
 Rollback note:
 - Refactor one module at a time to avoid risky broad churn.
@@ -339,6 +390,15 @@ Tests:
 Confirmation:
 - Cashier can perform one delegated admin action only during the valid time window.
 
+Implementation status:
+- Implemented locally in migration `20260525151258_add_privilege_delegations.sql`.
+- Added `privilege_delegations` with one row per cashier/scope, max 24-hour duration, owner/cashier same-store trigger validation, no self-delegation, allowed-scope constraint, active lookup indexes, explicit `SELECT` grants, RLS owner reads, cashier own-active reads, and no authenticated browser DML.
+- Linked future accountability references with `activity_events.delegation_id` and `invoices.sold_with_delegation_id` foreign keys.
+- Extended `requirePrivilege()` so permanent role privileges short-circuit first, then active cashiers get a database-backed lookup only for delegatable scopes.
+- Added owner Server Actions to grant/revoke temporary access with reason, duration, explicit `GRANT` confirmation, rate limits, and `delegation.granted` / `delegation.revoked` activity events.
+- Added Staff page grant/revoke controls, active temporary access list, staff counts, and a cashier-side temporary access banner.
+- Added tests covering migration hardening, delegatable scope helpers, database-backed active/expired/revoked permission checks, direct Server Action abuse, delegated inventory action attribution in the action path, and live RLS isolation.
+
 Rollback note:
 - Disabling delegation checks should revert cashiers to baseline cashier permissions.
 
@@ -380,6 +440,16 @@ Tests:
 
 Confirmation:
 - Owner can distinguish "cashier sold item" from "cashier edited catalog using temporary permission from owner".
+
+Implementation status:
+- Partially implemented locally for `inventory.adjust`.
+- Active cashier delegations are refreshed into client state during session initialization and store sync, and the Inventory page shows stock adjustment controls only when an active `inventory.adjust` delegation exists.
+- `requirePrivilege()` now carries the delegation grantor user id into the action context when a database-backed delegation authorizes the request.
+- `adjustStockAction()` uses the normal user-scoped Supabase path for role-based owner access, but uses the server/admin client for delegated inventory writes after `requirePrivilege("inventory.adjust")`, variant ownership validation, and rate limiting.
+- Inventory adjustment activity events now include `privilegeSource: "delegation"`, the delegation id, grantor user id metadata, and the Activity Log displays delegated events with a delegated badge.
+- The current Staff grant form/action and database-backed action lookup are restricted to `inventory.adjust`; broader future delegatable scopes remain modeled but cannot be granted or used for real Server Actions until their delegated-safe paths are implemented.
+- Verified with focused capability/permission/action/activity tests, full Vitest, live RLS verification, lint, build, and Chromium Playwright.
+- Catalog edit, catalog import, favorite toggles, and any settings delegation remain pending and should not be exposed to delegated cashiers until their write paths are explicitly proven.
 
 Rollback note:
 - Disable delegated action buttons if any permission ambiguity appears.

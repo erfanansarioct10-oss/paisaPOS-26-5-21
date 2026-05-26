@@ -55,8 +55,43 @@ const subscribeToRealtimeChanges = (
       { event: "*", schema: "public", table: "invoices", filter: `store_id=eq.${storeId}` },
       debouncedFetch
     )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "privilege_delegations", filter: `store_id=eq.${storeId}` },
+      debouncedFetch
+    )
     .subscribe();
 };
+
+type DelegationProfile = {
+  id: string;
+  role?: "owner" | "cashier" | null;
+  store_id: string;
+};
+
+async function loadActiveDelegations(profile: DelegationProfile) {
+  if (!profile?.id || profile.role !== "cashier") {
+    return [];
+  }
+
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("privilege_delegations")
+    .select("id, scope, reason, granted_by_user_id, starts_at, expires_at")
+    .eq("store_id", profile.store_id)
+    .eq("granted_to_user_id", profile.id)
+    .is("revoked_at", null)
+    .lte("starts_at", now)
+    .gt("expires_at", now)
+    .order("expires_at", { ascending: true });
+
+  if (error) {
+    console.warn("Failed to load active delegations:", error.message);
+    return [];
+  }
+
+  return data ?? [];
+}
 
 type SetState = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
 type GetState = () => AppState;
@@ -75,6 +110,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
   variants: [] as AppState["variants"],
   invoices: [] as AppState["invoices"],
   invoiceItems: {} as AppState["invoiceItems"],
+  activeDelegations: [] as AppState["activeDelegations"],
 
   // Modals
   isProductModalOpen: false,
@@ -107,7 +143,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
   initializeSession: async () => {
     if (typeof window !== "undefined") {
       const savedTab = localStorage.getItem("paisapos_active_tab") as AppState["activeTab"];
-      if (savedTab && ["dashboard", "billing", "inventory", "history", "settings"].includes(savedTab)) {
+      if (savedTab && ["dashboard", "billing", "inventory", "history", "activity", "staff", "settings"].includes(savedTab)) {
         set({ activeTab: savedTab });
       }
     }
@@ -129,6 +165,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
           variants: [],
           invoices: [],
           invoiceItems: {},
+          activeDelegations: [],
           isLoading: false,
         });
         return;
@@ -137,7 +174,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       // 2. Load User Profile from Supabase
       const { data: profile, error: profileError } = await supabase
         .from("users")
-        .select("id, name, store_id, role")
+        .select("id, name, store_id, role, status")
         .eq("id", authUser.id)
         .single();
 
@@ -145,6 +182,11 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
         // Profile doesn't exist, sign out
         await supabase.auth.signOut();
         throw new Error("Store user profile not found.");
+      }
+
+      if (profile.status === "suspended") {
+        await supabase.auth.signOut();
+        throw new Error("This staff account is suspended. Please contact the store owner.");
       }
 
       // 3. Load Store Meta
@@ -158,10 +200,20 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
         throw new Error("Store metadata associated with user not found.");
       }
 
+      const activeDelegations = await loadActiveDelegations(profile);
+
       // Success: Save Session details, trigger data fetches
       set({
-        user: { id: profile.id, name: profile.name, store_id: profile.store_id, email: authUser.email, role: profile.role },
+        user: {
+          id: profile.id,
+          name: profile.name,
+          store_id: profile.store_id,
+          email: authUser.email,
+          role: profile.role,
+          status: profile.status ?? "active",
+        },
         store: store,
+        activeDelegations,
       });
 
       subscribeToRealtimeChanges(profile.store_id, get().fetchStoreData, () => get().isImporting);
@@ -180,6 +232,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
         variants: [],
         invoices: [],
         invoiceItems: {},
+        activeDelegations: [],
         errorMsg: errMsg,
       });
     } finally {
@@ -220,6 +273,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       variants: [],
       invoices: [],
       invoiceItems: {},
+      activeDelegations: [],
       cart: [],
       activeInvoice: null,
       activeTab: "dashboard" as const,
@@ -235,7 +289,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
   // FETCH STORE DATA FROM SUPABASE
   // -----------------------------------------------------------------------
   fetchStoreData: async (options?: { forceLoading?: boolean }) => {
-    const { store, products } = get();
+    const { store, products, user } = get();
     if (!store) return;
 
     const showLoading = options?.forceLoading || products.length === 0;
@@ -244,7 +298,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       set({ isLoading: true });
     }
     try {
-      const [productsResult, variantsResult, invoicesResult] = await Promise.all([
+      const [productsResult, variantsResult, invoicesResult, activeDelegations] = await Promise.all([
         supabase
           .from("products")
           .select("id, store_id, name, category, image_url, low_stock_threshold, is_favorite, created_at")
@@ -265,10 +319,11 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
           .eq("store_id", store.id),
         supabase
           .from("invoices")
-          .select("id, store_id, invoice_number, customer_name, customer_phone, total_amount, discount_amount, paid_amount, payment_method, created_at")
+          .select("id, store_id, invoice_number, customer_name, customer_phone, total_amount, discount_amount, paid_amount, payment_method, sold_by_user_id, sold_by_name, sold_by_role, sold_with_delegation_id, created_at")
           .eq("store_id", store.id)
           .order("created_at", { ascending: false })
           .limit(50),
+        user?.role === "cashier" ? loadActiveDelegations(user) : Promise.resolve([]),
       ]);
 
       if (productsResult.error) throw productsResult.error;
@@ -321,6 +376,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
         variants: mappedVariants,
         invoices: dbInvoices,
         invoiceItems: invoiceItemsMap,
+        activeDelegations,
       });
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : String(e);
@@ -341,7 +397,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
     try {
       let query = supabase
         .from("invoices")
-        .select("id, store_id, invoice_number, customer_name, customer_phone, total_amount, discount_amount, paid_amount, payment_method, created_at")
+        .select("id, store_id, invoice_number, customer_name, customer_phone, total_amount, discount_amount, paid_amount, payment_method, sold_by_user_id, sold_by_name, sold_by_role, sold_with_delegation_id, created_at")
         .eq("store_id", store.id)
         .order("created_at", { ascending: false })
         .limit(limit);

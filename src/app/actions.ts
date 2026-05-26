@@ -4,12 +4,12 @@ import { z } from "zod";
 import { writeLog } from "@/lib/logger";
 import { sanitizeString, formatZodError, getFriendlyErrorMessage } from "@/lib/security";
 import {
-  assertStoreAccess,
   getInvoiceReceiptDTO,
   getSupabaseServerClient,
-  requireOwnerContext,
-  requireTenantContext,
 } from "@/lib/server/dal";
+import { recordActivityEvent } from "@/lib/server/activity";
+import { requirePrivilege } from "@/lib/server/permissions";
+import { getSupabaseAdminClient } from "@/lib/server/admin-supabase";
 import {
   checkoutLimiter,
   productMutationLimiter,
@@ -71,17 +71,10 @@ export async function checkoutAction(rawParams: unknown) {
   }
   const params = validation.data;
 
+  const { user, store, privilegeSource, delegationId } = await requirePrivilege("checkout.create", {
+    storeId: params.storeId,
+  });
   const supabase = await getSupabaseServerClient();
-  const { user, store } = await assertStoreAccess(params.storeId);
-
-  if (store.id !== params.storeId) {
-    await logAuthorizationDenied("CHECKOUT_AUTHZ_DENIED", "Checkout rejected due to store ownership mismatch", {
-      userId: user.id,
-      requestedStoreId: params.storeId,
-      actualStoreId: store.id,
-    });
-    throw new Error("Unauthorized: Store ownership mismatch");
-  }
 
   // User-scoped rate limiting: 10 checkouts per minute
   await enforceRateLimit(checkoutLimiter, `checkout:${user.id}`, "CHECKOUT");
@@ -119,10 +112,51 @@ export async function checkoutAction(rawParams: unknown) {
       errorMessage: rpcError.message,
     });
 
+    await recordActivityEvent({
+      storeId: store.id,
+      actor: user,
+      action: "checkout.failed",
+      actionScope: "checkout.create",
+      privilegeSource,
+      delegationId,
+      targetType: "invoice",
+      targetLabel: params.invoiceNumber,
+      result: "failure",
+      errorCode: "checkout_rpc_error",
+      summary: `${user.name} failed to create invoice.`,
+      metadata: {
+        itemCount: sortedItems.length,
+        totalAmount: params.totalAmount,
+        discountAmount: params.discountAmount,
+        paymentMethod: params.paymentMethod,
+      },
+    });
+
     throw new Error(rpcError.message);
   }
 
-  return getInvoiceReceiptDTO(returnedInvoiceId);
+  const invoice = await getInvoiceReceiptDTO(returnedInvoiceId);
+  await recordActivityEvent({
+    storeId: store.id,
+    actor: user,
+    action: "checkout.created",
+    actionScope: "checkout.create",
+    privilegeSource,
+    delegationId,
+    targetType: "invoice",
+    targetId: invoice.id,
+    targetLabel: invoice.invoice_number,
+    result: "success",
+    summary: `${user.name} created invoice ${invoice.invoice_number}.`,
+    metadata: {
+      itemCount: sortedItems.length,
+      totalAmount: invoice.total_amount,
+      discountAmount: invoice.discount_amount,
+      paymentMethod: invoice.payment_method,
+    },
+  });
+
+  return invoice;
 }
 
 export async function upsertProductAction(rawParams: unknown) {
@@ -132,8 +166,8 @@ export async function upsertProductAction(rawParams: unknown) {
   }
   const params = validation.data;
 
+  const { user, store, privilegeSource, delegationId } = await requirePrivilege("catalog.manage");
   const supabase = await getSupabaseServerClient();
-  const { user } = await requireOwnerContext();
 
   // User-scoped rate limiting: 20 product mutations per minute
   await enforceRateLimit(productMutationLimiter, `product:${user.id}`, "PRODUCT_UPSERT");
@@ -157,6 +191,24 @@ export async function upsertProductAction(rawParams: unknown) {
         errorMessage: error.message,
       });
     }
+    await recordActivityEvent({
+      storeId: store.id,
+      actor: user,
+      action: params.productId ? "product.update_failed" : "product.create_failed",
+      actionScope: "catalog.manage",
+      privilegeSource,
+      delegationId,
+      targetType: "product",
+      targetId: params.productId,
+      targetLabel: params.name,
+      result: "failure",
+      errorCode: "product_upsert_rpc_error",
+      summary: `${user.name} failed to save product ${params.name}.`,
+      metadata: {
+        variantCount: params.variants.length,
+        deletedVariantCount: params.deletedVariantIds.length,
+      },
+    });
     const msg = error.message.toLowerCase();
     if (
       msg.includes("product_variants_store_sku_key") ||
@@ -169,6 +221,25 @@ export async function upsertProductAction(rawParams: unknown) {
     throw new Error(error.message);
   }
 
+  await recordActivityEvent({
+    storeId: store.id,
+    actor: user,
+    action: params.productId ? "product.updated" : "product.created",
+    actionScope: "catalog.manage",
+    privilegeSource,
+    delegationId,
+    targetType: "product",
+    targetId: productId,
+    targetLabel: params.name,
+    result: "success",
+    summary: `${user.name} ${params.productId ? "updated" : "created"} product ${params.name}.`,
+    metadata: {
+      category: params.category,
+      variantCount: params.variants.length,
+      deletedVariantCount: params.deletedVariantIds.length,
+    },
+  });
+
   return productId;
 }
 
@@ -180,8 +251,8 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
   const products = validation.data;
   const total = products.length;
 
+  const { user: bulkUser, store, privilegeSource, delegationId } = await requirePrivilege("catalog.manage");
   const supabase = await getSupabaseServerClient();
-  const { user: bulkUser } = await requireOwnerContext();
 
   // User-scoped rate limiting: 2 bulk imports per 5 minutes
   await enforceRateLimit(bulkImportLimiter, `bulk:${bulkUser.id}`, "BULK_IMPORT");
@@ -266,6 +337,27 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
     }
   }
 
+  await recordActivityEvent({
+    storeId: store.id,
+    actor: bulkUser,
+    action: failedChunkError ? "product.import_failed" : "product.imported",
+    actionScope: "catalog.manage",
+    privilegeSource,
+    delegationId,
+    targetType: "catalog_import",
+    result: failedChunkError ? "failure" : "success",
+    errorCode: failedChunkError ? "bulk_import_chunk_error" : null,
+    summary: failedChunkError
+      ? `${bulkUser.name} imported ${succeededCount} products before a catalog import failure.`
+      : `${bulkUser.name} imported ${succeededCount} products.`,
+    metadata: {
+      requestedCount: total,
+      succeededCount,
+      failedCount: failedProducts.length,
+      skippedCount: skippedRemainder?.length ?? 0,
+    },
+  });
+
   return {
     succeededCount,
     failedProducts,
@@ -276,8 +368,8 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
 
 export async function deleteProductAction(productId: string) {
   const cleanProductId = z.string().uuid().parse(productId);
+  const { user, store, privilegeSource, delegationId } = await requirePrivilege("catalog.manage");
   const supabase = await getSupabaseServerClient();
-  const { user, store } = await requireOwnerContext();
 
   // User-scoped rate limiting: 20 product mutations per minute
   await enforceRateLimit(productMutationLimiter, `product:${user.id}`, "PRODUCT_DELETE");
@@ -294,6 +386,19 @@ export async function deleteProductAction(productId: string) {
       storeId: store.id,
       errorMessage: error.message,
     });
+    await recordActivityEvent({
+      storeId: store.id,
+      actor: user,
+      action: "product.delete_failed",
+      actionScope: "catalog.manage",
+      privilegeSource,
+      delegationId,
+      targetType: "product",
+      targetId: cleanProductId,
+      result: "failure",
+      errorCode: "product_delete_error",
+      summary: `${user.name} failed to delete product.`,
+    });
     throw new Error(error.message);
   }
 
@@ -302,6 +407,18 @@ export async function deleteProductAction(productId: string) {
     storeId: store.id,
     userId: user.id,
   });
+  await recordActivityEvent({
+    storeId: store.id,
+    actor: user,
+    action: "product.deleted",
+    actionScope: "catalog.manage",
+    privilegeSource,
+    delegationId,
+    targetType: "product",
+    targetId: cleanProductId,
+    result: "success",
+    summary: `${user.name} deleted a product.`,
+  });
 
   return true;
 }
@@ -309,8 +426,11 @@ export async function deleteProductAction(productId: string) {
 export async function adjustStockAction(variantId: string, newStock: number) {
   const cleanVariantId = z.string().uuid().parse(variantId);
   const cleanStock = z.number().int().nonnegative().parse(newStock);
-  const supabase = await getSupabaseServerClient();
-  const { user, store } = await requireOwnerContext();
+  const { user, store, privilegeSource, delegationId, delegationGrantorUserId } =
+    await requirePrivilege("inventory.adjust");
+  const supabase = privilegeSource === "delegation"
+    ? getSupabaseAdminClient()
+    : await getSupabaseServerClient();
 
   // User-scoped rate limiting: 30 stock/UI mutations per minute
   await enforceRateLimit(uiMutationLimiter, `ui:${user.id}`, "STOCK_ADJUST");
@@ -348,8 +468,46 @@ export async function adjustStockAction(variantId: string, newStock: number) {
       storeId: store.id,
       errorMessage: error.message,
     });
+    await recordActivityEvent({
+      storeId: store.id,
+      actor: user,
+      action: "inventory.adjust_failed",
+      actionScope: "inventory.adjust",
+      privilegeSource,
+      delegationId,
+      targetType: "variant",
+      targetId: cleanVariantId,
+      result: "failure",
+      errorCode: "stock_adjust_error",
+      summary: `${user.name} failed to adjust stock.`,
+      metadata: {
+        newStock: cleanStock,
+        ...(delegationGrantorUserId ? { delegationGrantorUserId } : {}),
+      },
+    });
     throw new Error(error.message);
   }
+
+  await recordActivityEvent({
+    storeId: store.id,
+    actor: user,
+    action: "inventory.adjusted",
+    actionScope: "inventory.adjust",
+    privilegeSource,
+    delegationId,
+    targetType: "variant",
+    targetId: cleanVariantId,
+    result: "success",
+    summary: privilegeSource === "delegation"
+      ? `${user.name} adjusted stock with temporary access.`
+      : `${user.name} adjusted stock.`,
+    afterState: {
+      quantity: cleanStock,
+    },
+    metadata: {
+      ...(delegationGrantorUserId ? { delegationGrantorUserId } : {}),
+    },
+  });
 
   return true;
 }
@@ -357,8 +515,8 @@ export async function adjustStockAction(variantId: string, newStock: number) {
 export async function toggleProductFavoriteAction(productId: string, isFavorite: boolean) {
   const cleanProductId = z.string().uuid().parse(productId);
   const cleanIsFavorite = z.boolean().parse(isFavorite);
+  const { user, store, privilegeSource, delegationId } = await requirePrivilege("catalog.manage");
   const supabase = await getSupabaseServerClient();
-  const { user, store } = await requireOwnerContext();
 
   // Verify product ownership before updating to prevent cross-tenant parameter spoofing (BOLA)
   const { data: product, error: prodError } = await supabase
@@ -397,8 +555,40 @@ export async function toggleProductFavoriteAction(productId: string, isFavorite:
       storeId: store.id,
       errorMessage: error.message,
     });
+    await recordActivityEvent({
+      storeId: store.id,
+      actor: user,
+      action: "favorite.toggle_failed",
+      actionScope: "catalog.manage",
+      privilegeSource,
+      delegationId,
+      targetType: "product",
+      targetId: cleanProductId,
+      result: "failure",
+      errorCode: "favorite_toggle_error",
+      summary: `${user.name} failed to update a product favorite.`,
+      metadata: {
+        isFavorite: cleanIsFavorite,
+      },
+    });
     throw new Error(error.message);
   }
+
+  await recordActivityEvent({
+    storeId: store.id,
+    actor: user,
+    action: "favorite.toggled",
+    actionScope: "catalog.manage",
+    privilegeSource,
+    delegationId,
+    targetType: "product",
+    targetId: cleanProductId,
+    result: "success",
+    summary: `${user.name} ${cleanIsFavorite ? "marked" : "unmarked"} a product as favorite.`,
+    afterState: {
+      isFavorite: cleanIsFavorite,
+    },
+  });
 
   return true;
 }
@@ -430,8 +620,8 @@ export async function updateStoreAction(rawParams: unknown) {
   }
   const data = validation.data;
 
+  const { user, store, privilegeSource, delegationId } = await requirePrivilege("store.settings");
   const supabase = await getSupabaseServerClient();
-  const { user, store } = await requireOwnerContext();
 
   // Rate limit: UI mutations (30/min/user)
   await enforceRateLimit(uiMutationLimiter, `ui:${user.id}`, "STORE_UPDATE");
@@ -446,7 +636,40 @@ export async function updateStoreAction(rawParams: unknown) {
     })
     .eq("id", store.id);
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    await recordActivityEvent({
+      storeId: store.id,
+      actor: user,
+      action: "store.update_failed",
+      actionScope: "store.settings",
+      privilegeSource,
+      delegationId,
+      targetType: "store",
+      targetId: store.id,
+      targetLabel: store.name,
+      result: "failure",
+      errorCode: "store_update_error",
+      summary: `${user.name} failed to update store settings.`,
+    });
+    throw new Error(error.message);
+  }
+
+  await recordActivityEvent({
+    storeId: store.id,
+    actor: user,
+    action: "store.updated",
+    actionScope: "store.settings",
+    privilegeSource,
+    delegationId,
+    targetType: "store",
+    targetId: store.id,
+    targetLabel: data.name,
+    result: "success",
+    summary: `${user.name} updated store settings.`,
+    metadata: {
+      changedFields: ["name", "phone", "address", "pan_vat"],
+    },
+  });
   return true;
 }
 
@@ -457,8 +680,8 @@ export async function updateProfileAction(rawParams: unknown) {
   }
   const data = validation.data;
 
+  const { user, privilegeSource, delegationId } = await requirePrivilege("profile.update");
   const supabase = await getSupabaseServerClient();
-  const { user } = await requireTenantContext();
 
   // Rate limit: UI mutations (30/min/user)
   await enforceRateLimit(uiMutationLimiter, `ui:${user.id}`, "PROFILE_UPDATE");
@@ -468,7 +691,38 @@ export async function updateProfileAction(rawParams: unknown) {
     .update({ name: data.name })
     .eq("id", user.id);
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    await recordActivityEvent({
+      storeId: user.store_id,
+      actor: user,
+      action: "profile.update_failed",
+      privilegeSource,
+      delegationId,
+      targetType: "user",
+      targetId: user.id,
+      targetLabel: user.name,
+      result: "failure",
+      errorCode: "profile_update_error",
+      summary: `${user.name} failed to update profile settings.`,
+    });
+    throw new Error(error.message);
+  }
+
+  await recordActivityEvent({
+    storeId: user.store_id,
+    actor: {
+      ...user,
+      name: data.name,
+    },
+    action: "profile.updated",
+    privilegeSource,
+    delegationId,
+    targetType: "user",
+    targetId: user.id,
+    targetLabel: data.name,
+    result: "success",
+    summary: `${data.name} updated their profile.`,
+  });
   return true;
 }
 

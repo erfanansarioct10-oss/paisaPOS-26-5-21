@@ -41,6 +41,13 @@ export default function ReceiptModal() {
     }
   };
 
+  const sellerName = activeInvoice.sold_by_name?.trim() || "Not recorded";
+  const sellerRole =
+    activeInvoice.sold_by_role === "owner"
+      ? "Owner"
+      : activeInvoice.sold_by_role === "cashier"
+        ? "Cashier"
+        : null;
   const subtotal = activeInvoiceItems.reduce((sum, item) => sum + item.subtotal, 0);
 
   return (
@@ -98,6 +105,13 @@ export default function ReceiptModal() {
               <div className="flex justify-between">
                 <span className="text-slate-500">Payment Method:</span>
                 <span className="font-medium">{activeInvoice.payment_method}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-slate-500">Sold By:</span>
+                <span className="text-right font-medium">
+                  {sellerName}
+                  {sellerRole && <span className="font-normal text-slate-500"> ({sellerRole})</span>}
+                </span>
               </div>
 
               {/* Customer details */}

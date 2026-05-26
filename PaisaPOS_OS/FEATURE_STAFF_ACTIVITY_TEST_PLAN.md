@@ -1,8 +1,8 @@
 # TEST AND CONFIRMATION PLAN: STAFF, ACTIVITY, AND ACCOUNTABILITY
 
-Version: 1.0  
-Status: PLANNED  
-Last Updated: 2026-05-25
+Version: 1.1
+Status: IN PROGRESS - SLICES 1-6 VERIFIED, SLICE 7 INVENTORY PASS VERIFIED LOCALLY AND CURRENT GRANTS LIMITED TO INVENTORY
+Last Updated: 2026-05-26 07:25 NPT
 
 ---
 
@@ -18,6 +18,37 @@ This plan proves that Beta V1.1 staff/accountability features are:
 - explainable to store owners
 
 Testing must happen on local/dev Supabase first.
+
+Current progress snapshot:
+
+| Area | Status | Proof |
+|---|---|---|
+| Slice 1 activity foundation | Verified locally | Migration, helper tests, live RLS tests, business action logging wiring |
+| Slice 2 sold-by attribution | Verified locally | Live checkout/RLS tests for owner, cashier, and spoof denial |
+| Slice 3 owner Activity page | Verified locally | DAL helper tests, activity RLS pagination, Playwright Activity smoke |
+| Slice 4 staff directory/invites | Verified locally | Staff migration hardening, invitation RLS, suspended cashier denial, Playwright Staff smoke |
+| Slice 5 permission helper | Verified locally | Central helper, shared UI capability flags, selected Server Action rewiring, permission matrix tests, and direct Server Action abuse tests |
+| Slice 6 delegation foundation | Verified locally | Delegation schema/RLS, owner grant/revoke actions, database-backed `requirePrivilege()`, Staff UI controls, cashier banner, migration/action/RLS tests |
+| Slice 7 delegated action coverage | Partially verified locally | Inventory adjustment now works end to end through delegated UI/state, Server Action authz, admin-backed write, activity delegation proof; current grant/action surface is restricted to `inventory.adjust`; catalog edit/import still pending |
+| Slice 8 release proof | Not started | Runs after feature/test coverage is complete |
+
+Latest local gate status:
+
+```bash
+npm run lint                                      # passed
+npm run build                                     # passed
+npx vitest run src/lib/__tests__/staff-capabilities.test.ts src/lib/server/__tests__/permissions.test.ts src/app/__tests__/server-action-permissions.test.ts src/lib/server/__tests__/activity-dal.test.ts --sequence.concurrent=false
+                                                  # passed: 4 files, 41 tests
+npx vitest run src/lib/store/__tests__/rls-verification.test.ts --sequence.concurrent=false
+                                                  # passed: 1 file, 4 live RLS tests
+npm test                                          # passed: 17 files, 147 tests
+npm run test:e2e -- --project=chromium            # passed: 17 tests
+supabase db reset                                 # prior pass through 20260525151258_add_privilege_delegations.sql; no new Slice 7 migration
+supabase db lint --local --fail-on error          # prior pass: no schema errors; no new Slice 7 migration
+supabase migration list --local                   # prior local migration list visible through privilege delegations
+git diff --check                                  # passed: CRLF warnings only
+npm audit --audit-level=high                      # prior pass: 0 vulnerabilities; no package changes
+```
 
 Production rule:
 
@@ -116,36 +147,56 @@ Expected:
 
 Add tests for `requirePrivilege`:
 
-- owner passes `catalog.manage`
-- owner passes `staff.manage`
-- active cashier passes `checkout.create`
-- cashier fails `catalog.manage` without delegation
-- cashier passes `catalog.manage` with active delegation
-- cashier fails when delegation is expired
-- cashier fails when delegation is revoked
-- suspended cashier fails every scope
-- deleted/missing profile fails every scope
+- [x] owner passes `catalog.manage`
+- [x] owner passes `staff.manage`
+- [x] active cashier passes `checkout.create`
+- [x] cashier fails `catalog.manage` without delegation
+- [x] cashier passes `catalog.manage` with active delegation in the pure decision model
+- [x] cashier fails when delegation is expired in the pure decision model
+- [x] cashier fails when delegation is revoked in the pure decision model
+- [x] cashier passes a delegatable scope through database-backed `requirePrivilege()` lookup
+- [x] database-backed `requirePrivilege()` only checks currently released delegated action scopes (`inventory.adjust`) even though future scopes remain modeled
+- [x] expired delegation fails in database-backed `requirePrivilege()` lookup
+- [x] revoked delegation fails in database-backed `requirePrivilege()` lookup
+- [x] suspended cashier fails every scope
+- [x] deleted/missing profile fails every scope
+
+## UI capability helper tests
+
+- [x] active owner maps to catalog, inventory, staff, activity, store settings, checkout, and profile capabilities
+- [x] active cashier maps only to checkout and profile baseline capabilities
+- [x] suspended or missing profile maps to no UI capabilities
+- [x] delegatable scope list excludes staff and activity management
+- [x] current temporary access grant surface exposes only `inventory.adjust` until catalog/report/invoice delegation is implemented
+- [x] Inventory add/import/edit/delete/favorite controls render from `canManageCatalog`
+- [x] Inventory stock adjustment controls render from `canAdjustInventory`
+- [x] Sidebar Staff and Activity links render from `canManageStaff` and `canReadActivity`
+- [x] Store settings form renders from `canManageStoreSettings`; profile update remains available through `canUpdateProfile`
+- [x] Staff page renders grant temporary access controls for active cashiers
+- [x] Staff page renders active temporary access records with revoke controls
+- [x] Cashier shell renders a temporary access banner from own active delegation reads
+- [x] Cashier Inventory page shows stock adjustment controls only when an active `inventory.adjust` delegation exists
 
 ## Activity serializer tests
 
 Test `recordActivityEvent`:
 
-- redacts sensitive keys
-- rejects oversized metadata
-- stores actor snapshot
-- stores delegation id when present
-- rejects missing store id
-- rejects missing target type
-- rejects invalid action names if using enum/allowlist
+- [x] redacts sensitive keys
+- [x] bounds oversized metadata
+- [x] stores actor snapshot
+- [x] stores delegation id when present
+- [ ] rejects missing store id
+- [ ] rejects missing target type
+- [ ] rejects invalid action names if using enum/allowlist
 
 ## Staff invite validation tests
 
-- invalid email rejected
-- role other than cashier rejected
-- duplicate pending invite rejected
-- inviting self rejected
-- cross-store invite rejected
-- expired invite rejected on accept
+- [ ] invalid email rejected by direct action test
+- [x] role other than cashier rejected by schema/database design
+- [x] duplicate pending invite rejected by unique pending invite index
+- [x] inviting self rejected by Server Action
+- [x] cross-store invite visibility denied by live RLS test
+- [ ] expired invite rejected on accept by direct action/live test
 
 ---
 
@@ -163,35 +214,36 @@ Create:
 
 Assertions:
 
-- owner A can create invite for C into store A
-- owner B cannot read store A invite
-- cashier C cannot accept invite if signed in as a different email
-- cashier C cannot change invite store id
-- owner B cannot revoke owner A invite
+- [x] owner A can create invite for C into store A through server/admin path
+- [x] owner B cannot read store A invite
+- [ ] cashier C cannot accept invite if signed in as a different email
+- [x] cashier C cannot change invite store id through direct browser DML
+- [ ] owner B cannot revoke owner A invite through Server Action
 
 ## Activity isolation
 
 Assertions:
 
-- owner A can read store A activity
-- owner A cannot read store B activity
-- cashier A can read own activity only
-- cashier A cannot insert activity directly
-- cashier A cannot update/delete activity directly
-- service/server path can record activity
+- [x] owner A can read store A activity
+- [x] owner A cannot read store B activity
+- [x] cashier A can read own activity only
+- [x] cashier A cannot insert activity directly
+- [x] cashier A cannot update/delete activity directly
+- [x] service/server path can record activity
 
 ## Delegation isolation
 
 Assertions:
 
-- owner A can grant cashier A `inventory.adjust`
-- cashier A can adjust stock through Server Action during active delegation
-- cashier A cannot mutate product table directly through Data API
-- cashier A cannot grant delegation
-- cashier A cannot add `staff.manage`
-- owner B cannot revoke delegation from store A
-- revoked delegation denies the next action
-- expired delegation denies the next action
+- [x] owner A can grant cashier A `inventory.adjust`
+- [x] owner grant action rejects unreleased scopes such as `catalog.manage` before admin writes
+- [x] cashier A can adjust stock through Server Action during active delegation using the delegated-safe server write path
+- [x] cashier A cannot mutate product table directly through Data API
+- [x] cashier A cannot grant delegation
+- [x] cashier A cannot add `staff.manage`
+- [x] owner B cannot read delegation from store A through RLS
+- [x] revoked delegation denies the next action in the action permission path
+- [x] expired delegation denies the next action in the action permission path
 
 ---
 
@@ -309,23 +361,27 @@ Test 320px and tablet widths:
 
 Using anon/authenticated Supabase client:
 
-- cashier attempts `insert` into `activity_events` -> denied
-- cashier attempts `insert` into `privilege_delegations` -> denied
-- cashier attempts `update users set role='owner'` -> denied
-- cashier attempts `update products` without delegation through Data API -> denied or not relied on
-- owner from another store attempts to read invite/activity -> denied
+- [x] cashier attempts `insert` into `activity_events` -> denied
+- [x] cashier attempts `insert` into `privilege_delegations` -> denied
+- [x] cashier attempts `update users set role='owner'` -> denied
+- [x] cashier attempts `update products` without delegation through Data API -> denied or not relied on
+- [x] owner from another store attempts to read invite/activity/delegation -> denied
 
 ## Server Action abuse
 
 Call actions programmatically:
 
-- missing auth -> denied
-- wrong store id -> denied
-- tampered invitation id -> denied
-- expired delegation -> denied
-- revoked delegation -> denied
-- forged role payload -> ignored
-- forged actor id payload -> ignored
+- [x] missing auth -> denied before privileged side effects
+- [x] wrong store id -> denied before checkout RPC access
+- [ ] tampered invitation id -> denied for owner cross-store lifecycle action
+- [x] expired delegation -> denied in database-backed action path
+- [x] revoked delegation -> denied in database-backed action path
+- [x] forged role payload -> ignored
+- [x] forged actor id payload -> ignored
+- [x] active cashier direct calls to catalog/import/delete/favorite/inventory/store/staff management actions are denied before business mutation/rate-limit/activity side effects; only currently released delegated scopes may perform the required delegation lookup first
+- [x] active delegated cashier inventory adjustment writes activity with `privilegeSource: "delegation"`, delegation id, and grantor user id metadata
+- [x] suspended cashier direct checkout is denied before checkout RPC access
+- [x] active cashier direct checkout and profile update still succeed with `cashier_role` activity attribution
 
 ## Log privacy
 
@@ -431,4 +487,3 @@ V1.1 Staff + Activity can be considered beta-ready only when:
 - audit/activity tables are immutable to browser clients
 - no production backend is used by V1.1 preview/dev testing
 - release gates pass
-

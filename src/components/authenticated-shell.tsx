@@ -3,9 +3,10 @@
 import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAppStore } from "@/lib/store/useAppStore";
+import { formatStaffPrivilege, type StaffPrivilege } from "@/lib/staff-capabilities";
 import Sidebar from "@/components/sidebar";
 import ReceiptModal from "@/components/receipt-modal";
-import { Loader2, Store, WifiOff } from "lucide-react";
+import { Clock3, KeyRound, Loader2, Store, WifiOff } from "lucide-react";
 import { ErrorBoundary } from "@/components/error-boundary";
 
 export default function AuthenticatedShell({
@@ -23,6 +24,7 @@ export default function AuthenticatedShell({
     initializeSession,
     errorMsg,
     clearError,
+    activeDelegations,
   } = useAppStore();
 
   useEffect(() => {
@@ -92,6 +94,26 @@ export default function AuthenticatedShell({
           <div id="offline-warning-banner" className="bg-amber-500/90 backdrop-blur text-slate-950 px-4 py-2.5 text-xs font-semibold flex items-center justify-center gap-2 border-b border-amber-600/30 animate-slide-down shrink-0">
             <WifiOff className="w-4 h-4 text-slate-950 animate-pulse" />
             <span>Offline Mode - Connection lost. All actions will fail until internet access is restored.</span>
+          </div>
+        )}
+
+        {user.role === "cashier" && activeDelegations.length > 0 && (
+          <div className="bg-primary/10 text-primary px-4 py-2.5 text-xs font-semibold flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-primary/20 shrink-0">
+            <span className="inline-flex items-center gap-2">
+              <KeyRound className="w-4 h-4" />
+              Temporary access active
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-foreground/80">
+              {activeDelegations.map((delegation) => formatStaffPrivilege(delegation.scope as StaffPrivilege)).join(", ")}
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+              <Clock3 className="w-3.5 h-3.5" />
+              Expires {new Date(activeDelegations[0].expires_at).toLocaleTimeString("en-NP", {
+                timeZone: "Asia/Kathmandu",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
           </div>
         )}
 

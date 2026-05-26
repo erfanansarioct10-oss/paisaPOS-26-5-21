@@ -74,6 +74,22 @@ export default function DashboardTab() {
     }
   };
 
+  const formatSeller = (invoice: Invoice) => {
+    const sellerName = invoice.sold_by_name?.trim();
+    const sellerRole =
+      invoice.sold_by_role === "owner"
+        ? "Owner"
+        : invoice.sold_by_role === "cashier"
+          ? "Cashier"
+          : null;
+
+    if (!sellerName) {
+      return "Sold by: Not recorded";
+    }
+
+    return `Sold by: ${sellerName}${sellerRole ? ` (${sellerRole})` : ""}`;
+  };
+
   // View receipt detail
   const handleViewReceipt = async (invoice: Invoice) => {
     // Search cached line items or load them dynamically
@@ -255,6 +271,9 @@ export default function DashboardTab() {
                         {inv.customer_phone && (
                           <p className="text-xs text-muted-foreground">{inv.customer_phone}</p>
                         )}
+                        <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                          {formatSeller(inv)}
+                        </p>
                       </td>
                       <td className="px-5 py-3.5 font-bold text-foreground">
                         {formatCurrency(inv.total_amount)}
