@@ -3,26 +3,39 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { recordActivityEvent } from "@/lib/server/activity";
-import { getSupabaseAdminClient, type StaffInvitationRow, type StaffProfileRow } from "@/lib/server/admin-supabase";
-import { getSupabaseServerClient } from "@/lib/server/dal";
-import { requirePrivilege } from "@/lib/server/permissions";
+import { recordActivityEvent } from "@/server/activity/activity";
+import {
+  getSupabaseAdminClient,
+  getSupabaseEmailAuthClient,
+  type StaffLifecycleRpcResult,
+  type StaffInviteAcceptanceResult,
+  type StaffProfileRow,
+} from "@/server/supabase/admin-supabase";
+import { getSupabaseServerClient } from "@/server/supabase/dal";
+import { logRawServerError } from "@/server/logging/error-logging";
+import { requirePrivilege } from "@/server/auth/permissions";
 import { ACTIVE_STAFF_DELEGATION_PRIVILEGES, formatStaffPrivilege } from "@/lib/staff-capabilities";
 import {
   delegationGrantLimiter,
   delegationRevokeLimiter,
   enforceRateLimit,
+  getClientIp,
+  staffInviteAcceptLimiter,
   staffInviteLimiter,
   staffLifecycleLimiter,
-} from "@/lib/rate-limiter";
+} from "@/server/rate-limit/rate-limiter";
 import {
   MAX_EMAIL_LENGTH,
+  MAX_PASSWORD_LENGTH,
   formatZodError,
   getFriendlyErrorMessage,
   normalizeEmail,
   sanitizeString,
   validateAuthStringSafety,
+  validatePasswordComplexity,
 } from "@/lib/security";
+import { staffAcceptPath } from "@/lib/invite-redirect";
+import { getStaffInvitePreview } from "@/server/staff/staff-invite-preview";
 
 export type StaffActionState = {
   success: boolean;
@@ -32,6 +45,18 @@ export type StaffActionState = {
 };
 
 const staffInitialError = "We could not update staff access. Please try again.";
+const delegationStepUpPurpose = "delegation.grant";
+const delegationStepUpMaxAgeMs = 10 * 60 * 1000;
+const delegationStepUpProofTtlMs = 5 * 60 * 1000;
+const staffInviteValidityMs = 48 * 60 * 60 * 1000;
+
+export type DelegationStepUpProofState = {
+  success: boolean;
+  proofId?: string;
+  expiresAt?: string;
+  error?: string;
+  updatedAt?: number;
+};
 
 const staffEmailSchema = z.preprocess(
   (value) => (typeof value === "string" ? normalizeEmail(value) : value),
@@ -50,6 +75,37 @@ const invitationIdSchema = z.object({
   invitationId: z.string().uuid("Invalid invitation id."),
 });
 
+const staffAcceptPasswordSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.length > 0 ? value : undefined),
+  z.string()
+    .min(8, "Password must be at least 8 characters.")
+    .max(MAX_PASSWORD_LENGTH, "Password must be 256 characters or fewer.")
+    .refine(validateAuthStringSafety, "Password contains unsupported control characters.")
+    .refine(
+      validatePasswordComplexity,
+      "Password must contain at least one lowercase letter, one uppercase letter, and one number.",
+    )
+    .optional(),
+);
+
+const staffAcceptInviteSchema = z.object({
+  invitationId: z.string().uuid("Invalid invitation id."),
+  fullName: z.string()
+    .min(1, "Full name is required.")
+    .max(100, "Full name must be 100 characters or fewer.")
+    .refine(validateAuthStringSafety, "Full name contains unsupported control characters.")
+    .transform(sanitizeString)
+    .refine((value) => value.length > 0, "Full name is required."),
+  password: staffAcceptPasswordSchema,
+  confirmPassword: z.preprocess(
+    (value) => (typeof value === "string" && value.length > 0 ? value : undefined),
+    z.string().optional(),
+  ),
+}).refine((value) => !value.password || value.password === value.confirmPassword, {
+  message: "Passwords do not match.",
+  path: ["confirmPassword"],
+});
+
 const staffUserIdSchema = z.object({
   userId: z.string().uuid("Invalid staff user id."),
 });
@@ -57,6 +113,30 @@ const staffUserIdSchema = z.object({
 const privilegeDelegationIdSchema = z.object({
   delegationId: z.string().uuid("Invalid delegation id."),
 });
+
+function confirmTextSchema(expected: string, message: string) {
+  return z.preprocess(
+    (value) => (typeof value === "string" ? value.trim().toUpperCase() : ""),
+    z.string().refine((value) => value === expected, { message }),
+  );
+}
+
+const revokeStaffInviteSchema = invitationIdSchema.extend({
+  confirmText: confirmTextSchema("REVOKE", "Type REVOKE to revoke this invitation."),
+});
+
+const suspendStaffSchema = staffUserIdSchema.extend({
+  confirmText: confirmTextSchema("SUSPEND", "Type SUSPEND to suspend this cashier."),
+});
+
+const revokePrivilegeDelegationSchema = privilegeDelegationIdSchema.extend({
+  confirmText: confirmTextSchema("REVOKE", "Type REVOKE to revoke temporary access."),
+});
+
+const optionalStepUpProofIdSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined),
+  z.string().uuid("Invalid step-up proof.").optional(),
+);
 
 const grantDelegationSchema = z.object({
   userId: z.string().uuid("Invalid staff user id."),
@@ -74,19 +154,39 @@ const grantDelegationSchema = z.object({
     .max(300, "Reason must be 300 characters or fewer.")
     .refine(validateAuthStringSafety, "Reason contains unsupported control characters.")
     .transform(sanitizeString),
-  confirmText: z.string().transform((value) => value.trim().toUpperCase()),
-}).refine((value) => value.confirmText === "GRANT", {
-  message: "Type GRANT to confirm temporary access.",
-  path: ["confirmText"],
+  confirmText: confirmTextSchema("GRANT", "Type GRANT to confirm temporary access."),
+  stepUpProofId: optionalStepUpProofIdSchema,
 });
 
-type AuthAdminUser = {
-  id: string;
-  email?: string;
-  user_metadata?: Record<string, unknown>;
-};
+const staffInviteAcceptanceResultSchema = z.object({
+  invitationId: z.string().uuid(),
+  storeId: z.string().uuid(),
+  acceptedAt: z.string().min(1),
+  actorName: z.string().min(1),
+  actorEmail: staffEmailSchema,
+  profileDisposition: z.enum(["created", "attached", "existing"]),
+  previousProfile: z.unknown().nullable(),
+});
 
-type DelegatableStaffPrivilege = (typeof ACTIVE_STAFF_DELEGATION_PRIVILEGES)[number];
+const staffLifecycleRpcResultSchema = z.object({
+  ok: z.boolean(),
+  code: z.string().min(1),
+  message: z.string().optional(),
+  storeId: z.string().uuid().optional(),
+  invitationId: z.string().uuid().optional(),
+  delegationId: z.string().uuid().optional(),
+  targetId: z.string().uuid().optional(),
+  targetLabel: z.string().nullable().optional(),
+  email: z.string().optional(),
+  scope: z.enum(ACTIVE_STAFF_DELEGATION_PRIVILEGES).optional(),
+  actorName: z.string().optional(),
+  expiresAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+function parseStaffLifecycleRpcResult(value: unknown): StaffLifecycleRpcResult | null {
+  return staffLifecycleRpcResultSchema.nullable().parse(value) as StaffLifecycleRpcResult | null;
+}
 
 function errorState(error: unknown, fallback = staffInitialError): StaffActionState {
   return {
@@ -96,29 +196,268 @@ function errorState(error: unknown, fallback = staffInitialError): StaffActionSt
   };
 }
 
+function getInviteAcceptanceErrorMessage(error: unknown) {
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === "object" && error && "message" in error
+      ? String((error as { message?: unknown }).message ?? "")
+      : String(error ?? "");
+
+  if (/staff_invitation_auth_required/i.test(message)) {
+    return "Please sign in with the invited email first.";
+  }
+  if (/staff_invitation_not_found/i.test(message)) {
+    return "Invitation not found.";
+  }
+  if (/staff_invitation_not_pending/i.test(message)) {
+    return "This invitation is no longer pending.";
+  }
+  if (/staff_invitation_expired/i.test(message)) {
+    return "This invitation has expired. Ask the owner to send a new one.";
+  }
+  if (/staff_invitation_email_mismatch/i.test(message)) {
+    return "This invite belongs to a different email address.";
+  }
+  if (/staff_invitation_store_conflict/i.test(message)) {
+    return "This account is already connected to another store.";
+  }
+  if (/staff_invitation_suspended_profile/i.test(message)) {
+    return "This staff account is suspended.";
+  }
+  if (/staff_invitation_role_conflict/i.test(message)) {
+    return "This invite can only be accepted by a cashier account.";
+  }
+  if (/staff_invitation_store_missing/i.test(message)) {
+    return "This invitation is no longer valid. Ask the owner to send a new one.";
+  }
+
+  return null;
+}
+
+function inviteAcceptanceErrorState(error: unknown): StaffActionState {
+  return {
+    success: false,
+    error: getInviteAcceptanceErrorMessage(error) ?? getFriendlyErrorMessage(error) ?? staffInitialError,
+    updatedAt: Date.now(),
+  };
+}
+
+function staffLifecycleRpcMessage(result: StaffLifecycleRpcResult | null, fallback = staffInitialError) {
+  if (!result) return fallback;
+  if (result.message) return getFriendlyErrorMessage(result.message);
+
+  switch (result.code) {
+    case "staff_invitation_not_found":
+      return "Invitation not found.";
+    case "staff_invitation_not_pending":
+      return "This invitation is no longer pending.";
+    case "staff_lifecycle_unauthorized":
+      return "You do not have permission to update staff access.";
+    case "staff_self_suspension_denied":
+      return "Owners cannot suspend their own account.";
+    case "staff_profile_not_found":
+      return "Cashier profile not found.";
+    case "staff_already_suspended":
+      return "This cashier is already suspended.";
+    case "staff_already_active":
+      return "This cashier is already active.";
+    case "delegation_not_found":
+      return "Temporary access record not found.";
+    case "delegation_already_revoked":
+      return "Temporary access is already revoked.";
+    case "delegation_self_grant_denied":
+      return "Owners cannot delegate temporary access to themselves.";
+    case "delegation_scope_not_allowed":
+      return "Choose an allowed temporary access scope.";
+    case "delegation_duration_invalid":
+      return "Choose a valid duration.";
+    case "delegation_reason_invalid":
+      return "Reason must be at least 5 characters.";
+    case "step_up_required":
+      return "Verify your identity with MFA before granting temporary access.";
+    case "step_up_invalid_or_expired":
+      return "Your identity verification expired. Enter a fresh MFA code and try again.";
+    case "staff_not_active":
+      return "Temporary access can only be granted to active cashiers.";
+    case "delegation_already_active":
+      return result.targetLabel && result.scope
+        ? `${formatStaffPrivilege(result.scope)} is already active for ${result.targetLabel}.`
+        : "Temporary access is already active for this cashier.";
+    default:
+      return fallback;
+  }
+}
+
+function lifecycleFailureState(result: StaffLifecycleRpcResult | null, fallback = staffInitialError): StaffActionState {
+  return {
+    success: false,
+    error: staffLifecycleRpcMessage(result, fallback),
+    updatedAt: Date.now(),
+  };
+}
+
+async function logStaffActionError(
+  category: string,
+  error: unknown,
+  metadata: Record<string, unknown> = {},
+) {
+  await logRawServerError(category, "Staff action failed", error, metadata);
+}
+
+async function recordStaffActivityEvent(input: Parameters<typeof recordActivityEvent>[0]) {
+  return recordActivityEvent(input, { strict: true });
+}
+
+function getStaffInviteExpiresAt() {
+  return new Date(Date.now() + staffInviteValidityMs).toISOString();
+}
+
+function isLocalAuthAdminUnavailable(error: { message?: string } | null | undefined) {
+  return Boolean(
+    process.env.NODE_ENV !== "production" &&
+      error?.message &&
+      /invalid jwt|signing method/i.test(error.message),
+  );
+}
+
+const productionAppOriginFallback = "https://paisa-pos-26-5-21.vercel.app";
+
+function normalizeAppOrigin(value: string | null | undefined) {
+  if (!value) return null;
+
+  const candidate = value.trim();
+  if (!candidate) return null;
+
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function getVercelAppOrigin() {
+  const vercelUrl = process.env.VERCEL_URL || process.env.NEXT_PUBLIC_VERCEL_URL;
+  if (!vercelUrl) return null;
+
+  return normalizeAppOrigin(vercelUrl.startsWith("http") ? vercelUrl : `https://${vercelUrl}`);
+}
+
 async function getAppUrl() {
-  if (process.env.APP_URL) return process.env.APP_URL;
-  if (process.env.NEXT_PUBLIC_VERCEL_URL) return `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`;
+  const configuredOrigin = normalizeAppOrigin(process.env.APP_URL);
+  const vercelOrigin = getVercelAppOrigin();
+  if (process.env.VERCEL_ENV === "preview" && vercelOrigin) return vercelOrigin;
+  if (configuredOrigin) return configuredOrigin;
+  if (vercelOrigin) return vercelOrigin;
+
   if (process.env.NODE_ENV !== "production") {
     const head = await headers();
     const host = head.get("host") || "localhost:3000";
-    const proto = head.get("x-forwarded-proto") || "http";
+    const proto = head.get("x-forwarded-proto") === "https" ? "https" : "http";
+    if (!/^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(host)) {
+      return "http://localhost:3000";
+    }
     return `${proto}://${host}`;
   }
-  return "https://paisa-pos-26-5-21.vercel.app";
+
+  return productionAppOriginFallback;
 }
 
-function fallbackNameFromEmail(email: string) {
-  const localPart = email.split("@")[0] || "Cashier";
-  return sanitizeString(localPart.replace(/[._-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase())).slice(0, 100) || "Cashier";
-}
+async function sendStaffInviteEmail(
+  adminClient: ReturnType<typeof getSupabaseAdminClient>,
+  input: {
+    email: string;
+    invitationId: string;
+    storeId: string;
+  },
+) {
+  const appUrl = await getAppUrl();
+  const acceptPath = staffAcceptPath(input.invitationId);
+  const redirectTo = `${appUrl}${acceptPath}`;
 
-function displayNameFromAuthUser(user: AuthAdminUser, email: string) {
-  const metadataName = user.user_metadata?.full_name ?? user.user_metadata?.name;
-  if (typeof metadataName === "string" && sanitizeString(metadataName)) {
-    return sanitizeString(metadataName).slice(0, 100);
+  const inviteResult = await adminClient.auth.admin.inviteUserByEmail(input.email, {
+    data: {
+      invitation_id: input.invitationId,
+      invited_role: "cashier",
+      invited_store_id: input.storeId,
+    },
+    redirectTo,
+  });
+
+  if (!isAuthUserAlreadyExists(inviteResult.error)) {
+    return inviteResult;
   }
-  return fallbackNameFromEmail(email);
+
+  const emailAuthClient = getSupabaseEmailAuthClient();
+  return emailAuthClient.auth.signInWithOtp({
+    email: input.email,
+    options: {
+      shouldCreateUser: false,
+      emailRedirectTo: redirectTo,
+    },
+  });
+}
+
+function isAuthUserAlreadyExists(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+
+  const authError = error as { code?: unknown; message?: unknown; status?: unknown };
+  if (authError.code === "email_exists" || authError.code === "user_already_exists") {
+    return true;
+  }
+
+  const message = typeof authError.message === "string" ? authError.message.toLowerCase() : "";
+  return (
+    authError.status === 422 &&
+    (
+      message.includes("already registered") ||
+      message.includes("already been registered") ||
+      message.includes("user already exists")
+    )
+  );
+}
+
+function getAuthMethodTimestampSeconds(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function getFreshestAuthenticationMethod(methods: unknown) {
+  if (!Array.isArray(methods)) return null;
+
+  return methods.reduce<{
+    method: string | null;
+    timestampSeconds: number;
+  } | null>((freshest, methodEntry) => {
+    if (typeof methodEntry !== "object" || methodEntry === null) {
+      return freshest;
+    }
+
+    const timestampSeconds = getAuthMethodTimestampSeconds(
+      (methodEntry as { timestamp?: unknown }).timestamp,
+    );
+    if (!timestampSeconds) {
+      return freshest;
+    }
+
+    const method = (methodEntry as { method?: unknown }).method;
+    const candidate = {
+      method: typeof method === "string" ? method : null,
+      timestampSeconds,
+    };
+
+    if (!freshest || candidate.timestampSeconds > freshest.timestampSeconds) {
+      return candidate;
+    }
+    return freshest;
+  }, null);
 }
 
 async function expireOldPendingInvites(storeId: string, email?: string) {
@@ -155,41 +494,81 @@ async function getProfileForUserId(userId: string): Promise<StaffProfileRow | nu
   return data as StaffProfileRow | null;
 }
 
-async function getPendingInvitation(invitationId: string): Promise<StaffInvitationRow | null> {
-  const adminClient = getSupabaseAdminClient();
-  const { data, error } = await adminClient
-    .from("staff_invitations")
-    .select("id, store_id, email, role, status, invited_by_user_id, accepted_by_user_id, accepted_at, revoked_by_user_id, revoked_at, expires_at, created_at")
-    .eq("id", invitationId)
-    .maybeSingle();
+export async function createDelegationStepUpProofAction(): Promise<DelegationStepUpProofState> {
+  try {
+    const { user, store } = await requirePrivilege("staff.manage");
+    await enforceRateLimit(delegationGrantLimiter, `delegation_step_up:${user.id}`, "DELEGATION_STEP_UP");
 
-  if (error) {
-    throw new Error(error.message);
+    const supabase = await getSupabaseServerClient();
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (sessionError || !accessToken) {
+      return {
+        success: false,
+        error: "Please sign in again before granting temporary access.",
+        updatedAt: Date.now(),
+      };
+    }
+
+    const { data: assurance, error: assuranceError } =
+      await supabase.auth.mfa.getAuthenticatorAssuranceLevel(accessToken);
+    if (assuranceError || assurance?.currentLevel !== "aal2") {
+      return {
+        success: false,
+        error: "Verify your identity with MFA before granting temporary access.",
+        updatedAt: Date.now(),
+      };
+    }
+
+    const freshestMethod = getFreshestAuthenticationMethod(assurance.currentAuthenticationMethods);
+    const nowMs = Date.now();
+    if (!freshestMethod || nowMs - freshestMethod.timestampSeconds * 1000 > delegationStepUpMaxAgeMs) {
+      return {
+        success: false,
+        error: "Enter a fresh MFA code before granting temporary access.",
+        updatedAt: nowMs,
+      };
+    }
+
+    const authenticatedAtMs = freshestMethod.timestampSeconds * 1000;
+    const expiresAt = new Date(Math.min(
+      nowMs + delegationStepUpProofTtlMs,
+      authenticatedAtMs + delegationStepUpMaxAgeMs,
+    ));
+
+    const adminClient = getSupabaseAdminClient();
+    const { data: proof, error: proofError } = await adminClient
+      .from("staff_step_up_proofs")
+      .insert({
+        store_id: store.id,
+        user_id: user.id,
+        purpose: delegationStepUpPurpose,
+        assurance_level: "aal2",
+        authentication_method: freshestMethod.method,
+        authenticated_at: new Date(authenticatedAtMs).toISOString(),
+        expires_at: expiresAt.toISOString(),
+      })
+      .select("id, expires_at")
+      .single();
+
+    if (proofError || !proof) {
+      throw new Error(proofError?.message ?? "Step-up proof could not be created.");
+    }
+
+    return {
+      success: true,
+      proofId: proof.id,
+      expiresAt: proof.expires_at,
+      updatedAt: Date.now(),
+    };
+  } catch (error: unknown) {
+    await logStaffActionError("DELEGATION_STEP_UP_PROOF_FAILED", error);
+    return {
+      success: false,
+      error: getFriendlyErrorMessage(error) || "Step-up verification could not be completed.",
+      updatedAt: Date.now(),
+    };
   }
-
-  return data as StaffInvitationRow | null;
-}
-
-async function findActiveDelegation(storeId: string, userId: string, scope: DelegatableStaffPrivilege) {
-  const adminClient = getSupabaseAdminClient();
-  const now = new Date().toISOString();
-  const { data, error } = await adminClient
-    .from("privilege_delegations")
-    .select("id, expires_at")
-    .eq("store_id", storeId)
-    .eq("granted_to_user_id", userId)
-    .eq("scope", scope)
-    .is("revoked_at", null)
-    .lte("starts_at", now)
-    .gt("expires_at", now)
-    .order("expires_at", { ascending: true })
-    .limit(1);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return data?.[0] ?? null;
 }
 
 export async function inviteStaffFormAction(
@@ -216,7 +595,7 @@ export async function inviteStaffFormAction(
     await enforceRateLimit(staffInviteLimiter, `staff_invite:${user.id}`, "STAFF_INVITE");
     await expireOldPendingInvites(store.id, email);
 
-    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+    const expiresAt = getStaffInviteExpiresAt();
     const { data: invitation, error: inviteInsertError } = await adminClient
       .from("staff_invitations")
       .insert({
@@ -234,29 +613,21 @@ export async function inviteStaffFormAction(
       const duplicate = inviteInsertError?.code === "23505";
       return {
         success: false,
-        error: duplicate ? "That email already has a pending invite." : getFriendlyErrorMessage(inviteInsertError),
+        error: duplicate
+          ? "That email already has a pending invite. Use Resend from the Invitations list."
+          : getFriendlyErrorMessage(inviteInsertError),
         updatedAt: Date.now(),
       };
     }
 
-    const appUrl = await getAppUrl();
-    const acceptPath = `/staff/accept?invitationId=${invitation.id}`;
-    const redirectTo = `${appUrl}/auth/callback?next=${encodeURIComponent(acceptPath)}`;
-    const { error: authInviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
-      data: {
-        invitation_id: invitation.id,
-        invited_role: "cashier",
-        invited_store_id: store.id,
-      },
-      redirectTo,
+    const { error: authInviteError } = await sendStaffInviteEmail(adminClient, {
+      email,
+      invitationId: invitation.id,
+      storeId: store.id,
     });
 
     if (authInviteError) {
-      const localAuthAdminUnavailable =
-        process.env.NODE_ENV !== "production" &&
-        /invalid jwt|signing method/i.test(authInviteError.message);
-
-      if (!localAuthAdminUnavailable) {
+      if (!isLocalAuthAdminUnavailable(authInviteError)) {
         await adminClient
           .from("staff_invitations")
           .update({
@@ -266,7 +637,7 @@ export async function inviteStaffFormAction(
           })
           .eq("id", invitation.id);
 
-        await recordActivityEvent({
+        await recordStaffActivityEvent({
           storeId: store.id,
           actor: user,
           action: "staff.invite_failed",
@@ -293,7 +664,7 @@ export async function inviteStaffFormAction(
       metadata.emailDelivery = "skipped_local_auth_admin";
     }
 
-    await recordActivityEvent({
+    await recordStaffActivityEvent({
       storeId: store.id,
       actor: user,
       action: "staff.invited",
@@ -316,172 +687,274 @@ export async function inviteStaffFormAction(
       updatedAt: Date.now(),
     };
   } catch (error: unknown) {
+    await logStaffActionError("STAFF_INVITE_UNEXPECTED", error, { email });
     return errorState(error);
   }
 }
 
-export async function revokeStaffInviteAction(formData: FormData) {
+export async function revokeStaffInviteAction(
+  _prevState: StaffActionState,
+  formData: FormData,
+): Promise<StaffActionState> {
+  const validation = revokeStaffInviteSchema.safeParse({
+    invitationId: formData.get("invitationId"),
+    confirmText: formData.get("confirmText"),
+  });
+  if (!validation.success) {
+    return { success: false, error: formatZodError(validation.error), updatedAt: Date.now() };
+  }
+
+  try {
+    const { invitationId } = validation.data;
+    const { user } = await requirePrivilege("staff.manage");
+    await enforceRateLimit(staffLifecycleLimiter, `staff_lifecycle:${user.id}`, "STAFF_INVITE_REVOKE");
+
+    const adminClient = getSupabaseAdminClient();
+    const { data, error } = await adminClient.rpc("revoke_staff_invitation", {
+      p_invitation_id: invitationId,
+      p_actor_user_id: user.id,
+    });
+
+    if (error) {
+      await logStaffActionError("STAFF_INVITE_REVOKE_FAILED", error, { invitationId, actorUserId: user.id });
+      return errorState(error, "The invitation could not be revoked.");
+    }
+
+    const result = parseStaffLifecycleRpcResult(data);
+    if (!result?.ok) {
+      return lifecycleFailureState(result, "The invitation could not be revoked.");
+    }
+
+    revalidatePath("/staff");
+    revalidatePath("/activity");
+    return {
+      success: true,
+      message: `Invitation revoked${result.targetLabel ? ` for ${result.targetLabel}` : ""}.`,
+      updatedAt: Date.now(),
+    };
+  } catch (error: unknown) {
+    await logStaffActionError("STAFF_INVITE_REVOKE_UNEXPECTED", error, {
+      invitationId: validation.data.invitationId,
+    });
+    return errorState(error, "The invitation could not be revoked.");
+  }
+}
+
+export async function resendStaffInviteAction(
+  _prevState: StaffActionState,
+  formData: FormData,
+): Promise<StaffActionState> {
   const validation = invitationIdSchema.safeParse({
     invitationId: formData.get("invitationId"),
   });
   if (!validation.success) {
-    throw new Error(formatZodError(validation.error));
+    return { success: false, error: formatZodError(validation.error), updatedAt: Date.now() };
   }
 
   const { invitationId } = validation.data;
-  const { user, store, privilegeSource, delegationId } = await requirePrivilege("staff.manage");
-  await enforceRateLimit(staffLifecycleLimiter, `staff_lifecycle:${user.id}`, "STAFF_INVITE_REVOKE");
 
-  const invitation = await getPendingInvitation(invitationId);
-  if (!invitation || invitation.store_id !== store.id || invitation.status !== "pending") {
-    throw new Error("Pending invitation not found.");
+  try {
+    const { user, store, privilegeSource, delegationId } = await requirePrivilege("staff.manage");
+    await enforceRateLimit(staffInviteLimiter, `staff_invite:${user.id}`, "STAFF_INVITE_RESEND");
+
+    const adminClient = getSupabaseAdminClient();
+    const { data: invitation, error: invitationError } = await adminClient
+      .from("staff_invitations")
+      .select("id, store_id, email, role, status, invited_by_user_id, accepted_by_user_id, accepted_at, revoked_by_user_id, revoked_at, expires_at, created_at")
+      .eq("id", invitationId)
+      .maybeSingle();
+
+    if (invitationError) {
+      throw new Error(invitationError.message);
+    }
+
+    if (!invitation || invitation.store_id !== store.id) {
+      return { success: false, error: "Invitation not found.", updatedAt: Date.now() };
+    }
+
+    if (invitation.status !== "pending") {
+      return { success: false, error: "This invitation is no longer pending.", updatedAt: Date.now() };
+    }
+
+    const previousExpiresAt = invitation.expires_at;
+    const expiresAt = getStaffInviteExpiresAt();
+    const { data: refreshedInvitation, error: refreshError } = await adminClient
+      .from("staff_invitations")
+      .update({ expires_at: expiresAt })
+      .eq("id", invitation.id)
+      .eq("store_id", store.id)
+      .eq("status", "pending")
+      .select("id, expires_at")
+      .single();
+
+    if (refreshError || !refreshedInvitation) {
+      throw new Error(refreshError?.message ?? "Invitation could not be refreshed.");
+    }
+
+    const { error: authInviteError } = await sendStaffInviteEmail(adminClient, {
+      email: invitation.email,
+      invitationId: invitation.id,
+      storeId: store.id,
+    });
+
+    const metadata: Record<string, unknown> = {
+      previousExpiresAt,
+      expiresAt,
+    };
+
+    if (authInviteError && !isLocalAuthAdminUnavailable(authInviteError)) {
+      await adminClient
+        .from("staff_invitations")
+        .update({ expires_at: previousExpiresAt })
+        .eq("id", invitation.id)
+        .eq("status", "pending");
+
+      await recordStaffActivityEvent({
+        storeId: store.id,
+        actor: user,
+        action: "staff.invite_resend_failed",
+        actionScope: "staff.manage",
+        privilegeSource,
+        delegationId,
+        targetType: "staff_invitation",
+        targetId: invitation.id,
+        targetLabel: invitation.email,
+        result: "failure",
+        errorCode: "auth_invite_resend_failed",
+        summary: `${user.name} failed to resend a cashier invitation.`,
+        metadata,
+      });
+
+      return errorState(authInviteError, "The invitation could not be resent.");
+    }
+
+    if (authInviteError) {
+      metadata.emailDelivery = "skipped_local_auth_admin";
+    }
+
+    await recordStaffActivityEvent({
+      storeId: store.id,
+      actor: user,
+      action: "staff.invite_resent",
+      actionScope: "staff.manage",
+      privilegeSource,
+      delegationId,
+      targetType: "staff_invitation",
+      targetId: invitation.id,
+      targetLabel: invitation.email,
+      result: "success",
+      summary: `${user.name} resent a cashier invitation.`,
+      metadata,
+    });
+
+    revalidatePath("/staff");
+    revalidatePath("/activity");
+    return {
+      success: true,
+      message: `Invitation resent to ${invitation.email}.`,
+      updatedAt: Date.now(),
+    };
+  } catch (error: unknown) {
+    await logStaffActionError("STAFF_INVITE_RESEND_UNEXPECTED", error, {
+      invitationId,
+    });
+    return errorState(error, "The invitation could not be resent.");
   }
-
-  const adminClient = getSupabaseAdminClient();
-  const { error } = await adminClient
-    .from("staff_invitations")
-    .update({
-      status: "revoked",
-      revoked_by_user_id: user.id,
-      revoked_at: new Date().toISOString(),
-    })
-    .eq("id", invitation.id)
-    .eq("store_id", store.id);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  await recordActivityEvent({
-    storeId: store.id,
-    actor: user,
-    action: "staff.invite_revoked",
-    actionScope: "staff.manage",
-    privilegeSource,
-    delegationId,
-    targetType: "staff_invitation",
-    targetId: invitation.id,
-    targetLabel: invitation.email,
-    result: "success",
-    summary: `${user.name} revoked a cashier invitation.`,
-  });
-
-  revalidatePath("/staff");
-  revalidatePath("/activity");
 }
 
-export async function suspendStaffAction(formData: FormData) {
+export async function suspendStaffAction(
+  _prevState: StaffActionState,
+  formData: FormData,
+): Promise<StaffActionState> {
+  const validation = suspendStaffSchema.safeParse({
+    userId: formData.get("userId"),
+    confirmText: formData.get("confirmText"),
+  });
+  if (!validation.success) {
+    return { success: false, error: formatZodError(validation.error), updatedAt: Date.now() };
+  }
+
+  try {
+    const { userId } = validation.data;
+    const { user } = await requirePrivilege("staff.manage");
+    await enforceRateLimit(staffLifecycleLimiter, `staff_lifecycle:${user.id}`, "STAFF_SUSPEND");
+
+    const adminClient = getSupabaseAdminClient();
+    const { data, error } = await adminClient.rpc("suspend_staff_user", {
+      p_target_user_id: userId,
+      p_actor_user_id: user.id,
+    });
+
+    if (error) {
+      await logStaffActionError("STAFF_SUSPEND_FAILED", error, { targetUserId: userId, actorUserId: user.id });
+      return errorState(error, "The cashier could not be suspended.");
+    }
+
+    const result = parseStaffLifecycleRpcResult(data);
+    if (!result?.ok) {
+      return lifecycleFailureState(result, "The cashier could not be suspended.");
+    }
+
+    revalidatePath("/staff");
+    revalidatePath("/activity");
+    return {
+      success: true,
+      message: `${result.targetLabel ?? "Cashier"} suspended.`,
+      updatedAt: Date.now(),
+    };
+  } catch (error: unknown) {
+    await logStaffActionError("STAFF_SUSPEND_UNEXPECTED", error, {
+      targetUserId: validation.data.userId,
+    });
+    return errorState(error, "The cashier could not be suspended.");
+  }
+}
+
+export async function reactivateStaffAction(
+  _prevState: StaffActionState,
+  formData: FormData,
+): Promise<StaffActionState> {
   const validation = staffUserIdSchema.safeParse({
     userId: formData.get("userId"),
   });
   if (!validation.success) {
-    throw new Error(formatZodError(validation.error));
+    return { success: false, error: formatZodError(validation.error), updatedAt: Date.now() };
   }
 
-  const { userId } = validation.data;
-  const { user, store, privilegeSource, delegationId } = await requirePrivilege("staff.manage");
-  if (userId === user.id) {
-    throw new Error("Owners cannot suspend their own account.");
+  try {
+    const { userId } = validation.data;
+    const { user } = await requirePrivilege("staff.manage");
+    await enforceRateLimit(staffLifecycleLimiter, `staff_lifecycle:${user.id}`, "STAFF_REACTIVATE");
+
+    const adminClient = getSupabaseAdminClient();
+    const { data, error } = await adminClient.rpc("reactivate_staff_user", {
+      p_target_user_id: userId,
+      p_actor_user_id: user.id,
+    });
+
+    if (error) {
+      await logStaffActionError("STAFF_REACTIVATE_FAILED", error, { targetUserId: userId, actorUserId: user.id });
+      return errorState(error, "The cashier could not be reactivated.");
+    }
+
+    const result = parseStaffLifecycleRpcResult(data);
+    if (!result?.ok) {
+      return lifecycleFailureState(result, "The cashier could not be reactivated.");
+    }
+
+    revalidatePath("/staff");
+    revalidatePath("/activity");
+    return {
+      success: true,
+      message: `${result.targetLabel ?? "Cashier"} reactivated.`,
+      updatedAt: Date.now(),
+    };
+  } catch (error: unknown) {
+    await logStaffActionError("STAFF_REACTIVATE_UNEXPECTED", error, {
+      targetUserId: validation.data.userId,
+    });
+    return errorState(error, "The cashier could not be reactivated.");
   }
-
-  await enforceRateLimit(staffLifecycleLimiter, `staff_lifecycle:${user.id}`, "STAFF_SUSPEND");
-
-  const staffProfile = await getProfileForUserId(userId);
-  if (!staffProfile || staffProfile.store_id !== store.id || staffProfile.role !== "cashier") {
-    throw new Error("Cashier profile not found.");
-  }
-  if (staffProfile.status === "suspended") {
-    throw new Error("This cashier is already suspended.");
-  }
-
-  const adminClient = getSupabaseAdminClient();
-  const suspendedAt = new Date().toISOString();
-  const { error } = await adminClient
-    .from("users")
-    .update({
-      status: "suspended",
-      suspended_at: suspendedAt,
-      suspended_by_user_id: user.id,
-    })
-    .eq("id", staffProfile.id)
-    .eq("store_id", store.id);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  await recordActivityEvent({
-    storeId: store.id,
-    actor: user,
-    action: "staff.suspended",
-    actionScope: "staff.manage",
-    privilegeSource,
-    delegationId,
-    targetType: "user",
-    targetId: staffProfile.id,
-    targetLabel: staffProfile.name,
-    result: "success",
-    summary: `${user.name} suspended cashier ${staffProfile.name}.`,
-    metadata: {
-      suspendedAt,
-    },
-  });
-
-  revalidatePath("/staff");
-  revalidatePath("/activity");
-}
-
-export async function reactivateStaffAction(formData: FormData) {
-  const validation = staffUserIdSchema.safeParse({
-    userId: formData.get("userId"),
-  });
-  if (!validation.success) {
-    throw new Error(formatZodError(validation.error));
-  }
-
-  const { userId } = validation.data;
-  const { user, store, privilegeSource, delegationId } = await requirePrivilege("staff.manage");
-  await enforceRateLimit(staffLifecycleLimiter, `staff_lifecycle:${user.id}`, "STAFF_REACTIVATE");
-
-  const staffProfile = await getProfileForUserId(userId);
-  if (!staffProfile || staffProfile.store_id !== store.id || staffProfile.role !== "cashier") {
-    throw new Error("Cashier profile not found.");
-  }
-  if (staffProfile.status === "active") {
-    throw new Error("This cashier is already active.");
-  }
-
-  const adminClient = getSupabaseAdminClient();
-  const { error } = await adminClient
-    .from("users")
-    .update({
-      status: "active",
-      suspended_at: null,
-      suspended_by_user_id: null,
-    })
-    .eq("id", staffProfile.id)
-    .eq("store_id", store.id);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  await recordActivityEvent({
-    storeId: store.id,
-    actor: user,
-    action: "staff.reactivated",
-    actionScope: "staff.manage",
-    privilegeSource,
-    delegationId,
-    targetType: "user",
-    targetId: staffProfile.id,
-    targetLabel: staffProfile.name,
-    result: "success",
-    summary: `${user.name} reactivated cashier ${staffProfile.name}.`,
-  });
-
-  revalidatePath("/staff");
-  revalidatePath("/activity");
 }
 
 export async function grantPrivilegeDelegationFormAction(
@@ -494,6 +967,7 @@ export async function grantPrivilegeDelegationFormAction(
     durationHours: formData.get("durationHours"),
     reason: formData.get("reason"),
     confirmText: formData.get("confirmText"),
+    stepUpProofId: formData.get("stepUpProofId"),
   });
 
   if (!validation.success) {
@@ -504,168 +978,129 @@ export async function grantPrivilegeDelegationFormAction(
     const { user, store, privilegeSource, delegationId } = await requirePrivilege("staff.manage");
     await enforceRateLimit(delegationGrantLimiter, `delegation_grant:${user.id}`, "DELEGATION_GRANT");
 
-    const { userId, scope, durationHours, reason } = validation.data;
-    if (userId === user.id) {
-      return { success: false, error: "Owners cannot delegate temporary access to themselves.", updatedAt: Date.now() };
-    }
-
-    const staffProfile = await getProfileForUserId(userId);
-    if (!staffProfile || staffProfile.store_id !== store.id || staffProfile.role !== "cashier") {
-      return { success: false, error: "Active cashier profile not found.", updatedAt: Date.now() };
-    }
-    if (staffProfile.status !== "active") {
-      return { success: false, error: "Temporary access can only be granted to active cashiers.", updatedAt: Date.now() };
-    }
-
-    const existingDelegation = await findActiveDelegation(store.id, staffProfile.id, scope);
-    if (existingDelegation) {
-      return {
-        success: false,
-        error: `${formatStaffPrivilege(scope)} is already active for ${staffProfile.name}.`,
-        updatedAt: Date.now(),
-      };
-    }
-
-    const startsAt = new Date();
-    const expiresAt = new Date(startsAt.getTime() + durationHours * 60 * 60 * 1000);
+    const { userId, scope, durationHours, reason, stepUpProofId } = validation.data;
     const adminClient = getSupabaseAdminClient();
-    const { data: delegation, error } = await adminClient
-      .from("privilege_delegations")
-      .insert({
-        store_id: store.id,
-        granted_to_user_id: staffProfile.id,
-        granted_by_user_id: user.id,
-        scope,
-        reason,
-        starts_at: startsAt.toISOString(),
-        expires_at: expiresAt.toISOString(),
-      })
-      .select("id, expires_at")
-      .single();
+    const { data: rawResult, error: rpcError } = await adminClient.rpc("grant_privilege_delegation", {
+      p_store_id: store.id,
+      p_actor_user_id: user.id,
+      p_target_user_id: userId,
+      p_scope: scope,
+      p_duration_hours: durationHours,
+      p_reason: reason,
+      p_step_up_proof_id: (stepUpProofId ?? null) as string,
+    });
 
-    if (error || !delegation) {
-      throw new Error(error?.message ?? "Temporary access could not be granted.");
+    if (rpcError) {
+      throw new Error(rpcError.message);
     }
 
-    await recordActivityEvent({
-      storeId: store.id,
-      actor: user,
-      action: "delegation.granted",
-      actionScope: "staff.manage",
-      privilegeSource,
-      delegationId,
-      targetType: "privilege_delegation",
-      targetId: delegation.id,
-      targetLabel: staffProfile.name,
-      result: "success",
-      summary: `${user.name} granted temporary ${formatStaffPrivilege(scope)} to ${staffProfile.name}.`,
-      metadata: {
-        grantedToUserId: staffProfile.id,
-        grantedScope: scope,
-        startsAt: startsAt.toISOString(),
-        expiresAt: expiresAt.toISOString(),
-        durationHours,
-        reason,
-      },
-    });
+    const result = staffLifecycleRpcResultSchema.parse(rawResult);
+    if (!result.ok) {
+      await recordStaffActivityEvent({
+        storeId: store.id,
+        actor: user,
+        action: "delegation.grant_denied",
+        actionScope: "staff.manage",
+        privilegeSource,
+        delegationId,
+        targetType: "user",
+        targetId: userId,
+        targetLabel: result.targetLabel ?? null,
+        result: "failure",
+        errorCode: result.code,
+        summary: `${user.name} was denied a temporary ${formatStaffPrivilege(scope)} grant.`,
+        metadata: {
+          requestedScope: scope,
+          durationHours,
+          reason,
+          rpcCode: result.code,
+        },
+      });
+
+      return lifecycleFailureState(result, "Temporary access could not be granted.");
+    }
 
     revalidatePath("/staff");
     revalidatePath("/activity");
 
     return {
       success: true,
-      message: `${formatStaffPrivilege(scope)} granted to ${staffProfile.name} for ${durationHours} hour(s).`,
+      message: `${formatStaffPrivilege(result.scope ?? scope)} granted to ${result.targetLabel ?? "cashier"} for ${durationHours} hour(s).`,
       updatedAt: Date.now(),
     };
   } catch (error: unknown) {
+    await logStaffActionError("DELEGATION_GRANT_UNEXPECTED", error);
     return errorState(error, "Temporary access could not be granted.");
   }
 }
 
-export async function revokePrivilegeDelegationAction(formData: FormData) {
-  const validation = privilegeDelegationIdSchema.safeParse({
+export async function revokePrivilegeDelegationAction(
+  _prevState: StaffActionState,
+  formData: FormData,
+): Promise<StaffActionState> {
+  const validation = revokePrivilegeDelegationSchema.safeParse({
     delegationId: formData.get("delegationId"),
+    confirmText: formData.get("confirmText"),
   });
   if (!validation.success) {
-    throw new Error(formatZodError(validation.error));
+    return { success: false, error: formatZodError(validation.error), updatedAt: Date.now() };
   }
 
-  const { delegationId: targetDelegationId } = validation.data;
-  const { user, store, privilegeSource, delegationId } = await requirePrivilege("staff.manage");
-  await enforceRateLimit(delegationRevokeLimiter, `delegation_revoke:${user.id}`, "DELEGATION_REVOKE");
+  try {
+    const { delegationId: targetDelegationId } = validation.data;
+    const { user } = await requirePrivilege("staff.manage");
+    await enforceRateLimit(delegationRevokeLimiter, `delegation_revoke:${user.id}`, "DELEGATION_REVOKE");
 
-  const adminClient = getSupabaseAdminClient();
-  const { data: delegation, error: delegationError } = await adminClient
-    .from("privilege_delegations")
-    .select("id, store_id, granted_to_user_id, scope, reason, starts_at, expires_at, revoked_at")
-    .eq("id", targetDelegationId)
-    .maybeSingle();
+    const adminClient = getSupabaseAdminClient();
+    const { data, error } = await adminClient.rpc("revoke_privilege_delegation", {
+      p_delegation_id: targetDelegationId,
+      p_actor_user_id: user.id,
+    });
 
-  if (delegationError) {
-    throw new Error(delegationError.message);
+    if (error) {
+      await logStaffActionError("DELEGATION_REVOKE_FAILED", error, {
+        delegationId: targetDelegationId,
+        actorUserId: user.id,
+      });
+      return errorState(error, "Temporary access could not be revoked.");
+    }
+
+    const result = parseStaffLifecycleRpcResult(data);
+    if (!result?.ok) {
+      return lifecycleFailureState(result, "Temporary access could not be revoked.");
+    }
+
+    revalidatePath("/staff");
+    revalidatePath("/activity");
+    return {
+      success: true,
+      message: `Temporary access revoked${result.targetLabel ? ` from ${result.targetLabel}` : ""}.`,
+      updatedAt: Date.now(),
+    };
+  } catch (error: unknown) {
+    await logStaffActionError("DELEGATION_REVOKE_UNEXPECTED", error, {
+      delegationId: validation.data.delegationId,
+    });
+    return errorState(error, "Temporary access could not be revoked.");
   }
-  if (!delegation || delegation.store_id !== store.id) {
-    throw new Error("Temporary access record not found.");
-  }
-  if (delegation.revoked_at) {
-    throw new Error("Temporary access is already revoked.");
-  }
-
-  const staffProfile = await getProfileForUserId(delegation.granted_to_user_id);
-  if (!staffProfile || staffProfile.store_id !== store.id) {
-    throw new Error("Cashier profile not found.");
-  }
-
-  const revokedAt = new Date().toISOString();
-  const { error: revokeError } = await adminClient
-    .from("privilege_delegations")
-    .update({
-      revoked_at: revokedAt,
-      revoked_by_user_id: user.id,
-    })
-    .eq("id", delegation.id)
-    .eq("store_id", store.id);
-
-  if (revokeError) {
-    throw new Error(revokeError.message);
-  }
-
-  await recordActivityEvent({
-    storeId: store.id,
-    actor: user,
-    action: "delegation.revoked",
-    actionScope: "staff.manage",
-    privilegeSource,
-    delegationId,
-    targetType: "privilege_delegation",
-    targetId: delegation.id,
-    targetLabel: staffProfile.name,
-    result: "success",
-    summary: `${user.name} revoked temporary ${formatStaffPrivilege(delegation.scope)} from ${staffProfile.name}.`,
-    metadata: {
-      grantedToUserId: staffProfile.id,
-      grantedScope: delegation.scope,
-      startsAt: delegation.starts_at,
-      expiresAt: delegation.expires_at,
-      revokedAt,
-    },
-  });
-
-  revalidatePath("/staff");
-  revalidatePath("/activity");
 }
 
 export async function acceptStaffInviteFormAction(
   _prevState: StaffActionState,
   formData: FormData,
 ): Promise<StaffActionState> {
-  const validation = invitationIdSchema.safeParse({
+  const validation = staffAcceptInviteSchema.safeParse({
     invitationId: formData.get("invitationId"),
+    fullName: formData.get("fullName"),
+    password: formData.get("password"),
+    confirmPassword: formData.get("confirmPassword"),
   });
 
   if (!validation.success) {
     return { success: false, error: formatZodError(validation.error), updatedAt: Date.now() };
   }
+
+  const { invitationId, fullName, password } = validation.data;
 
   try {
     const supabase = await getSupabaseServerClient();
@@ -675,26 +1110,51 @@ export async function acceptStaffInviteFormAction(
     }
 
     const email = normalizeEmail(authUser.email);
-    const invitation = await getPendingInvitation(validation.data.invitationId);
-    if (!invitation) {
-      return { success: false, error: "Invitation not found.", updatedAt: Date.now() };
+    await enforceRateLimit(
+      staffInviteAcceptLimiter,
+      `staff_invite_accept:${authUser.id}:${invitationId}`,
+      "STAFF_INVITE_ACCEPT",
+    );
+    const clientIp = await getClientIp();
+    await enforceRateLimit(
+      staffInviteAcceptLimiter,
+      `staff_invite_accept_ip:${clientIp}:${invitationId}`,
+      "STAFF_INVITE_ACCEPT_IP",
+    );
+
+    const invitePreview = await getStaffInvitePreview(invitationId);
+    if (invitePreview.state !== "pending") {
+      return { success: false, error: invitePreview.message, updatedAt: Date.now() };
     }
-    if (invitation.status !== "pending") {
-      return { success: false, error: "This invitation is no longer pending.", updatedAt: Date.now() };
-    }
-    if (new Date(invitation.expires_at).getTime() <= Date.now()) {
-      await expireOldPendingInvites(invitation.store_id, invitation.email);
-      return { success: false, error: "This invitation has expired. Ask the owner to send a new one.", updatedAt: Date.now() };
-    }
-    if (normalizeEmail(invitation.email) !== email) {
-      return { success: false, error: "This invite belongs to a different email address.", updatedAt: Date.now() };
+
+    if (normalizeEmail(invitePreview.email) !== email) {
+      return {
+        success: false,
+        error: "This invite belongs to a different email address.",
+        updatedAt: Date.now(),
+      };
     }
 
     const adminClient = getSupabaseAdminClient();
     const existingProfile = await getProfileForUserId(authUser.id);
-    let actorName = displayNameFromAuthUser(authUser as AuthAdminUser, email);
 
-    if (existingProfile?.store_id && existingProfile.store_id !== invitation.store_id) {
+    if (!existingProfile && !password) {
+      return {
+        success: false,
+        error: "Create a password to finish setting up this staff account.",
+        updatedAt: Date.now(),
+      };
+    }
+
+    if (existingProfile?.role === "owner") {
+      return {
+        success: false,
+        error: "This invite can only be accepted by a cashier account.",
+        updatedAt: Date.now(),
+      };
+    }
+
+    if (existingProfile?.store_id && existingProfile.store_id !== invitePreview.storeId) {
       return {
         success: false,
         error: "This account is already connected to another store.",
@@ -702,83 +1162,74 @@ export async function acceptStaffInviteFormAction(
       };
     }
 
-    if (existingProfile?.store_id === invitation.store_id) {
-      if (existingProfile.status !== "active") {
-        return { success: false, error: "This staff account is suspended.", updatedAt: Date.now() };
-      }
-      if (existingProfile.role !== "cashier") {
-        return { success: false, error: "This invite can only be accepted by a cashier account.", updatedAt: Date.now() };
-      }
-      actorName = existingProfile.name;
-    } else if (existingProfile && !existingProfile.store_id) {
-      const { error: profileUpdateError } = await adminClient
-        .from("users")
-        .update({
-          name: actorName,
-          store_id: invitation.store_id,
-          role: "cashier",
-          status: "active",
-          invited_by_user_id: invitation.invited_by_user_id,
-          suspended_at: null,
-          suspended_by_user_id: null,
-        })
-        .eq("id", authUser.id);
-
-      if (profileUpdateError) {
-        throw new Error(profileUpdateError.message);
-      }
-    } else {
-      const { error: profileInsertError } = await adminClient
-        .from("users")
-        .insert({
-          id: authUser.id,
-          name: actorName,
-          store_id: invitation.store_id,
-          role: "cashier",
-          status: "active",
-          invited_by_user_id: invitation.invited_by_user_id,
-        });
-
-      if (profileInsertError) {
-        throw new Error(profileInsertError.message);
-      }
+    if (existingProfile?.status === "suspended") {
+      return {
+        success: false,
+        error: "This staff account is suspended.",
+        updatedAt: Date.now(),
+      };
     }
 
-    const acceptedAt = new Date().toISOString();
-    const { error: invitationUpdateError } = await adminClient
-      .from("staff_invitations")
-      .update({
-        status: "accepted",
-        accepted_by_user_id: authUser.id,
-        accepted_at: acceptedAt,
-      })
-      .eq("id", invitation.id)
-      .eq("status", "pending");
-
-    if (invitationUpdateError) {
-      throw new Error(invitationUpdateError.message);
-    }
-
-    await recordActivityEvent({
-      storeId: invitation.store_id,
-      actor: {
-        id: authUser.id,
-        name: actorName,
-        email,
-        role: "cashier",
-      },
-      action: "staff.invite_accepted",
-      actionScope: "staff.manage",
-      targetType: "user",
-      targetId: authUser.id,
-      targetLabel: actorName,
-      result: "success",
-      summary: `${actorName} accepted a cashier invitation.`,
-      metadata: {
-        invitationId: invitation.id,
-        acceptedAt,
-      },
+    const { data: acceptance, error: acceptanceError } = await adminClient.rpc("accept_staff_invitation", {
+      p_invitation_id: invitationId,
+      p_auth_user_id: authUser.id,
+      p_auth_email: email,
+      p_actor_name: fullName,
     });
+
+    if (acceptanceError) {
+      return inviteAcceptanceErrorState(acceptanceError);
+    }
+
+    const parsedAcceptance = staffInviteAcceptanceResultSchema.safeParse(acceptance);
+    if (!parsedAcceptance.success) {
+      throw new Error("Staff invite acceptance returned an invalid response.");
+    }
+
+    const authUpdatePayload: {
+      password?: string;
+      data: Record<string, unknown>;
+    } = {
+      data: {
+        ...(authUser.user_metadata ?? {}),
+        full_name: fullName,
+        name: fullName,
+      },
+    };
+    if (password) {
+      authUpdatePayload.password = password;
+    }
+
+    const { error: authUpdateError } = await supabase.auth.updateUser(authUpdatePayload);
+    if (authUpdateError) {
+      const rollbackContext = parsedAcceptance.data;
+      const { data: rollbackResult, error: rollbackError } = await adminClient.rpc(
+        "rollback_staff_invitation_acceptance",
+        {
+          p_invitation_id: rollbackContext.invitationId,
+          p_auth_user_id: authUser.id,
+          p_accepted_at: rollbackContext.acceptedAt,
+          p_profile_disposition: rollbackContext.profileDisposition,
+          p_previous_profile: (rollbackContext.previousProfile ?? null) as StaffInviteAcceptanceResult["previousProfile"],
+        },
+      );
+      const parsedRollbackResult = parseStaffLifecycleRpcResult(rollbackResult);
+
+      if (rollbackError || !parsedRollbackResult?.ok) {
+        await logStaffActionError("STAFF_INVITE_ACCEPT_ROLLBACK_FAILED", rollbackError ?? parsedRollbackResult, {
+          invitationId,
+          authUserId: authUser.id,
+          profileDisposition: rollbackContext.profileDisposition,
+        });
+      }
+
+      await logStaffActionError("STAFF_INVITE_AUTH_UPDATE_FAILED", authUpdateError, {
+        invitationId,
+        authUserId: authUser.id,
+        rollbackCode: parsedRollbackResult?.code,
+      });
+      return errorState(authUpdateError, "Staff account setup could not be completed.");
+    }
 
     revalidatePath("/staff");
     revalidatePath("/activity");
@@ -786,10 +1237,13 @@ export async function acceptStaffInviteFormAction(
 
     return {
       success: true,
-      message: "Invitation accepted. You can open the dashboard now.",
+      message: "Staff account ready. You can open the dashboard now.",
       updatedAt: Date.now(),
     };
   } catch (error: unknown) {
-    return errorState(error);
+    await logStaffActionError("STAFF_INVITE_ACCEPT_UNEXPECTED", error, {
+      invitationId,
+    });
+    return inviteAcceptanceErrorState(error);
   }
 }

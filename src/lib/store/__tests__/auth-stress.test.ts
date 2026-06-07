@@ -4,9 +4,9 @@ import { createClient } from "@supabase/supabase-js";
 import { loadEnvConfig } from "@next/env";
 import { create } from "zustand";
 import { AppState } from "../types";
-import { createAuthSlice } from "../authSlice";
-import { createInventorySlice } from "../inventorySlice";
-import { createCartSlice } from "../cartSlice";
+import { createAuthSlice } from "@/features/auth/state/auth-slice";
+import { createInventorySlice } from "@/features/inventory/state/inventory-slice";
+import { createCartSlice } from "@/features/billing/state/cart-slice";
 import { retryOnTransientJwtClockSkew } from "./supabase-test-utils";
 
 // Load environment variables
@@ -29,10 +29,12 @@ const createTestStore = () => {
 describe.runIf(runLiveTests)("PaisaPOS — Authentication Hardening & Threat Resilience Stress Tests", () => {
   let supabaseUrl: string;
   let supabaseAnonKey: string;
+  let serviceRoleKey: string | undefined;
 
   beforeAll(() => {
     supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
     supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+    serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   });
 
   // =========================================================================
@@ -366,10 +368,13 @@ describe.runIf(runLiveTests)("PaisaPOS — Authentication Hardening & Threat Res
 
     // 5. Clean up created store and profile records
     console.log("[Auth Stress RPC] Cleaning up transactional data...");
-    const { error: errDelStore } = await client.from("stores").delete().eq("id", storeId);
+    expect(serviceRoleKey).toBeDefined();
+    const adminClient = createClient(supabaseUrl, serviceRoleKey!);
+
+    const { error: errDelStore } = await adminClient.from("stores").delete().eq("id", storeId);
     expect(errDelStore).toBeNull();
 
-    const { error: errDelUser } = await client.from("users").delete().eq("id", signUpData.user!.id);
+    const { error: errDelUser } = await adminClient.from("users").delete().eq("id", signUpData.user!.id);
     expect(errDelUser).toBeNull();
   });
 });

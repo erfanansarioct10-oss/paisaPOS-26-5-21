@@ -58,7 +58,8 @@ npm run test:e2e
 ## Supabase Beta Checklist
 
 - Apply all committed migrations to the linked beta project.
-- Confirm Supabase Auth redirect URLs include `${APP_URL}/auth/callback`.
+- Confirm Supabase Auth redirect URLs include `${APP_URL}/auth/callback`, `${APP_URL}/staff/accept`, and the Vercel preview wildcard.
+- Confirm the invite email template uses `{{ .ConfirmationURL }}` or preserves `{{ .RedirectTo }}` so staff invites return to `/staff/accept`.
 - Confirm the beta onboarding policy intentionally allows or requires email confirmation.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` server-only.
 - Keep Upstash Redis configured for production rate limiting with `RATE_LIMIT_FAIL_CLOSED=true`.

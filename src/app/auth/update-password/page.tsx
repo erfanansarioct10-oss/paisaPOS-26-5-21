@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Store, Lock, AlertCircle, Loader2, CheckCircle } from "lucide-react";
-import { updatePasswordAction } from "@/app/auth-actions";
+import { updatePasswordAction } from "@/features/auth/server/actions";
 
 export default function UpdatePasswordPage() {
   const router = useRouter();

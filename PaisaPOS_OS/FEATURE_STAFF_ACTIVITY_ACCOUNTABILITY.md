@@ -364,7 +364,7 @@ V1.1 should support one account per store only:
 
 ## New DAL helpers
 
-Add to `src/lib/server/dal.ts` or a split module `src/lib/server/permissions.ts`:
+Add to `src/server/supabase/dal.ts` or a split module `src/server/auth/permissions.ts`:
 
 ```ts
 export type PrivilegeCheckResult = TenantContextDTO & {
@@ -410,9 +410,9 @@ New files:
 ```text
 src/app/staff-actions.ts
 src/app/activity-actions.ts
-src/lib/server/permissions.ts
-src/lib/server/activity.ts
-src/lib/server/admin-supabase.ts
+src/server/auth/permissions.ts
+src/server/activity/activity.ts
+src/server/supabase/admin-supabase.ts
 ```
 
 Action rules:
@@ -667,4 +667,3 @@ Exit criteria:
    - Recommendation: store only safe operational fields, never auth secrets, never raw request payloads.
 5. Should activity logs be kept forever?
    - Recommendation: keep active 180 days, archive after that, and add export later.
-

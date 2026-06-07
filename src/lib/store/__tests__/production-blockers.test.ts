@@ -3,7 +3,12 @@ import { createClient } from "@supabase/supabase-js";
 import { loadEnvConfig } from "@next/env";
 import { NextRequest } from "next/server";
 import { proxy } from "@/proxy";
-import { retryOnTransientJwtClockSkew } from "./supabase-test-utils";
+import {
+  getCheckoutInvoiceId,
+  newIdempotencyKey,
+  retryOnTransientJwtClockSkew,
+  upsertCatalogProduct,
+} from "./supabase-test-utils";
 
 // Load environment variables
 loadEnvConfig(process.cwd());
@@ -79,18 +84,16 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
 
     // Should raise trigger error
     expect(errPromotion).not.toBeNull();
-    expect(errPromotion!.message).toContain("Only store owners can change user roles");
+    expect(errPromotion!.message).toMatch(/Only store owners can change user roles|permission denied/i);
 
     // TEST B: Cashier hijacks store metadata (RLS Policy Enforcement)
     console.log("[QA Test] Verifying Cashier store metadata updates are blocked by RLS policies...");
-    const { data: storeUpdateResult, error: errStoreUpdate } = await clientCashier
+    const { error: errStoreUpdate } = await clientCashier
       .from("stores")
       .update({ name: "Hacked Store Name" })
-      .eq("id", storeId)
-      .select();
+      .eq("id", storeId);
 
-    expect(errStoreUpdate).toBeNull();
-    expect(storeUpdateResult?.length).toBe(0); // Invisible/no rows updated due to RLS
+    expect(errStoreUpdate).not.toBeNull();
 
     // Verify store name remained original
     const { data: checkStore } = await clientOwner.from("stores").select("name").eq("id", storeId).single();
@@ -129,23 +132,23 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
       })
     );
 
-    // Create a product variant in Store A for billing
-    const { data: prodA } = await clientA
-      .from("products")
-      .insert({ store_id: storeIdA.data, name: "Product A", category: "Tops" })
-      .select()
-      .single();
-
-    const { data: varA } = await clientA
-      .from("product_variants")
-      .insert({ product_id: prodA.id, store_id: storeIdA.data, size: "Free", color: "Red", sku: `SKU-A-${randomA}`, price: 1000 })
-      .select()
-      .single();
-
-    await clientA.from("inventory").insert({ variant_id: varA.id, quantity: 100 });
+    // Create a product variant in Store A for billing through the supported catalog RPC.
+    const { variant: varA } = await upsertCatalogProduct(clientA, {
+      name: "Product A",
+      category: "Tops",
+      variants: [
+        {
+          size: "Free",
+          color: "Red",
+          sku: `SKU-A-${randomA.toUpperCase()}`,
+          price: 1000,
+          stock: 100,
+        },
+      ],
+    });
 
     // Checkout an invoice in Store A
-    const { data: invoiceIdA, error: checkoutErr } = await clientA.rpc("create_invoice_and_deduct_stock", {
+    const { data: checkoutResultA, error: checkoutErr } = await clientA.rpc("create_invoice_and_deduct_stock", {
       p_store_id: storeIdA.data,
       p_invoice_number: `INV-A-${randomA}`,
       p_customer_name: "Customer A",
@@ -154,9 +157,11 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
       p_discount_amount: 0.00,
       p_paid_amount: 1000.00,
       p_payment_method: "Cash",
-      p_items: [{ variant_id: varA.id, quantity: 1, unit_price: 1000, subtotal: 1000 }]
+      p_items: [{ variant_id: varA.id, quantity: 1, unit_price: 1000, subtotal: 1000 }],
+      p_idempotency_key: newIdempotencyKey(),
     });
     expect(checkoutErr).toBeNull();
+    const invoiceIdA = getCheckoutInvoiceId(checkoutResultA);
     expect(invoiceIdA).toBeDefined();
 
     // Sign up & Onboard Tenant B
@@ -219,19 +224,19 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
       })
     );
 
-    const { data: prod } = await client
-      .from("products")
-      .insert({ store_id: storeId.data, name: "Product C", category: "Tops" })
-      .select()
-      .single();
-
-    const { data: variant } = await client
-      .from("product_variants")
-      .insert({ product_id: prod.id, store_id: storeId.data, size: "M", color: "Red", sku: `SKU-C-${random}`, price: 1000 })
-      .select()
-      .single();
-
-    await client.from("inventory").insert({ variant_id: variant.id, quantity: 10 });
+    const { variant } = await upsertCatalogProduct(client, {
+      name: "Product C",
+      category: "Tops",
+      variants: [
+        {
+          size: "M",
+          color: "Red",
+          sku: `SKU-C-${random.toUpperCase()}`,
+          price: 1000,
+          stock: 10,
+        },
+      ],
+    });
 
     // TEST E: Excess Discount Amount (discount_amount > total_amount)
     console.log("[QA Test] Verifying discount_amount <= total_amount is enforced at DB level...");
@@ -244,7 +249,8 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
       p_discount_amount: 600.00, // Discount exceeds Total!
       p_paid_amount: 500.00,
       p_payment_method: "Cash",
-      p_items: [{ variant_id: variant.id, quantity: 1, unit_price: 1000, subtotal: 1000 }]
+      p_items: [{ variant_id: variant.id, quantity: 1, unit_price: 1000, subtotal: 1000 }],
+      p_idempotency_key: newIdempotencyKey(),
     });
 
     expect(errExcessDiscount).not.toBeNull();
@@ -261,7 +267,8 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
       p_discount_amount: 100.00,
       p_paid_amount: 600.00, // Paid exceeds Total!
       p_payment_method: "Cash",
-      p_items: [{ variant_id: variant.id, quantity: 1, unit_price: 600, subtotal: 600 }]
+      p_items: [{ variant_id: variant.id, quantity: 1, unit_price: 600, subtotal: 600 }],
+      p_idempotency_key: newIdempotencyKey(),
     });
 
     expect(errExcessPaid).not.toBeNull();
@@ -302,13 +309,13 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
         name: "Valid Product A",
         category: "Tops",
         lowStockThreshold: 5,
-        variants: [{ size: "M", color: "Black", sku: `SKU-VALID-A-${random}`, price: 1200, stock: 10 }]
+        variants: [{ size: "M", color: "Black", sku: `SKU-VALID-A-${random.toUpperCase()}`, price: 1200, stock: 10 }]
       },
       {
         name: "Invalid Product B",
         category: "Outerwear",
         lowStockThreshold: 5,
-        variants: [{ size: "L", color: "Black", sku: `SKU-INVALID-B-${random}`, price: -3500.00, stock: 5 }] // FAIL CHECK CONSTRAINT!
+        variants: [{ size: "L", color: "Black", sku: `SKU-INVALID-B-${random.toUpperCase()}`, price: -3500.00, stock: 5 }] // FAIL CHECK CONSTRAINT!
       }
     ];
 
@@ -440,7 +447,7 @@ describe("PaisaPOS — Middleware Verification & Abuse Simulation Suite", () => 
   });
 
   test("IP Spoof Test: prioritizes x-real-ip over client-supplied x-forwarded-for to prevent spoofing bypass", async () => {
-    const { getTrustedClientIp } = await import("@/lib/network");
+    const { getTrustedClientIp } = await import("@/server/network/client-ip");
     const req = new NextRequest(new URL("http://localhost:3000/dashboard"), {
       headers: {
         "x-forwarded-for": "attacker-spoofed-ip",
@@ -453,7 +460,7 @@ describe("PaisaPOS — Middleware Verification & Abuse Simulation Suite", () => 
   });
 
   test("Header Absence Test: falls back to unknown when both x-real-ip and x-forwarded-for are absent", async () => {
-    const { getTrustedClientIp } = await import("@/lib/network");
+    const { getTrustedClientIp } = await import("@/server/network/client-ip");
     const req = new NextRequest(new URL("http://localhost:3000/dashboard"), {
       headers: {},
     });
@@ -463,7 +470,7 @@ describe("PaisaPOS — Middleware Verification & Abuse Simulation Suite", () => 
   });
 
   test("Password Reset Limiter Test: allows at most 3 reset requests and throws 429/error on the 4th request", async () => {
-    const { passwordResetLimiter } = await import("@/lib/rate-limiter");
+    const { passwordResetLimiter } = await import("@/server/rate-limit/rate-limiter");
     const uniqueIp = `192.0.2.${Math.floor(Math.random() * 255)}`;
     const key = `reset_password:${uniqueIp}`;
 

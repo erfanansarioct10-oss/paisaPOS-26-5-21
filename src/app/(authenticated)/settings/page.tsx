@@ -2,8 +2,9 @@
 
 import React, { useActionState, useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store/useAppStore";
-import { updateProfileFormAction, updateStoreFormAction, type SettingsFormState } from "@/app/actions";
-import { useTheme } from "@/components/theme-provider";
+import { updateProfileFormAction, updateStoreFormAction } from "@/features/settings/server/actions";
+import type { SettingsFormState } from "@/app/actions";
+import { useTheme } from "@/shared/layout/theme-provider";
 import { getStaffCapabilities } from "@/lib/staff-capabilities";
 import {
   Settings,

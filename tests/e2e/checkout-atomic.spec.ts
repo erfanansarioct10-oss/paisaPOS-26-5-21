@@ -57,12 +57,19 @@ test.describe("POS Billing Checkout & Inventory Sync E2E Tests", () => {
     await page.goto("/billing");
     await page.locator("#pos-search-input").fill(productName);
     
-    // Tap to expand variant panel
-    const productCard = page.locator(`text=${productName}`).locator("..");
-    await productCard.click();
+    // The single filtered product auto-expands; click the card only if the variant panel does not appear.
+    const productCard = page.locator("[id^='prod-card-']").filter({ hasText: productName }).first();
+    const variantRow = page.getByRole("button", { name: `Size L / White` });
+    await expect(productCard).toBeVisible({ timeout: 10000 });
+
+    try {
+      await expect(variantRow).toBeVisible({ timeout: 1500 });
+    } catch {
+      await productCard.click();
+      await expect(variantRow).toBeVisible({ timeout: 5000 });
+    }
 
     // Add to cart twice
-    const variantRow = page.getByRole("button", { name: `Size L / White` });
     await variantRow.click();
     await variantRow.click();
 

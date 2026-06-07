@@ -123,7 +123,7 @@ Database:
 - Add actor index on `(store_id, actor_user_id, created_at desc)`.
 
 Server:
-- Add `src/lib/server/activity.ts` with `import "server-only"`.
+- Add `src/server/activity/activity.ts` with `import "server-only"`.
 - Centralize metadata redaction.
 - Make logging best-effort for non-critical events but strict for privileged/security events where appropriate.
 
@@ -143,7 +143,7 @@ Confirmation:
 
 Implementation status:
 - Implemented locally in migration `20260525112112_add_activity_events_foundation.sql`.
-- Server helper added at `src/lib/server/activity.ts`.
+- Server helper added at `src/server/activity/activity.ts`.
 - Existing checkout/catalog/inventory/settings/profile actions now emit durable events.
 - Activity redaction, migration hardening, and RLS behavior are covered by tests.
 
@@ -237,8 +237,8 @@ Confirmation:
 
 Implementation status:
 - Implemented locally with the owner-only `/activity` route and owner-only sidebar navigation item.
-- Added `getActivityEventsDTO()` in `src/lib/server/dal.ts` with server-side owner authorization, minimal DTO mapping, actor/event/result/date/search filters, and cursor pagination.
-- Added `src/components/activity-log-page.tsx` with dense desktop table and mobile card views for actor, event, entity, result, time, and summary.
+- Added `getActivityEventsDTO()` in `src/server/supabase/dal.ts` with server-side owner authorization, minimal DTO mapping, actor/event/result/date/search filters, and cursor pagination.
+- Added `src/features/activity/components/activity-log-page.tsx` with dense desktop table and mobile card views for actor, event, entity, result, time, and summary.
 - Added activity filter/cursor unit tests, extended live RLS verification to prove cursor pagination works over owner-visible activity, and added a Playwright owner Activity smoke test.
 
 Rollback note:
@@ -310,7 +310,7 @@ Database:
 - No new schema unless needed for consistent role checks.
 
 Server:
-- Create `src/lib/server/permissions.ts`.
+- Create `src/server/auth/permissions.ts`.
 - Define stable privilege names like:
   - `catalog:manage`
   - `inventory:adjust`
@@ -333,7 +333,7 @@ Confirmation:
 - One permission helper explains the same behavior enforced by UI, Server Actions, and tests.
 
 Implementation status:
-- Implemented locally at `src/lib/server/permissions.ts`.
+- Implemented locally at `src/server/auth/permissions.ts`.
 - Added explicit privilege names matching the existing activity scopes: `checkout.create`, `catalog.manage`, `inventory.adjust`, `staff.manage`, `store.settings`, `activity.read`, plus release/future scopes.
 - Current production behavior remains conservative: active owners receive management privileges; active cashiers receive checkout/profile privileges; suspended or missing profiles receive no privileges.
 - Delegation evaluation is modeled for future Slice 6, but trusted database-backed delegation lookup is not enabled yet.

@@ -1,7 +1,12 @@
 import { describe, test, expect, beforeAll } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { loadEnvConfig } from "@next/env";
-import { retryOnTransientJwtClockSkew } from "./supabase-test-utils";
+import {
+  getCheckoutInvoiceId,
+  newIdempotencyKey,
+  retryOnTransientJwtClockSkew,
+  upsertCatalogProduct,
+} from "./supabase-test-utils";
 
 // Load environment variables
 loadEnvConfig(process.cwd());
@@ -15,10 +20,12 @@ const runLiveTests = !!(
 describe.runIf(runLiveTests)("PaisaPOS — Multi-Tenant Row Level Security (RLS) Verification", () => {
   let supabaseUrl: string;
   let supabaseAnonKey: string;
+  let serviceRoleKey: string | undefined;
 
   beforeAll(() => {
     supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
     supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+    serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   });
 
   test("Enforces strict RLS boundaries between Store A and Store B sessions", async () => {
@@ -70,55 +77,39 @@ describe.runIf(runLiveTests)("PaisaPOS — Multi-Tenant Row Level Security (RLS)
     expect(errOnboardB).toBeNull();
     expect(storeIdB).toBeDefined();
 
-    // 3. User A creates a product and variant
-    console.log("[RLS QA] User A inserting product in Store A...");
-    const { data: prodA, error: errProdA } = await clientA
-      .from("products")
-      .insert({
-        store_id: storeIdA,
-        name: "Store A Exclusive Tee",
-        category: "Tops",
-        low_stock_threshold: 2,
-      })
-      .select()
-      .single();
-    expect(errProdA).toBeNull();
+    // 3. User A creates a product and variant through the supported owner RPC.
+    console.log("[RLS QA] User A creating product in Store A...");
+    const { product: prodA, variant: varA } = await upsertCatalogProduct(clientA, {
+      name: "Store A Exclusive Tee",
+      category: "Tops",
+      lowStockThreshold: 2,
+      variants: [
+        {
+          size: "M",
+          color: "Black",
+          sku: `SKU-A-${randomA.toUpperCase()}`,
+          price: 1500.00,
+          stock: 10,
+        },
+      ],
+    });
 
-    const { data: varA, error: errVarA } = await clientA
-      .from("product_variants")
-      .insert({
-        product_id: prodA.id,
-        size: "M",
-        color: "Black",
-        sku: `SKU-A-${randomA}`,
-        price: 1500.00,
-      })
-      .select()
-      .single();
-    expect(errVarA).toBeNull();
-
-    // Seed variant stock for Store A
-    const { error: errInvA } = await clientA
-      .from("inventory")
-      .insert({
-        variant_id: varA.id,
-        quantity: 10,
-      });
-    expect(errInvA).toBeNull();
-
-    // 4. User B creates a product
-    console.log("[RLS QA] User B inserting product in Store B...");
-    const { data: prodB, error: errProdB } = await clientB
-      .from("products")
-      .insert({
-        store_id: storeIdB,
-        name: "Store B Jeans",
-        category: "Pants",
-        low_stock_threshold: 2,
-      })
-      .select()
-      .single();
-    expect(errProdB).toBeNull();
+    // 4. User B creates a product through the supported owner RPC.
+    console.log("[RLS QA] User B creating product in Store B...");
+    const { product: prodB } = await upsertCatalogProduct(clientB, {
+      name: "Store B Jeans",
+      category: "Pants",
+      lowStockThreshold: 2,
+      variants: [
+        {
+          size: "M",
+          color: "Blue",
+          sku: `SKU-B-${randomB.toUpperCase()}`,
+          price: 1800.00,
+          stock: 5,
+        },
+      ],
+    });
 
     // 5. RLS VERIFICATION: READ ISOLATION
     console.log("[RLS QA] Verifying User B cannot read Store A's products...");
@@ -155,13 +146,11 @@ describe.runIf(runLiveTests)("PaisaPOS — Multi-Tenant Row Level Security (RLS)
 
     // 7. RLS VERIFICATION: UPDATE ISOLATION
     console.log("[RLS QA] Verifying User B cannot update Store A's product...");
-    const { data: bUpdate, error: errBUpdate } = await clientB
+    const { error: errBUpdate } = await clientB
       .from("products")
       .update({ name: "Maliciously Renamed" })
-      .eq("id", prodA.id)
-      .select();
-    expect(errBUpdate).toBeNull();
-    expect(bUpdate?.length).toBe(0); // 0 rows updated because it's invisible
+      .eq("id", prodA.id);
+    expect(errBUpdate).not.toBeNull();
 
     // Verify User A's product remains unchanged
     const { data: checkProdA } = await clientA
@@ -173,13 +162,11 @@ describe.runIf(runLiveTests)("PaisaPOS — Multi-Tenant Row Level Security (RLS)
 
     // 8. RLS VERIFICATION: DELETE ISOLATION
     console.log("[RLS QA] Verifying User B cannot delete Store A's product...");
-    const { data: bDelete, error: errBDelete } = await clientB
+    const { error: errBDelete } = await clientB
       .from("products")
       .delete()
-      .eq("id", prodA.id)
-      .select();
-    expect(errBDelete).toBeNull();
-    expect(bDelete?.length).toBe(0); // 0 rows deleted because it's invisible
+      .eq("id", prodA.id);
+    expect(errBDelete).not.toBeNull();
 
     // Verify User A's product still exists
     const { data: checkProdAExists } = await clientA
@@ -199,6 +186,7 @@ describe.runIf(runLiveTests)("PaisaPOS — Multi-Tenant Row Level Security (RLS)
       p_discount_amount: 0.00,
       p_paid_amount: 1500.00,
       p_payment_method: "Fonepay",
+      p_idempotency_key: newIdempotencyKey(),
       p_items: [
         {
           variant_id: varA.id,
@@ -221,6 +209,7 @@ describe.runIf(runLiveTests)("PaisaPOS — Multi-Tenant Row Level Security (RLS)
       p_discount_amount: 0.00,
       p_paid_amount: 1500.00,
       p_payment_method: "Fonepay",
+      p_idempotency_key: newIdempotencyKey(),
       p_items: [
         {
           variant_id: varA.id, // Variant belongs to Store A!
@@ -254,16 +243,19 @@ describe.runIf(runLiveTests)("PaisaPOS — Multi-Tenant Row Level Security (RLS)
     expect(errBAuditInsert).not.toBeNull();
 
     // 11. CLEAN UP
+    expect(serviceRoleKey).toBeDefined();
+    const adminClient = createClient(supabaseUrl, serviceRoleKey!);
+
     console.log("[RLS QA] Cleaning up Tenant A records...");
-    const { error: errDelStoreA } = await clientA.from("stores").delete().eq("id", storeIdA);
+    const { error: errDelStoreA } = await adminClient.from("stores").delete().eq("id", storeIdA);
     expect(errDelStoreA).toBeNull();
-    const { error: errDelUserA } = await clientA.from("users").delete().eq("id", userIdA);
+    const { error: errDelUserA } = await adminClient.from("users").delete().eq("id", userIdA);
     expect(errDelUserA).toBeNull();
 
     console.log("[RLS QA] Cleaning up Tenant B records...");
-    const { error: errDelStoreB } = await clientB.from("stores").delete().eq("id", storeIdB);
+    const { error: errDelStoreB } = await adminClient.from("stores").delete().eq("id", storeIdB);
     expect(errDelStoreB).toBeNull();
-    const { error: errDelUserB } = await clientB.from("users").delete().eq("id", userIdB);
+    const { error: errDelUserB } = await adminClient.from("users").delete().eq("id", userIdB);
     expect(errDelUserB).toBeNull();
 
     // Logout sessions
@@ -326,48 +318,30 @@ describe.runIf(runLiveTests)("PaisaPOS — Multi-Tenant Row Level Security (RLS)
       p_low_stock_threshold: 5,
       p_deleted_variant_ids: [],
       p_variants: [
-        { size: "Free", color: "Red", sku: `SKU-CASH-${random}`, price: 1000, stock: 5 }
+        { size: "Free", color: "Red", sku: `SKU-CASH-${random.toUpperCase()}`, price: 1000, stock: 5 }
       ],
     });
 
     expect(errCashierUpsert).not.toBeNull();
-    expect(errCashierUpsert!.message).toContain("Only store owners can add or modify products");
+    expect(errCashierUpsert!.message).toContain("Only active store owners can add or modify products");
 
     // 5. Cashier can checkout and the invoice is attributed to the cashier from auth.uid()
-    const { data: ownerProduct, error: ownerProductError } = await clientOwner
-      .from("products")
-      .insert({
-        store_id: storeId,
-        name: "Attribution Tee",
-        category: "Tops",
-        low_stock_threshold: 2,
-      })
-      .select()
-      .single();
-    expect(ownerProductError).toBeNull();
+    const { variant: ownerVariant } = await upsertCatalogProduct(clientOwner, {
+      name: "Attribution Tee",
+      category: "Tops",
+      lowStockThreshold: 2,
+      variants: [
+        {
+          size: "M",
+          color: "Green",
+          sku: `SKU-ATTR-${random.toUpperCase()}`,
+          price: 1200.00,
+          stock: 3,
+        },
+      ],
+    });
 
-    const { data: ownerVariant, error: ownerVariantError } = await clientOwner
-      .from("product_variants")
-      .insert({
-        product_id: ownerProduct.id,
-        size: "M",
-        color: "Green",
-        sku: `SKU-ATTR-${random}`,
-        price: 1200.00,
-      })
-      .select()
-      .single();
-    expect(ownerVariantError).toBeNull();
-
-    const { error: ownerInventoryError } = await clientOwner
-      .from("inventory")
-      .insert({
-        variant_id: ownerVariant.id,
-        quantity: 3,
-      });
-    expect(ownerInventoryError).toBeNull();
-
-    const { data: cashierInvoiceId, error: cashierCheckoutError } = await clientCashier.rpc(
+    const { data: cashierCheckoutResult, error: cashierCheckoutError } = await clientCashier.rpc(
       "create_invoice_and_deduct_stock",
       {
         p_store_id: storeId,
@@ -378,6 +352,7 @@ describe.runIf(runLiveTests)("PaisaPOS — Multi-Tenant Row Level Security (RLS)
         p_discount_amount: 0.00,
         p_paid_amount: 1200.00,
         p_payment_method: "Cash",
+        p_idempotency_key: newIdempotencyKey(),
         p_items: [
           {
             variant_id: ownerVariant.id,
@@ -389,6 +364,7 @@ describe.runIf(runLiveTests)("PaisaPOS — Multi-Tenant Row Level Security (RLS)
       }
     );
     expect(cashierCheckoutError).toBeNull();
+    const cashierInvoiceId = getCheckoutInvoiceId(cashierCheckoutResult);
 
     const { data: cashierInvoice, error: cashierInvoiceError } = await clientCashier
       .from("invoices")
@@ -476,38 +452,20 @@ describe.runIf(runLiveTests)("PaisaPOS — Multi-Tenant Row Level Security (RLS)
       invited_by_user_id: ownerAId,
     });
 
-    const { data: product, error: productError } = await clientOwnerA
-      .from("products")
-      .insert({
-        store_id: storeAId,
-        name: "Suspension Test Tee",
-        category: "Tops",
-        low_stock_threshold: 2,
-      })
-      .select()
-      .single();
-    expect(productError).toBeNull();
-
-    const { data: variant, error: variantError } = await clientOwnerA
-      .from("product_variants")
-      .insert({
-        product_id: product.id,
-        size: "M",
-        color: "Black",
-        sku: `SKU-STAFF-${random}`,
-        price: 900.00,
-      })
-      .select()
-      .single();
-    expect(variantError).toBeNull();
-
-    const { error: inventoryError } = await clientOwnerA
-      .from("inventory")
-      .insert({
-        variant_id: variant.id,
-        quantity: 2,
-      });
-    expect(inventoryError).toBeNull();
+    const { variant } = await upsertCatalogProduct(clientOwnerA, {
+      name: "Suspension Test Tee",
+      category: "Tops",
+      lowStockThreshold: 2,
+      variants: [
+        {
+          size: "M",
+          color: "Black",
+          sku: `SKU-STAFF-${random.toUpperCase()}`,
+          price: 900.00,
+          stock: 2,
+        },
+      ],
+    });
 
     const { data: invitation, error: invitationError } = await adminClient
       .from("staff_invitations")
@@ -677,6 +635,7 @@ describe.runIf(runLiveTests)("PaisaPOS — Multi-Tenant Row Level Security (RLS)
       p_discount_amount: 0.00,
       p_paid_amount: 900.00,
       p_payment_method: "Cash",
+      p_idempotency_key: newIdempotencyKey(),
       p_items: [
         {
           variant_id: variant.id,

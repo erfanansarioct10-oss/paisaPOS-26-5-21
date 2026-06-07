@@ -2,7 +2,7 @@
 
 Version: 2.0  
 Status: Active  
-Last Updated: 2026-05-21  
+Last Updated: 2026-05-29
 
 ---
 
@@ -483,7 +483,7 @@ This audit evaluates the PaisaPOS codebase across five target security domains. 
 
 ### Issue 2: Unpaginated Product and Invoice Lists Retrieval (Mass Data Extraction Risk)
 - **Vulnerability Explanation:** The store data sync function (`fetchStoreData`) query loads all products, variants, and invoices matching a tenant store in single unpaginated calls. As invoices grow into the thousands, these queries will degrade database response time, exhaust network bandwidth, and increase client memory footprints.
-- **Affected Code:** [authSlice.ts:L336-415](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/lib/store/authSlice.ts#L336-415)
+- **Affected Code:** [auth-slice.ts](file:///c:/nooridigital_assets/my-projects/billing-system-26-5-21/src/features/auth/state/auth-slice.ts)
 - **Severity:** Medium
 - **Remediation:** Introduce pagination query bounds (`.range()`) on products and invoices:
   ```typescript
@@ -588,4 +588,3 @@ This audit evaluates the PaisaPOS codebase across five target security domains. 
     return true;
   }
   ```
-

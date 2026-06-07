@@ -2,6 +2,8 @@
 // PaisaPOS — Shared Store Type Definitions
 // =========================================================================
 
+import type { ActiveStaffDelegationPrivilege } from "@/lib/staff-capabilities";
+
 export interface StoreMetadata {
   id: string;
   name: string;
@@ -80,7 +82,7 @@ export interface Invoice {
 
 export interface ActivePrivilegeDelegation {
   id: string;
-  scope: string;
+  scope: ActiveStaffDelegationPrivilege;
   reason: string;
   granted_by_user_id: string;
   starts_at: string;
@@ -111,6 +113,7 @@ export interface AppState {
   user: Profile | null;
   store: StoreMetadata | null;
   isLoading: boolean;
+  sessionStatus: "unknown" | "authenticated" | "unauthenticated" | "degraded";
   errorMsg: string | null;
 
   // DB Collections in memory (Zustand synchronizes these from Supabase)
@@ -126,6 +129,8 @@ export interface AppState {
   customerName: string;
   customerPhone: string;
   paymentMethod: string; // 'Cash' | 'eSewa' | 'Khalti' | 'Fonepay'
+  checkoutIdempotencyKey: string | null;
+  isCheckoutInFlight: boolean;
   activeInvoice: Invoice | null; // Set after successful checkout to trigger receipt
   activeInvoiceItems: InvoiceItem[] | null;
 

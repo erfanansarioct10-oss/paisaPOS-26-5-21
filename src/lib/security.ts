@@ -135,17 +135,22 @@ export function getFriendlyErrorMessage(err: unknown): string {
   if (!err) return "An unexpected error occurred. Please try again.";
 
   let message = "";
+  let code = "";
   if (err instanceof Error) {
     message = err.message;
   } else if (typeof err === "string") {
     message = err;
   } else if (typeof err === "object" && err !== null && "message" in err) {
     message = String((err as { message: unknown }).message);
+    if ("code" in err) {
+      code = String((err as { code?: unknown }).code ?? "");
+    }
   } else {
     message = String(err);
   }
 
   const lowercaseMsg = message.toLowerCase();
+  const lowercaseCode = code.toLowerCase();
 
   // 1. Password complexity / strength mapping
   if (lowercaseMsg.includes("password should contain at least one character of each") || 
@@ -177,6 +182,9 @@ export function getFriendlyErrorMessage(err: unknown): string {
       lowercaseMsg.includes("user already registered")) {
     return "This email address is already registered. Please sign in instead.";
   }
+  if (lowercaseMsg.includes("staff account is suspended") || lowercaseMsg.includes("account is suspended")) {
+    return "This staff account is suspended. Please contact the store owner.";
+  }
 
   // 4. Rate limiting / abuse
   if (lowercaseMsg.includes("too many requests") || 
@@ -189,7 +197,87 @@ export function getFriendlyErrorMessage(err: unknown): string {
     return "Too many attempts. Please try again in a few minutes.";
   }
 
-  // 5. Network / Database / Server Action / Fetch failures
+  // 5. Staff/invite/delegation domain errors
+  if (lowercaseMsg.includes("staff_invitation_auth_required")) {
+    return "Please sign in with the invited email first.";
+  }
+  if (lowercaseMsg.includes("staff_invitation_not_found")) {
+    return "Invitation not found.";
+  }
+  if (lowercaseMsg.includes("staff_invitation_not_pending")) {
+    return "This invitation is no longer pending.";
+  }
+  if (lowercaseMsg.includes("staff_invitation_expired")) {
+    return "This invitation has expired. Ask the owner to send a new one.";
+  }
+  if (lowercaseMsg.includes("staff_invitation_email_mismatch")) {
+    return "This invite belongs to a different email address.";
+  }
+  if (lowercaseMsg.includes("staff_invitation_store_conflict")) {
+    return "This account is already connected to another store.";
+  }
+  if (lowercaseMsg.includes("staff_invitation_role_conflict")) {
+    return "This invite can only be accepted by a cashier account.";
+  }
+  if (lowercaseMsg.includes("staff_invitation_store_missing")) {
+    return "This invitation is no longer valid. Ask the owner to send a new one.";
+  }
+  if (
+    lowercaseMsg.includes("staff_invitation_pending_register_blocked") ||
+    lowercaseMsg.includes("staff_account_cannot_register_store")
+  ) {
+    return "This account is already connected to a store as staff. Use a different email to create your own shop.";
+  }
+  if (lowercaseMsg.includes("store_registration_profile_conflict")) {
+    return "This account is already connected to a store. Please sign in instead.";
+  }
+  if (lowercaseMsg.includes("staff_lifecycle_unauthorized") || lowercaseMsg.includes("missing privilege")) {
+    return "You do not have permission to update staff access.";
+  }
+  if (lowercaseMsg.includes("staff_profile_not_found") || lowercaseMsg.includes("cashier profile not found")) {
+    return "Cashier profile not found.";
+  }
+  if (lowercaseMsg.includes("staff_already_suspended") || lowercaseMsg.includes("already suspended")) {
+    return "This cashier is already suspended.";
+  }
+  if (lowercaseMsg.includes("staff_already_active") || lowercaseMsg.includes("already active")) {
+    return "This cashier is already active.";
+  }
+  if (lowercaseMsg.includes("staff_self_suspension_denied")) {
+    return "Owners cannot suspend their own account.";
+  }
+  if (lowercaseMsg.includes("delegation_not_found") || lowercaseMsg.includes("temporary access record not found")) {
+    return "Temporary access record not found.";
+  }
+  if (lowercaseMsg.includes("delegation_already_revoked") || lowercaseMsg.includes("already revoked")) {
+    return "Temporary access is already revoked.";
+  }
+  if (lowercaseMsg.includes("stock record was not found")) {
+    return "Stock record was not found or is no longer editable.";
+  }
+
+  // 6. Duplicate and validation cases that are safe to show
+  if (
+    lowercaseCode === "23505" ||
+    lowercaseMsg.includes("duplicate key") ||
+    lowercaseMsg.includes("unique constraint") ||
+    lowercaseMsg.includes("product_variants_store_sku_key") ||
+    lowercaseMsg.includes("product_variants_sku_key")
+  ) {
+    return "A record with those details already exists. Please check the value and try again.";
+  }
+  if (
+    lowercaseMsg.includes("invalid checkout payload") ||
+    lowercaseMsg.includes("invalid product details") ||
+    lowercaseMsg.includes("invalid bulk products details") ||
+    lowercaseMsg.includes("invalid store info") ||
+    lowercaseMsg.includes("invalid profile details") ||
+    lowercaseMsg.includes("validation failed")
+  ) {
+    return message;
+  }
+
+  // 7. Network / Database / Server Action / Fetch failures
   if (lowercaseMsg.includes("fetch failed") || 
       lowercaseMsg.includes("typeerror") || 
       lowercaseMsg.includes("network error") || 
@@ -201,11 +289,16 @@ export function getFriendlyErrorMessage(err: unknown): string {
     return "We are experiencing a temporary server connection issue. Please verify your internet connection and try again in a few moments.";
   }
 
-  // Fallback to a clean general message
+  // 8. Fallback to a clean general message for framework/server errors
   if (lowercaseMsg.includes("an error occurred in the server action") || 
       lowercaseMsg.includes("internal server error")) {
     return "An error occurred on the server. Please try again in a moment.";
   }
 
-  return message;
+  const technicalPattern = /(postgrest|postgres|supabase|pgrst|sql|database|schema|relation|column|constraint|foreign key|violates|row-level|rls|rpc|function|uuid|json|syntax|stack|trace|server action|failed to fetch|jwt|cookie|session)/i;
+  if (!technicalPattern.test(message) && message.length <= 180) {
+    return message;
+  }
+
+  return "An unexpected error occurred. Please try again.";
 }

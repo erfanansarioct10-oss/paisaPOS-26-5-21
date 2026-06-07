@@ -1,9 +1,16 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { writeLog } from './lib/logger'
-import { globalLimiter, isBlockedBot } from './lib/rate-limiter'
-import { getTrustedClientIp } from './lib/network'
+import { writeLog } from '@/server/logging/logger'
+import { globalLimiter, isBlockedBot } from '@/server/rate-limit/rate-limiter'
+import { getTrustedClientIp } from '@/server/network/client-ip'
+import {
+  CORRELATION_ID_HEADER,
+  REQUEST_ID_HEADER,
+  REQUEST_METHOD_HEADER,
+  REQUEST_PATH_HEADER,
+  getOrCreateRequestId,
+} from '@/server/observability/ids'
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -11,14 +18,23 @@ export async function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const cspHeader = buildCspHeader(nonce);
   const requestHeaders = new Headers(request.headers);
+  const requestId = getOrCreateRequestId(request.headers);
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", cspHeader);
+  requestHeaders.set(REQUEST_ID_HEADER, requestId);
+  requestHeaders.set(CORRELATION_ID_HEADER, requestId);
+  requestHeaders.set(REQUEST_METHOD_HEADER, request.method);
+  requestHeaders.set(REQUEST_PATH_HEADER, request.nextUrl.pathname);
 
   // -----------------------------------------------------------------------
   // 0. Extract client identifiers for abuse detection
   // -----------------------------------------------------------------------
   const clientIp = await getTrustedClientIp(request);
   const userAgent = request.headers.get("user-agent") || "";
+  const { pathname } = request.nextUrl;
+  const withRequestHeaders = (nextResponse: NextResponse) =>
+    withSecurityHeaders(nextResponse, cspHeader, requestId);
+  const isAuthCallback = pathname === "/auth/callback";
   const isHealthCheck = request.nextUrl.pathname === "/api/health";
   const automationBypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
   const hasAutomationBypass = Boolean(
@@ -37,7 +53,7 @@ export async function proxy(request: NextRequest) {
     const httpsUrl = request.nextUrl.clone();
     httpsUrl.protocol = "https:";
     await writeLog("INFO", "HTTPS_REDIRECT", `Redirected HTTP request to HTTPS for host ${host}`);
-    return withSecurityHeaders(NextResponse.redirect(httpsUrl, 301), cspHeader);
+    return withRequestHeaders(NextResponse.redirect(httpsUrl, 301));
   }
 
   // -----------------------------------------------------------------------
@@ -49,10 +65,10 @@ export async function proxy(request: NextRequest) {
       userAgent,
       path: request.nextUrl.pathname,
     });
-    return withSecurityHeaders(NextResponse.json(
+    return withRequestHeaders(NextResponse.json(
       { error: "Forbidden" },
       { status: 403, headers: { "X-Blocked-Reason": "automated-client" } }
-    ), cspHeader);
+    ));
   }
 
   // -----------------------------------------------------------------------
@@ -71,7 +87,15 @@ export async function proxy(request: NextRequest) {
       path: request.nextUrl.pathname,
       retryAfter: retryAfterSeconds,
     });
-    return withSecurityHeaders(NextResponse.json(
+    if (isAuthCallback) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/auth/callback-error";
+      url.search = "?reason=rate_limited";
+      const response = NextResponse.redirect(url);
+      response.headers.set("Retry-After", String(retryAfterSeconds));
+      return withRequestHeaders(response);
+    }
+    return withRequestHeaders(NextResponse.json(
       { error: "Too many requests. Please slow down." },
       {
         status: 429,
@@ -82,7 +106,7 @@ export async function proxy(request: NextRequest) {
           "X-RateLimit-Reset": String(rateLimitResult.resetAt),
         },
       }
-    ), cspHeader);
+    ));
   }
 
   // -----------------------------------------------------------------------
@@ -94,13 +118,14 @@ export async function proxy(request: NextRequest) {
     },
   })
   response.headers.set("Content-Security-Policy", cspHeader);
+  response.headers.set("X-Request-Id", requestId);
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   if (!supabaseUrl || !supabaseAnonKey) {
     const { pathname } = request.nextUrl
-    const protectedRoutes = ['/dashboard', '/billing', '/inventory', '/invoices', '/settings']
+    const protectedRoutes = ['/dashboard', '/billing', '/inventory', '/invoices', '/settings', '/staff', '/activity']
     const isProtectedRoute = protectedRoutes.some(
       route => pathname === route || pathname.startsWith(route + '/')
     )
@@ -108,9 +133,9 @@ export async function proxy(request: NextRequest) {
       const url = request.nextUrl.clone()
       url.pathname = '/'
       url.search = ''
-      return withSecurityHeaders(NextResponse.redirect(url), cspHeader)
+      return withRequestHeaders(NextResponse.redirect(url))
     }
-    return addRateLimitHeaders(response, rateLimitResult.remaining)
+    return addRateLimitHeaders(response, rateLimitResult.remaining, requestId)
   }
 
   const supabase = createServerClient(
@@ -118,32 +143,24 @@ export async function proxy(request: NextRequest) {
     supabaseAnonKey,
     {
       cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
+        getAll() {
+          return request.cookies.getAll()
         },
-        set(name: string, value: string, options: Record<string, unknown>) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          request.cookies.set({ name, value, ...options } as any)
+        setAll(cookiesToSet, responseHeaders) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           response = NextResponse.next({
             request: {
               headers: requestHeaders,
             },
           })
           response.headers.set("Content-Security-Policy", cspHeader)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          response.cookies.set({ name, value, ...options } as any)
-        },
-        remove(name: string, options: Record<string, unknown>) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          request.cookies.set({ name, value: '', ...options } as any)
-          response = NextResponse.next({
-            request: {
-              headers: requestHeaders,
-            },
+          Object.entries(responseHeaders).forEach(([key, value]) => {
+            response.headers.set(key, value)
           })
-          response.headers.set("Content-Security-Policy", cspHeader)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          response.cookies.set({ name, value: '', ...options } as any)
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options)
+          })
+          response.headers.set("X-Request-Id", requestId)
         },
       },
     }
@@ -153,10 +170,8 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  const { pathname } = request.nextUrl
-
   // Protect all authenticated paths
-  const protectedRoutes = ['/dashboard', '/billing', '/inventory', '/invoices', '/settings']
+  const protectedRoutes = ['/dashboard', '/billing', '/inventory', '/invoices', '/settings', '/staff', '/activity']
   const isProtectedRoute = protectedRoutes.some(
     route => pathname === route || pathname.startsWith(route + '/')
   )
@@ -171,7 +186,7 @@ export async function proxy(request: NextRequest) {
       await writeLog("SECURITY", "UNAUTHORIZED_REDIRECT", `Redirected unauthenticated access attempt from protected route: ${pathname}`, {
         attemptedPath: pathname,
       });
-      return withSecurityHeaders(NextResponse.redirect(url), cspHeader)
+      return withRequestHeaders(NextResponse.redirect(url))
     }
   }
 
@@ -189,11 +204,11 @@ export async function proxy(request: NextRequest) {
       const url = request.nextUrl.clone()
       url.pathname = '/dashboard'
       url.search = ''
-      return withSecurityHeaders(NextResponse.redirect(url), cspHeader)
+      return withRequestHeaders(NextResponse.redirect(url))
     }
   }
 
-  return addRateLimitHeaders(response, rateLimitResult.remaining)
+  return addRateLimitHeaders(response, rateLimitResult.remaining, requestId)
 }
 
 function buildCspHeader(nonce: string): string {
@@ -216,8 +231,11 @@ function buildCspHeader(nonce: string): string {
   return csp.replace(/\s{2,}/g, " ").trim();
 }
 
-function withSecurityHeaders(response: NextResponse, cspHeader: string): NextResponse {
+function withSecurityHeaders(response: NextResponse, cspHeader: string, requestId?: string): NextResponse {
   response.headers.set("Content-Security-Policy", cspHeader);
+  if (requestId) {
+    response.headers.set("X-Request-Id", requestId);
+  }
   return response;
 }
 
@@ -245,9 +263,13 @@ function isHiddenAdminProbe(pathname: string): boolean {
 function addRateLimitHeaders(
   response: NextResponse,
   remaining: number,
+  requestId?: string,
 ): NextResponse {
   response.headers.set("X-RateLimit-Limit", String(globalLimiter.maxRequests));
   response.headers.set("X-RateLimit-Remaining", String(remaining));
+  if (requestId) {
+    response.headers.set("X-Request-Id", requestId);
+  }
   return response;
 }
 

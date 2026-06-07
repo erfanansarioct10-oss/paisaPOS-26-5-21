@@ -1,11 +1,14 @@
 "use server";
 
 import { createClient } from "@supabase/supabase-js";
+import { createHash } from "node:crypto";
 import { headers } from "next/headers";
 import { z } from "zod";
-import { writeLog } from "@/lib/logger";
-import { getSupabaseServerClient } from "@/lib/server/dal";
-import { loginLimiter, loginIpLimiter, signupLimiter, passwordResetLimiter, enforceRateLimit, getClientIp } from "@/lib/rate-limiter";
+import { writeLog } from "@/server/logging/logger";
+import { getSupabaseServerClient } from "@/server/supabase/dal";
+import { getSupabaseAdminClient } from "@/server/supabase/admin-supabase";
+import { logRawServerError } from "@/server/logging/error-logging";
+import { loginLimiter, loginIpLimiter, signupLimiter, passwordResetLimiter, enforceRateLimit, getClientIp } from "@/server/rate-limit/rate-limiter";
 import {
   MAX_EMAIL_LENGTH,
   MAX_PASSWORD_LENGTH,
@@ -35,6 +38,15 @@ const strongPasswordSchema = passwordSchema.refine(
   validatePasswordComplexity,
   "Password must contain at least one lowercase letter, one uppercase letter, and one number."
 );
+
+function getLoginEmailFingerprint(email: string) {
+  return createHash("sha256").update(email).digest("hex").slice(0, 32);
+}
+
+function getVercelOrigin() {
+  const vercelUrl = process.env.VERCEL_URL || process.env.NEXT_PUBLIC_VERCEL_URL;
+  return vercelUrl ? `https://${vercelUrl}` : null;
+}
 
 const authSchema = z.object({
   email: normalizedEmailSchema,
@@ -97,6 +109,94 @@ async function retryOnTransientJwtClockSkew<T>(
   return result;
 }
 
+type SignupProfile = {
+  store_id: string | null;
+  role: "owner" | "cashier" | null;
+  status?: string | null;
+};
+
+const STAFF_ACCOUNT_OWNER_BLOCK =
+  "This account is already connected to a store as staff. Use a different email to create your own shop.";
+
+async function hasPendingStaffInviteForEmail(email: string): Promise<boolean | "unavailable"> {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return false;
+  }
+
+  try {
+    const adminClient = getSupabaseAdminClient();
+    const { data, error } = await adminClient
+      .from("staff_invitations")
+      .select("id")
+      .eq("email", email)
+      .eq("status", "pending")
+      .gt("expires_at", new Date().toISOString())
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      await logRawServerError("SIGNUP_STAFF_INVITE_LOOKUP_FAILED", "Staff invite signup guard lookup failed", error, {
+        email,
+      });
+      return "unavailable";
+    }
+
+    return Boolean(data);
+  } catch (error: unknown) {
+    await logRawServerError("SIGNUP_STAFF_INVITE_LOOKUP_UNEXPECTED", "Staff invite signup guard lookup threw", error, {
+      email,
+    });
+    return "unavailable";
+  }
+}
+
+async function getExistingSessionSignupResult(
+  supabase: Awaited<ReturnType<typeof getSupabaseServerClient>>,
+  email: string,
+): Promise<{ blocked: true; error: string } | { blocked: false; storeId?: string }> {
+  const { data: { user: sessionUser }, error: sessionError } = await supabase.auth.getUser();
+
+  if (sessionError || !sessionUser) {
+    return { blocked: false };
+  }
+
+  const sessionEmail = normalizeEmail(sessionUser.email ?? "");
+  if (sessionEmail && sessionEmail !== email) {
+    return {
+      blocked: true,
+      error: "You are already signed in. Sign out before registering a different store.",
+    };
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("users")
+    .select("store_id, role, status")
+    .eq("id", sessionUser.id)
+    .maybeSingle();
+
+  if (profileError) {
+    await logRawServerError("SIGNUP_PROFILE_LOOKUP_FAILED", "Signup profile guard lookup failed", profileError, {
+      userId: sessionUser.id,
+      email,
+    });
+    return {
+      blocked: true,
+      error: "Registration is temporarily unavailable. Please try again.",
+    };
+  }
+
+  const existingProfile = profile as SignupProfile | null;
+  if (existingProfile?.role === "cashier") {
+    return { blocked: true, error: STAFF_ACCOUNT_OWNER_BLOCK };
+  }
+
+  if (existingProfile?.role === "owner" && existingProfile.store_id) {
+    return { blocked: false, storeId: existingProfile.store_id };
+  }
+
+  return { blocked: false };
+}
+
 /**
  * Log in Action
  * Authenticates user, sets cookies, and logs the event
@@ -111,12 +211,13 @@ export async function loginAction(rawParams: unknown) {
     const { email, password } = validation.data;
 
     const ip = await getClientIp();
+    const emailFingerprint = getLoginEmailFingerprint(email);
 
-    // 1. Account-scoped rate limiting: 5 login attempts per 15 minutes per email
-    await enforceRateLimit(loginLimiter, `login:${email}`, "LOGIN");
+    // 1. IP-scoped abuse protection: 30 login attempts per 15 minutes per IP
+    await enforceRateLimit(loginIpLimiter, `login_ip:${ip}`, "LOGIN_IP");
 
-    // 2. IP-scoped abuse protection: 30 login attempts per 15 minutes per IP
-    await enforceRateLimit(loginIpLimiter, `login_ip:${ip}`, "LOGIN");
+    // 2. Pair-scoped throttling avoids unauthenticated lockout of the same email from other IPs.
+    await enforceRateLimit(loginLimiter, `login_pair:${ip}:${emailFingerprint}`, "LOGIN_ACCOUNT_IP");
 
     const supabase = await getSupabaseServerClient();
 
@@ -182,6 +283,21 @@ export async function signupAction(rawParams: unknown) {
     await enforceRateLimit(signupLimiter, `signup:${ip}`, "SIGNUP");
 
     const supabase = await getSupabaseServerClient();
+    const existingSession = await getExistingSessionSignupResult(supabase, email);
+    if (existingSession.blocked) {
+      return { error: existingSession.error };
+    }
+    if (existingSession.storeId) {
+      return { success: true, storeId: existingSession.storeId };
+    }
+
+    const pendingStaffInvite = await hasPendingStaffInviteForEmail(email);
+    if (pendingStaffInvite === "unavailable") {
+      return { error: "Registration is temporarily unavailable. Please try again." };
+    }
+    if (pendingStaffInvite) {
+      return { error: STAFF_ACCOUNT_OWNER_BLOCK };
+    }
 
     // 1. Sign up the user
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
@@ -256,11 +372,10 @@ export async function requestPasswordResetAction(email: string) {
 
     const supabase = await getSupabaseServerClient();
 
-    // Canonical origin resolution: use APP_URL env var, fallback to Vercel, then headers in development
-    let origin = process.env.APP_URL;
-    if (!origin && process.env.NEXT_PUBLIC_VERCEL_URL) {
-      origin = `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`;
-    }
+    // Preview deploys should use their generated Vercel URL even when APP_URL is set globally.
+    let origin = process.env.VERCEL_ENV === "preview" ? getVercelOrigin() : null;
+    origin = origin || process.env.APP_URL || null;
+    origin = origin || getVercelOrigin();
     if (!origin && process.env.NODE_ENV !== "production") {
       const headersList = await headers();
       const host = headersList.get("host") || "localhost:3000";

@@ -2,75 +2,84 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { callbackLimiter } from "@/lib/rate-limiter";
+import { callbackLimiter } from "@/server/rate-limit/rate-limiter";
 import { sanitizeString, validateRedirectPath } from "@/lib/security";
-import { getTrustedClientIp } from "@/lib/network";
+import { getTrustedClientIp } from "@/server/network/client-ip";
+import { logRawServerError } from "@/server/logging/error-logging";
+
+function callbackErrorRedirect(
+  origin: string,
+  reason: string,
+  details: Record<string, string | undefined> = {},
+) {
+  const url = new URL("/auth/callback-error", origin);
+  url.searchParams.set("reason", reason);
+
+  for (const [key, value] of Object.entries(details)) {
+    if (value) {
+      url.searchParams.set(key, value);
+    }
+  }
+
+  return NextResponse.redirect(url);
+}
 
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url);
-  const code = sanitizeString(searchParams.get("code") || "");
-  const type = sanitizeString(searchParams.get("type") || "");
-  const next = validateRedirectPath(searchParams.get("next"), "/dashboard");
+  const requestUrl = new URL(request.url);
+  const { searchParams, origin } = requestUrl;
 
-  if (!code) {
-    // No code provided — redirect to login
-    return NextResponse.redirect(new URL("/", origin));
-  }
+  try {
+    const code = sanitizeString(searchParams.get("code") || "");
+    const type = sanitizeString(searchParams.get("type") || "");
+    const next = validateRedirectPath(searchParams.get("next"), "/dashboard");
 
-  // IP-scoped rate limiting: 10 callback attempts per minute
-  const clientIp = await getTrustedClientIp(request);
-  const rateLimitResult = await callbackLimiter.check(`callback:${clientIp}`);
-  if (!rateLimitResult.success) {
-    const retryAfter = Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000);
-    return NextResponse.json(
-      { error: "Too many requests. Please try again later." },
-      {
-        status: 429,
-        headers: { "Retry-After": String(retryAfter) },
-      }
-    );
-  }
+    if (!code) {
+      return callbackErrorRedirect(origin, "missing_code", { next, type });
+    }
 
-  const cookieStore = await cookies();
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    const clientIp = await getTrustedClientIp(request);
+    const rateLimitResult = await callbackLimiter.check(`callback:${clientIp}`);
+    if (!rateLimitResult.success) {
+      const retryAfter = Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000);
+      const response = callbackErrorRedirect(origin, "rate_limited");
+      response.headers.set("Retry-After", String(retryAfter));
+      return response;
+    }
 
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value;
+    const cookieStore = await cookies();
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, options);
+            });
+          } catch {
+            // May be called in a read-only context.
+          }
+        },
       },
-      set(name: string, value: string, options: Record<string, unknown>) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          cookieStore.set({ name, value, ...options } as any);
-        } catch {
-          // Ignore — may be called in a read-only context
-        }
-      },
-      remove(name: string, options: Record<string, unknown>) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          cookieStore.set({ name, value: "", ...options } as any);
-        } catch {
-          // Ignore
-        }
-      },
-    },
-  });
+    });
 
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) {
+      await logRawServerError("AUTH_CALLBACK_EXCHANGE_FAILED", "Auth callback exchange failed", error);
+      return callbackErrorRedirect(origin, "exchange_failed");
+    }
 
-  if (error) {
-    console.error("Auth callback error:", error.message);
-    return NextResponse.redirect(new URL("/", origin));
+    if (type === "recovery") {
+      return NextResponse.redirect(new URL("/auth/update-password", origin));
+    }
+
+    return NextResponse.redirect(new URL(next, origin));
+  } catch (error: unknown) {
+    await logRawServerError("AUTH_CALLBACK_UNEXPECTED", "Auth callback route failed unexpectedly", error);
+    return callbackErrorRedirect(origin, "exchange_failed");
   }
-
-  // Password recovery flow → send to update-password page
-  if (type === "recovery") {
-    return NextResponse.redirect(new URL("/auth/update-password", origin));
-  }
-
-  // Email verification or other flows → send to intended destination
-  return NextResponse.redirect(new URL(next, origin));
 }

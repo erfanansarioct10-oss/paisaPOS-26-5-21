@@ -1,7 +1,13 @@
 import { describe, test, expect, beforeAll } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { loadEnvConfig } from "@next/env";
-import { retryOnTransientJwtClockSkew } from "./supabase-test-utils";
+import {
+  getCheckoutInvoiceId,
+  getVariantInventory,
+  newIdempotencyKey,
+  retryOnTransientJwtClockSkew,
+  upsertCatalogProduct,
+} from "./supabase-test-utils";
 
 // Load environment variables using Next.js's loader
 loadEnvConfig(process.cwd());
@@ -15,10 +21,12 @@ const runLiveTests = !!(
 
 describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integration Verification", () => {
   let supabase: ReturnType<typeof createClient>;
+  let serviceRoleKey: string | undefined;
 
   beforeAll(() => {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+    serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     supabase = createClient(supabaseUrl, supabaseAnonKey);
   });
 
@@ -77,52 +85,31 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
 
     // 5. Product Creation (CREATE Product)
     console.log("[QA] Creating test product...");
-    const { data: product, error: productError } = await supabase
-      .from("products")
-      .insert({
-        store_id: storeId,
-        name: "QA Denim Jeans",
-        category: "Pants",
-        low_stock_threshold: 3,
-      })
-      .select()
-      .single();
-
-    expect(productError).toBeNull();
+    const sku = `QA-JEAN-BLU-${randomId.toUpperCase()}`;
+    const { product, variant, inventory } = await upsertCatalogProduct(supabase, {
+      name: "QA Denim Jeans",
+      category: "Pants",
+      lowStockThreshold: 3,
+      variants: [
+        {
+          size: "32",
+          color: "Indigo Blue",
+          sku,
+          price: 2450.00,
+          stock: 15,
+        },
+      ],
+    });
     expect(product).toBeDefined();
     expect(product.name).toBe("QA Denim Jeans");
 
     // 6. Variant Mapping (CREATE Variant)
-    console.log("[QA] Creating product variant...");
-    const sku = `QA-JEAN-BLU-${randomId.toUpperCase()}`;
-    const { data: variant, error: variantError } = await supabase
-      .from("product_variants")
-      .insert({
-        product_id: product.id,
-        size: "32",
-        color: "Indigo Blue",
-        sku: sku,
-        price: 2450.00,
-      })
-      .select()
-      .single();
-
-    expect(variantError).toBeNull();
+    console.log("[QA] Verifying product variant...");
     expect(variant).toBeDefined();
     expect(variant.sku).toBe(sku);
 
     // 7. Inventory Seeding (CREATE Stock)
-    console.log("[QA] Seeding initial variant stock level...");
-    const { data: inventory, error: inventoryError } = await supabase
-      .from("inventory")
-      .insert({
-        variant_id: variant.id,
-        quantity: 15,
-      })
-      .select()
-      .single();
-
-    expect(inventoryError).toBeNull();
+    console.log("[QA] Verifying initial variant stock level...");
     expect(inventory).toBeDefined();
     expect(inventory.quantity).toBe(15);
 
@@ -137,31 +124,33 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
     expect(productsList).toBeDefined();
     expect(productsList!.length).toBe(1);
     expect(productsList![0].product_variants.length).toBe(1);
-    expect(productsList![0].product_variants[0].inventory.quantity).toBe(15);
+    expect(getVariantInventory(productsList![0].product_variants[0]).quantity).toBe(15);
 
-    // 9. Update variant stock directly (UPDATE Stock)
-    console.log("[QA] Updating variant stock level directly...");
-    const { data: updatedInventory, error: stockUpdateError } = await supabase
-      .from("inventory")
-      .update({ quantity: 20 })
-      .eq("variant_id", variant.id)
-      .select()
-      .single();
-
-    expect(stockUpdateError).toBeNull();
+    // 9. Update variant stock through the owner catalog RPC
+    console.log("[QA] Updating variant stock level through catalog RPC...");
+    const updatedCatalog = await upsertCatalogProduct(supabase, {
+      productId: product.id,
+      name: "QA Distressed Denim Jeans",
+      category: "Pants",
+      lowStockThreshold: 3,
+      variants: [
+        {
+          id: variant.id,
+          size: "32",
+          color: "Indigo Blue",
+          sku,
+          price: 2450.00,
+          stock: 20,
+        },
+      ],
+    });
+    const updatedInventory = updatedCatalog.inventory;
     expect(updatedInventory).toBeDefined();
     expect(updatedInventory.quantity).toBe(20);
 
     // 10. Update product details (UPDATE Product)
-    console.log("[QA] Updating product details...");
-    const { data: updatedProduct, error: productUpdateError } = await supabase
-      .from("products")
-      .update({ name: "QA Distressed Denim Jeans" })
-      .eq("id", product.id)
-      .select()
-      .single();
-
-    expect(productUpdateError).toBeNull();
+    console.log("[QA] Verifying updated product details...");
+    const updatedProduct = updatedCatalog.product;
     expect(updatedProduct.name).toBe("QA Distressed Denim Jeans");
 
     // 11. Transaction Checkout & Atomic Inventory Deduction (CREATE Invoice)
@@ -182,7 +171,7 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
       },
     ];
 
-    const { data: invoiceId, error: checkoutError } = await supabase.rpc("create_invoice_and_deduct_stock", {
+    const { data: checkoutResult, error: checkoutError } = await supabase.rpc("create_invoice_and_deduct_stock", {
       p_store_id: storeId,
       p_invoice_number: "INV-PRE-GENERATED", // Overwritten dynamically by the RPC sequencer
       p_customer_name: "John Doe Nepal",
@@ -192,9 +181,11 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
       p_paid_amount: 10100.00,
       p_payment_method: "Fonepay",
       p_items: items,
+      p_idempotency_key: newIdempotencyKey(),
     });
 
     expect(checkoutError).toBeNull();
+    const invoiceId = getCheckoutInvoiceId(checkoutResult);
     expect(invoiceId).toBeDefined();
 
     // 12. Verify inventory reduction (Stock check: 20 - 4 = 16)
@@ -247,6 +238,7 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
       p_discount_amount: 0.00,
       p_paid_amount: 2450.00,
       p_payment_method: "Visa", // Invalid payment method
+      p_idempotency_key: newIdempotencyKey(),
       p_items: [
         {
           variant_id: variant.id,
@@ -271,6 +263,7 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
       p_discount_amount: 0.00,
       p_paid_amount: 0.00,
       p_payment_method: "Fonepay",
+      p_idempotency_key: newIdempotencyKey(),
       p_items: [
         {
           variant_id: variant.id,
@@ -286,7 +279,9 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
 
     // 14. Clean up - DELETE the store. Cascade constraints must automatically wipe out products, variants, inventory, and invoices.
     console.log("[QA] Cleaning up database by deleting test store (cascade)...");
-    const { error: storeDeleteError } = await supabase
+    expect(serviceRoleKey).toBeDefined();
+    const adminClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || "", serviceRoleKey!);
+    const { error: storeDeleteError } = await adminClient
       .from("stores")
       .delete()
       .eq("id", storeId);
@@ -294,15 +289,15 @@ describe.runIf(runLiveTests)("PaisaPOS — Live Production Database CRUD Integra
     expect(storeDeleteError).toBeNull();
 
     // 15. Verify cascade deletion was successful across all tables
-    const { data: finalProducts } = await supabase.from("products").select("*").eq("store_id", storeId);
+    const { data: finalProducts } = await adminClient.from("products").select("*").eq("store_id", storeId);
     expect(finalProducts!.length).toBe(0);
 
-    const { data: finalInvoices } = await supabase.from("invoices").select("*").eq("store_id", storeId);
+    const { data: finalInvoices } = await adminClient.from("invoices").select("*").eq("store_id", storeId);
     expect(finalInvoices!.length).toBe(0);
 
     // 16. Delete user profile record
     console.log("[QA] Deleting temporary user profile...");
-    const { error: profileDeleteError } = await supabase
+    const { error: profileDeleteError } = await adminClient
       .from("users")
       .delete()
       .eq("id", userId);

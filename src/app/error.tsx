@@ -5,10 +5,12 @@ import { AlertTriangle, RotateCcw } from "lucide-react";
 
 export default function Error({
   error,
+  unstable_retry,
   reset,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  unstable_retry?: () => void;
+  reset?: () => void;
 }) {
   useEffect(() => {
     console.error("Route error:", error.digest ?? error.message);
@@ -26,7 +28,7 @@ export default function Error({
         </div>
         <button
           type="button"
-          onClick={reset}
+          onClick={() => (unstable_retry ?? reset)?.()}
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-95"
         >
           <RotateCcw className="h-4 w-4" />

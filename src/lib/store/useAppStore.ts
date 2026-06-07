@@ -6,9 +6,9 @@
 
 import { create } from "zustand";
 import type { AppState } from "./types";
-import { createAuthSlice } from "./authSlice";
-import { createInventorySlice } from "./inventorySlice";
-import { createCartSlice } from "./cartSlice";
+import { createAuthSlice } from "@/features/auth/state/auth-slice";
+import { createInventorySlice } from "@/features/inventory/state/inventory-slice";
+import { createCartSlice } from "@/features/billing/state/cart-slice";
 
 // Re-export all types for backward compatibility
 export type {

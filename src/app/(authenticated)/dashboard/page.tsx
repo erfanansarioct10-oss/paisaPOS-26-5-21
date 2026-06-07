@@ -2,7 +2,7 @@
 
 import React, { useEffect } from "react";
 import { useAppStore } from "@/lib/store/useAppStore";
-import DashboardTab from "@/components/dashboard-tab";
+import DashboardTab from "@/features/dashboard/components/dashboard-tab";
 
 export default function DashboardOverviewPage() {
   const { setTab } = useAppStore();

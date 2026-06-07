@@ -8,6 +8,7 @@ import {
   sanitizeCSVCell,
   validateRedirectPath,
   formatZodError,
+  getFriendlyErrorMessage,
   validateAuthStringSafety,
   validatePasswordComplexity,
 } from "../security";
@@ -78,7 +79,7 @@ describe("Security Sanitization & Validation Tests", () => {
 
     test("should reject absolute paths to prevent open redirects", () => {
       expect(validateRedirectPath("https://evil.com")).toBe("/dashboard");
-      expect(validateRedirectPath("http://attacker.org/path")).toBe("/health-check" ? "/dashboard" : "/dashboard");
+      expect(validateRedirectPath("http://attacker.org/path")).toBe("/dashboard");
     });
 
     test("should reject protocol-relative paths", () => {
@@ -128,6 +129,25 @@ describe("Security Sanitization & Validation Tests", () => {
         expect(formatted).toContain("Item #1 Variant id: Invalid ID");
         expect(formatted).toContain("Item #1 Custom name: Custom name required");
       }
+    });
+  });
+
+  describe("getFriendlyErrorMessage", () => {
+    test("does not leak raw Postgres or RLS details", () => {
+      expect(
+        getFriendlyErrorMessage("new row violates row-level security policy for table users"),
+      ).toBe("An unexpected error occurred. Please try again.");
+      expect(
+        getFriendlyErrorMessage("duplicate key value violates unique constraint \"staff_invitations_email_key\""),
+      ).toBe("A record with those details already exists. Please check the value and try again.");
+    });
+
+    test("preserves staff lifecycle domain messages", () => {
+      expect(getFriendlyErrorMessage("staff_invitation_not_pending")).toBe("This invitation is no longer pending.");
+      expect(getFriendlyErrorMessage("Temporary access is already revoked.")).toBe("Temporary access is already revoked.");
+      expect(getFriendlyErrorMessage("staff_invitation_pending_register_blocked")).toBe(
+        "This account is already connected to a store as staff. Use a different email to create your own shop.",
+      );
     });
   });
 });

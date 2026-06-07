@@ -74,6 +74,8 @@ export const ACTIVE_STAFF_DELEGATION_PRIVILEGES = [
   "inventory.adjust",
 ] as const satisfies readonly StaffPrivilege[];
 
+export type ActiveStaffDelegationPrivilege = (typeof ACTIVE_STAFF_DELEGATION_PRIVILEGES)[number];
+
 const privilegeLabels: Record<StaffPrivilege, string> = {
   "checkout.create": "Checkout",
   "catalog.manage": "Catalog Management",
@@ -116,8 +118,24 @@ export function isDelegatablePrivilege(privilege: StaffPrivilege) {
   return delegatablePrivileges.has(privilege);
 }
 
-export function isActiveDelegationPrivilege(privilege: StaffPrivilege) {
-  return (ACTIVE_STAFF_DELEGATION_PRIVILEGES as readonly StaffPrivilege[]).includes(privilege);
+export function isActiveDelegationPrivilege(
+  privilege: StaffPrivilege,
+): privilege is ActiveStaffDelegationPrivilege {
+  return isActiveDelegationScope(privilege);
+}
+
+export function isActiveDelegationScope(
+  scope: string | null | undefined,
+): scope is ActiveStaffDelegationPrivilege {
+  return (ACTIVE_STAFF_DELEGATION_PRIVILEGES as readonly string[]).includes(scope ?? "");
+}
+
+export function filterActiveStaffDelegations<T extends { scope?: string | null }>(
+  delegations: readonly T[],
+): Array<T & { scope: ActiveStaffDelegationPrivilege }> {
+  return delegations.filter((delegation): delegation is T & { scope: ActiveStaffDelegationPrivilege } =>
+    isActiveDelegationScope(delegation.scope),
+  );
 }
 
 export function formatStaffPrivilege(privilege: StaffPrivilege) {
@@ -135,7 +153,7 @@ export function hasActiveDelegatedPrivilege(
   delegations: StaffCapabilityDelegation[] = [],
   now: Date = new Date(),
 ) {
-  if (user?.role !== "cashier" || user.status !== "active" || !isDelegatablePrivilege(privilege)) {
+  if (user?.role !== "cashier" || user.status !== "active" || !isActiveDelegationPrivilege(privilege)) {
     return false;
   }
 
