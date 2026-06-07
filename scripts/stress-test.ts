@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { loadEnvConfig } from "@next/env";
+import { randomUUID } from "node:crypto";
 
 // 1. Initialize and Load Environment Variables
 loadEnvConfig(process.cwd());
@@ -104,6 +105,15 @@ ${bright}${green}┌────────────────────
     ownerId = signUpOwner.user.id;
     logSuccess(`Owner account created with ID: ${ownerId}`);
 
+    // Explicitly sign in owner to set local session headers
+    const { error: errSignInOwner } = await clientOwner.auth.signInWithPassword({
+      email: testOwnerEmail,
+      password: testPassword,
+    });
+    if (errSignInOwner) {
+      throw new Error(`Failed to sign in owner: ${errSignInOwner.message}`);
+    }
+
     logInfo("Invoking onboarding RPC: register_store_and_user...");
     const { data: registeredStoreId, error: errOnboard } = await clientOwner.rpc("register_store_and_user", {
       p_full_name: "Stress Test Operator",
@@ -118,44 +128,41 @@ ${bright}${green}┌────────────────────
 
     // Create 2 test catalog product variants for checkout locking checks
     logInfo("Creating catalog products and variants...");
-    const { data: product, error: errProd } = await clientOwner
-      .from("products")
-      .insert({
-        store_id: storeId,
-        name: "Stress Premium Kurti",
-        category: "Ethnic Wear",
-        low_stock_threshold: 5,
-      })
-      .select()
-      .single();
+    const { data: productId, error: errProd } = await clientOwner.rpc("upsert_product_and_variants", {
+      p_product_id: null,
+      p_name: "Stress Premium Kurti",
+      p_category: "Ethnic Wear",
+      p_low_stock_threshold: 5,
+      p_deleted_variant_ids: [],
+      p_variants: [
+        { size: "M", color: "Red", sku: `SKU-RED-M-${randomSuffix}`.toUpperCase(), price: 2000, stock: 500 },
+        { size: "L", color: "Blue", sku: `SKU-BLU-L-${randomSuffix}`.toUpperCase(), price: 2500, stock: 500 }
+      ]
+    });
 
-    if (errProd || !product) {
+    if (errProd || !productId) {
       throw new Error(`Failed to create product: ${errProd?.message}`);
     }
 
     const { data: variants, error: errVars } = await clientOwner
       .from("product_variants")
-      .insert([
-        { product_id: product.id, size: "M", color: "Red", sku: `SKU-RED-M-${randomSuffix}`, price: 2000 },
-        { product_id: product.id, size: "L", color: "Blue", sku: `SKU-BLU-L-${randomSuffix}`, price: 2500 }
-      ])
-      .select();
+      .select("id, size")
+      .eq("product_id", productId);
 
     if (errVars || !variants || variants.length < 2) {
-      throw new Error(`Failed to create variants: ${errVars?.message}`);
+      throw new Error(`Failed to retrieve variants: ${errVars?.message}`);
     }
 
-    var1Id = variants[0].id;
-    var2Id = variants[1].id;
+    const varM = variants.find(v => v.size === "M");
+    const varL = variants.find(v => v.size === "L");
+    if (!varM || !varL) {
+      throw new Error("Failed to find expected sizes");
+    }
+    var1Id = varM.id;
+    var2Id = varL.id;
 
     logInfo(`Variant 1 ID: ${var1Id} (Price: Rs. 2000)`);
     logInfo(`Variant 2 ID: ${var2Id} (Price: Rs. 2500)`);
-
-    // Add stock
-    await clientOwner.from("inventory").insert([
-      { variant_id: var1Id, quantity: 500 },
-      { variant_id: var2Id, quantity: 500 }
-    ]);
     logSuccess("Test inventory stock initialized successfully!");
 
     // Set up Cashier profile if admin client is available
@@ -165,11 +172,19 @@ ${bright}${green}┌────────────────────
         email: testCashierEmail,
         password: testPassword,
       });
-
       if (errSignUpCashier || !signUpCashier.user) {
         throw new Error(`Failed to sign up cashier user: ${errSignUpCashier?.message}`);
       }
       cashierId = signUpCashier.user.id;
+
+      // Explicitly sign in cashier to set local session headers
+      const { error: errSignInCashier } = await clientCashier.auth.signInWithPassword({
+        email: testCashierEmail,
+        password: testPassword,
+      });
+      if (errSignInCashier) {
+        throw new Error(`Failed to sign in cashier: ${errSignInCashier.message}`);
+      }
 
       logInfo("Inserting cashier profile into database with role = 'cashier'...");
       const { error: errProfileInsert } = await adminClient.from("users").insert({
@@ -217,7 +232,8 @@ ${bright}${green}┌────────────────────
         p_discount_amount: 0,
         p_paid_amount: 4500,
         p_payment_method: "Fonepay",
-        p_items: items
+        p_items: items,
+        p_idempotency_key: randomUUID()
       }).then(res => {
         const duration = Date.now() - start;
         return {
@@ -283,7 +299,7 @@ ${bright}${green}┌────────────────────
             p_low_stock_threshold: 5,
             p_deleted_variant_ids: [],
             p_variants: [
-              { size: "Free", color: "Gold", sku: `HACK-SKU-${i}-${randomSuffix}`, price: 100, stock: 100 }
+              { size: "Free", color: "Gold", sku: `HACK-SKU-${i}-${randomSuffix}`.toUpperCase(), price: 100, stock: 100 }
             ]
           })
         );
@@ -293,7 +309,7 @@ ${bright}${green}┌────────────────────
       let totalBlocked = 0;
 
       attackResults.forEach((res) => {
-        if (res.error && res.error.message.includes("Only store owners can add or modify products")) {
+        if (res.error && (res.error.message.includes("Only active store owners") || res.error.message.includes("Only store owners"))) {
           totalBlocked++;
         }
       });
@@ -334,7 +350,8 @@ ${bright}${green}┌────────────────────
           unit_price: 100, // Tampered unit price
           subtotal: 100
         }
-      ]
+      ],
+      p_idempotency_key: randomUUID()
     });
 
     if (errTamper && errTamper.message.includes("Price tampering detected")) {

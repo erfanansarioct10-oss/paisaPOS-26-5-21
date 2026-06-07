@@ -888,34 +888,17 @@ describe("Server Action permission abuse gates", () => {
       `staff_invite_accept_ip:127.0.0.1:${invitationId}`,
       "STAFF_INVITE_ACCEPT_IP",
     );
-    expect(rpc.mock.invocationCallOrder[0]).toBeLessThan(updateUser.mock.invocationCallOrder[0]);
+    expect(updateUser.mock.invocationCallOrder[0]).toBeLessThan(rpc.mock.invocationCallOrder[0]);
     expect(recordActivityEvent).not.toHaveBeenCalled();
   });
 
-  test("rolls back database invite acceptance when Auth user setup fails", async () => {
+  test("aborts and returns error early when Auth user setup fails", async () => {
     const { updateUser } = mockInviteeSession({
       email: "cashier@example.com",
       updateError: { message: "Auth service unavailable" },
     });
     const { rpc } = mockStaffInviteAcceptanceRpc({
-      data: {
-        invitationId,
-        storeId,
-        acceptedAt: "2026-05-26T03:29:25.000Z",
-        actorName: "Mina Cashier",
-        actorEmail: "cashier@example.com",
-        profileDisposition: "attached",
-        previousProfile: {
-          id: staffUserId,
-          name: "Mina Cashier",
-          storeId: null,
-          role: "cashier",
-          status: "active",
-          invitedByUserId: null,
-          suspendedAt: null,
-          suspendedByUserId: null,
-        },
-      },
+      data: null,
       error: null,
     });
 
@@ -934,28 +917,51 @@ describe("Server Action permission abuse gates", () => {
       error: "Auth service unavailable",
     });
     expect(updateUser).toHaveBeenCalledTimes(1);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(recordActivityEvent).not.toHaveBeenCalled();
+  });
+
+  test("reverts Auth user setup when database invite acceptance fails", async () => {
+    const { updateUser } = mockInviteeSession({
+      email: "cashier@example.com",
+    });
+    const { rpc } = mockStaffInviteAcceptanceRpc({
+      data: null,
+      error: { message: "Database constraint failure" },
+    });
+
+    const result = await acceptStaffInviteFormAction(
+      { success: false },
+      makeForm({
+        invitationId,
+        fullName: "Mina Cashier",
+        password: "Cashier123",
+        confirmPassword: "Cashier123",
+      }),
+    );
+    expect(result).toMatchObject({
+      success: false,
+      error: "An unexpected error occurred. Please try again.",
+    });
+
+    expect(updateUser).toHaveBeenCalledTimes(2);
+    expect(updateUser).toHaveBeenNthCalledWith(1, {
+      data: {
+        full_name: "Mina Cashier",
+        name: "Mina Cashier",
+      },
+      password: "Cashier123",
+    });
+    expect(updateUser).toHaveBeenNthCalledWith(2, {
+      data: {
+        full_name: "Mina Cashier",
+      },
+    });
+
     expect(rpc).toHaveBeenCalledWith("accept_staff_invitation", expect.objectContaining({
       p_invitation_id: invitationId,
       p_auth_user_id: staffUserId,
     }));
-    expect(rpc).toHaveBeenCalledWith("rollback_staff_invitation_acceptance", {
-      p_invitation_id: invitationId,
-      p_auth_user_id: staffUserId,
-      p_accepted_at: "2026-05-26T03:29:25.000Z",
-      p_profile_disposition: "attached",
-      p_previous_profile: {
-        id: staffUserId,
-        name: "Mina Cashier",
-        storeId: null,
-        role: "cashier",
-        status: "active",
-        invitedByUserId: null,
-        suspendedAt: null,
-        suspendedByUserId: null,
-      },
-    });
-    expect(rpc.mock.invocationCallOrder[0]).toBeLessThan(updateUser.mock.invocationCallOrder[0]);
-    expect(updateUser.mock.invocationCallOrder[0]).toBeLessThan(rpc.mock.invocationCallOrder[1]);
     expect(recordActivityEvent).not.toHaveBeenCalled();
   });
 
@@ -1062,7 +1068,7 @@ describe("Server Action permission abuse gates", () => {
       error: expected,
     });
     expect(rpc).toHaveBeenCalledWith("accept_staff_invitation", expect.any(Object));
-    expect(updateUser).not.toHaveBeenCalled();
+    expect(updateUser).toHaveBeenCalledTimes(2);
     expect(recordActivityEvent).not.toHaveBeenCalled();
   });
 

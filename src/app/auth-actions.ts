@@ -412,6 +412,9 @@ export async function requestPasswordResetAction(email: string) {
  */
 export async function updatePasswordAction(rawParams: unknown) {
   try {
+    const ip = await getClientIp();
+    await enforceRateLimit(passwordResetLimiter, `password_update:${ip}`, "PASSWORD_UPDATE");
+
     const validation = updatePasswordSchema.safeParse(rawParams);
     if (!validation.success) {
       return { error: formatZodError(validation.error) };
