@@ -460,6 +460,7 @@ export default function SettingsPage() {
 
                 {enrollData?.qrCode && (
                   <div className="flex justify-center p-2 bg-white rounded-lg border border-border w-fit mx-auto">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={enrollData.qrCode} alt="MFA QR Code" className="w-40 h-40" />
                   </div>
                 )}
