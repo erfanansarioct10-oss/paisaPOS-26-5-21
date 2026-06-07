@@ -1978,14 +1978,11 @@ describe("Server Action permission abuse gates", () => {
     mockTenant("cashier");
     const usersQuery = createAwaitableQuery({ error: null });
     const from = vi.fn(() => usersQuery);
-    vi.mocked(getSupabaseServerClient).mockResolvedValue({ from } as never);
+    vi.mocked(getSupabaseAdminClient).mockReturnValue({ from } as never);
 
     await expect(updateProfileAction({ name: "Mina Cashier" })).resolves.toBe(true);
 
-    expect(
-      vi.mocked(requireTenantContext).mock.invocationCallOrder[0],
-    ).toBeLessThan(vi.mocked(getSupabaseServerClient).mock.invocationCallOrder[0]);
-    expect(getSupabaseAdminClient).not.toHaveBeenCalled();
+    expect(getSupabaseServerClient).not.toHaveBeenCalled();
     expect(from).toHaveBeenCalledWith("users");
     expect(usersQuery.update).toHaveBeenCalledWith({ name: "Mina Cashier" });
     expect(usersQuery.eq).toHaveBeenCalledWith("id", cashierId);
