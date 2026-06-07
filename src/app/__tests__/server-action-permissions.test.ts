@@ -193,15 +193,6 @@ function createInsertSingleQuery<T>(result: { data: T | null; error: { message: 
   return query;
 }
 
-function createUpdateSingleQuery<T>(result: { data: T | null; error: { message: string } | null }) {
-  const query = {
-    update: vi.fn(() => query),
-    eq: vi.fn(() => query),
-    select: vi.fn(() => query),
-    single: vi.fn(async () => result),
-  };
-  return query;
-}
 
 function createDelegationLookup(
   rows: Array<Record<string, unknown>>,
@@ -584,23 +575,38 @@ describe("Server Action permission abuse gates", () => {
       },
       error: null,
     });
-    const invitationRefresh = createUpdateSingleQuery({
-      data: {
-        id: invitationId,
-        expires_at: "2999-05-26T03:29:25.000Z",
-      },
-      error: null,
-    });
-    let staffInvitationQueryCount = 0;
     const from = vi.fn((table: string) => {
       if (table !== "staff_invitations") {
         throw new Error(`Unexpected table ${table}`);
       }
-      staffInvitationQueryCount += 1;
-      return staffInvitationQueryCount === 1 ? invitationLookup : invitationRefresh;
+      return invitationLookup;
     });
+    const rpc = vi.fn(
+      async (
+        method: string,
+        args: { p_invitation_id: string; p_actor_user_id: string; p_expires_at: string },
+      ) => {
+        if (method === "resend_staff_invitation") {
+          return {
+            data: {
+              ok: true,
+              code: "staff_invite_resent",
+              storeId,
+              invitationId: args.p_invitation_id,
+              targetLabel: "cashier@example.com",
+              actorName: "Owner User",
+              expiresAt: args.p_expires_at,
+              updatedAt: "2026-05-26T02:29:25.000Z",
+            },
+            error: null,
+          };
+        }
+        throw new Error(`Unexpected RPC method ${method}`);
+      },
+    );
     vi.mocked(getSupabaseAdminClient).mockReturnValue({
       from,
+      rpc,
       auth: {
         admin: {
           inviteUserByEmail,
@@ -626,8 +632,10 @@ describe("Server Action permission abuse gates", () => {
       success: true,
       message: "Invitation resent to cashier@example.com.",
     });
-    expect(invitationRefresh.update).toHaveBeenCalledWith({
-      expires_at: expect.any(String),
+    expect(rpc).toHaveBeenCalledWith("resend_staff_invitation", {
+      p_invitation_id: invitationId,
+      p_actor_user_id: ownerId,
+      p_expires_at: expect.any(String),
     });
     expect(inviteUserByEmail).toHaveBeenCalledWith(
       "cashier@example.com",
@@ -688,23 +696,38 @@ describe("Server Action permission abuse gates", () => {
       },
       error: null,
     });
-    const invitationRefresh = createUpdateSingleQuery({
-      data: {
-        id: invitationId,
-        expires_at: "2999-05-26T03:29:25.000Z",
-      },
-      error: null,
-    });
-    let staffInvitationQueryCount = 0;
     const from = vi.fn((table: string) => {
       if (table !== "staff_invitations") {
         throw new Error(`Unexpected table ${table}`);
       }
-      staffInvitationQueryCount += 1;
-      return staffInvitationQueryCount === 1 ? invitationLookup : invitationRefresh;
+      return invitationLookup;
     });
+    const rpc = vi.fn(
+      async (
+        method: string,
+        args: { p_invitation_id: string; p_actor_user_id: string; p_expires_at: string },
+      ) => {
+        if (method === "resend_staff_invitation") {
+          return {
+            data: {
+              ok: true,
+              code: "staff_invite_resent",
+              storeId,
+              invitationId: args.p_invitation_id,
+              targetLabel: "cashier@example.com",
+              actorName: "Owner User",
+              expiresAt: args.p_expires_at,
+              updatedAt: "2026-05-26T02:29:25.000Z",
+            },
+            error: null,
+          };
+        }
+        throw new Error(`Unexpected RPC method ${method}`);
+      },
+    );
     vi.mocked(getSupabaseAdminClient).mockReturnValue({
       from,
+      rpc,
       auth: {
         admin: {
           inviteUserByEmail,
@@ -1224,7 +1247,15 @@ describe("Server Action permission abuse gates", () => {
       },
       error: null,
     }));
-    vi.mocked(getSupabaseAdminClient).mockReturnValue({ rpc } as never);
+    const signOut = vi.fn(async () => ({ error: null }));
+    vi.mocked(getSupabaseAdminClient).mockReturnValue({
+      rpc,
+      auth: {
+        admin: {
+          signOut,
+        },
+      },
+    } as never);
 
     await expect(
       suspendStaffAction({ success: false }, makeForm({ userId: staffUserId, confirmText: "SUSPEND" })),
@@ -1237,6 +1268,7 @@ describe("Server Action permission abuse gates", () => {
       p_target_user_id: staffUserId,
       p_actor_user_id: ownerId,
     });
+    expect(signOut).toHaveBeenCalledWith(staffUserId, "global");
     expect(recordActivityEvent).not.toHaveBeenCalled();
   });
 
@@ -1946,14 +1978,14 @@ describe("Server Action permission abuse gates", () => {
     mockTenant("cashier");
     const usersQuery = createAwaitableQuery({ error: null });
     const from = vi.fn(() => usersQuery);
-    vi.mocked(getSupabaseAdminClient).mockReturnValue({ from } as never);
+    vi.mocked(getSupabaseServerClient).mockResolvedValue({ from } as never);
 
     await expect(updateProfileAction({ name: "Mina Cashier" })).resolves.toBe(true);
 
     expect(
       vi.mocked(requireTenantContext).mock.invocationCallOrder[0],
-    ).toBeLessThan(vi.mocked(getSupabaseAdminClient).mock.invocationCallOrder[0]);
-    expect(getSupabaseServerClient).not.toHaveBeenCalled();
+    ).toBeLessThan(vi.mocked(getSupabaseServerClient).mock.invocationCallOrder[0]);
+    expect(getSupabaseAdminClient).not.toHaveBeenCalled();
     expect(from).toHaveBeenCalledWith("users");
     expect(usersQuery.update).toHaveBeenCalledWith({ name: "Mina Cashier" });
     expect(usersQuery.eq).toHaveBeenCalledWith("id", cashierId);

@@ -536,8 +536,8 @@ export async function deleteProductAction(productId: string) {
     );
     error = result.error;
   } else {
-    const adminClient = getSupabaseAdminClient();
-    const result = await adminClient
+    const supabase = await getSupabaseServerClient();
+    const result = await supabase
       .from("products")
       .delete()
       .eq("id", cleanProductId)
@@ -809,8 +809,7 @@ export async function toggleProductFavoriteAction(productId: string, isFavorite:
       throw new Error("Unauthorized");
     }
 
-    const adminClient = getSupabaseAdminClient();
-    const result = await adminClient
+    const result = await supabase
       .from("products")
       .update({ is_favorite: cleanIsFavorite })
       .eq("id", cleanProductId)
@@ -898,8 +897,8 @@ export async function updateStoreAction(rawParams: unknown) {
   // Rate limit: UI mutations (30/min/user)
   await enforceRateLimit(uiMutationLimiter, `ui:${user.id}`, "STORE_UPDATE");
 
-  const adminClient = getSupabaseAdminClient();
-  const { error } = await adminClient
+  const supabase = await getSupabaseServerClient();
+  const { error } = await supabase
     .from("stores")
     .update({
       name: data.name,
@@ -958,8 +957,8 @@ export async function updateProfileAction(rawParams: unknown) {
   // Rate limit: UI mutations (30/min/user)
   await enforceRateLimit(uiMutationLimiter, `ui:${user.id}`, "PROFILE_UPDATE");
 
-  const adminClient = getSupabaseAdminClient();
-  const { error } = await adminClient
+  const supabase = await getSupabaseServerClient();
+  const { error } = await supabase
     .from("users")
     .update({ name: data.name })
     .eq("id", user.id);

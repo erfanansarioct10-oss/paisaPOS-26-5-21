@@ -295,6 +295,7 @@ export type Database = {
           id: string
           invoice_id: string
           quantity: number
+          store_id: string
           subtotal: number
           unit_price: number
           variant_id: string | null
@@ -304,6 +305,7 @@ export type Database = {
           id?: string
           invoice_id: string
           quantity: number
+          store_id: string
           subtotal: number
           unit_price: number
           variant_id?: string | null
@@ -313,6 +315,7 @@ export type Database = {
           id?: string
           invoice_id?: string
           quantity?: number
+          store_id?: string
           subtotal?: number
           unit_price?: number
           variant_id?: string | null
@@ -323,6 +326,13 @@ export type Database = {
             columns: ["invoice_id"]
             isOneToOne: false
             referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_items_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
             referencedColumns: ["id"]
           },
           {
@@ -853,6 +863,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _checkout_next_invoice_seq: {
+        Args: { p_fiscal_year: number; p_store_id: string }
+        Returns: number
+      }
       accept_staff_invitation: {
         Args: {
           p_actor_name?: string
@@ -885,6 +899,10 @@ export type Database = {
         }
         Returns: number
       }
+      bulk_upsert_products_and_variants_unchecked: {
+        Args: { p_products: Json }
+        Returns: number
+      }
       create_invoice_and_deduct_stock:
         | {
             Args: {
@@ -915,6 +933,31 @@ export type Database = {
             }
             Returns: Json
           }
+      create_invoice_and_deduct_stock_unbounded: {
+        Args: {
+          p_customer_name: string
+          p_customer_phone: string
+          p_discount_amount: number
+          p_idempotency_key: string
+          p_invoice_number: string
+          p_items: Json
+          p_paid_amount: number
+          p_payment_method: string
+          p_store_id: string
+          p_total_amount: number
+        }
+        Returns: Json
+      }
+      create_staff_invitation: {
+        Args: {
+          p_actor_user_id: string
+          p_email: string
+          p_expires_at: string
+          p_store_id: string
+        }
+        Returns: Json
+      }
+      custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       delete_product_for_delegation: {
         Args: {
           p_actor_user_id: string
@@ -971,6 +1014,14 @@ export type Database = {
         Args: { p_full_name: string; p_store_name: string }
         Returns: string
       }
+      resend_staff_invitation: {
+        Args: {
+          p_actor_user_id: string
+          p_expires_at: string
+          p_invitation_id: string
+        }
+        Returns: Json
+      }
       revoke_privilege_delegation: {
         Args: { p_actor_user_id: string; p_delegation_id: string }
         Returns: Json
@@ -1024,6 +1075,17 @@ export type Database = {
           p_name: string
           p_product_id: string
           p_store_id: string
+          p_variants: Json
+        }
+        Returns: string
+      }
+      upsert_product_and_variants_unchecked: {
+        Args: {
+          p_category: string
+          p_deleted_variant_ids: string[]
+          p_low_stock_threshold: number
+          p_name: string
+          p_product_id: string
           p_variants: Json
         }
         Returns: string
