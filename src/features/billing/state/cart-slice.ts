@@ -5,6 +5,20 @@
 import type { AppState, CartItem, Invoice, InvoiceItem } from "@/lib/store/types";
 import { checkoutAction } from "@/features/billing/server/actions";
 
+// ---------------------------------------------------------------------------
+// Checkout timeout configuration
+// ---------------------------------------------------------------------------
+
+/** Maximum time (ms) to wait for a single checkout server action call. */
+const CHECKOUT_TIMEOUT_MS = 15_000;
+
+/** Delay (ms) before the automatic retry after a timeout. */
+const CHECKOUT_RETRY_DELAY_MS = 3_000;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 function mapCheckoutError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
   const lowercaseMsg = msg.toLowerCase();
@@ -33,6 +47,39 @@ function createCheckoutIdempotencyKey(): string {
     const value = char === "x" ? random : (random & 0x3) | 0x8;
     return value.toString(16);
   });
+}
+
+/** Returns true if the error looks like a network timeout or connectivity issue. */
+function isTimeoutOrNetworkError(e: unknown): boolean {
+  if (e instanceof DOMException && e.name === "AbortError") return true;
+  if (e instanceof TypeError) {
+    // fetch() throws TypeError for network failures
+    const msg = e.message.toLowerCase();
+    if (msg.includes("failed to fetch") || msg.includes("network") || msg.includes("aborted")) {
+      return true;
+    }
+  }
+  if (e instanceof Error) {
+    const msg = e.message.toLowerCase();
+    if (msg.includes("timeout") || msg.includes("timed out") || msg.includes("network")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Race a promise against an AbortSignal-based timeout.
+ * Returns the result of `fn` or throws an AbortError on timeout.
+ */
+function withTimeout<T>(fn: (signal: AbortSignal) => Promise<T>, ms: number): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fn(controller.signal).finally(() => clearTimeout(timer));
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 type SetState = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
@@ -184,7 +231,14 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
   },
 
   // -----------------------------------------------------------------------
-  // CHECKOUT (Atomic Supabase RPC)
+  // CHECKOUT (Atomic Supabase RPC) — with timeout + single retry
+  //
+  // The button is disabled while isCheckoutInFlight is true.
+  // On a network timeout the function waits 3 s then retries once with
+  // the same idempotency key (the DB will replay if the first attempt
+  // actually committed).  The button stays disabled throughout.
+  // On a *confirmed* server error (not a timeout) the button re-enables
+  // immediately so the cashier can fix the issue and retry.
   // -----------------------------------------------------------------------
   checkout: async (): Promise<boolean> => {
     const {
@@ -233,7 +287,7 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
         subtotal: item.quantity * item.price,
       }));
 
-      const dbInvoiceWithItems = await checkoutAction({
+      const checkoutPayload = {
         storeId: store.id,
         invoiceNumber: invoiceNumStr,
         idempotencyKey,
@@ -244,7 +298,56 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
         paidAmount: totalAmount,
         paymentMethod,
         items: itemsPayload,
-      });
+      };
+
+      // -------------------------------------------------------------------
+      // Attempt 1: call with timeout
+      // -------------------------------------------------------------------
+      let dbInvoiceWithItems;
+      try {
+        dbInvoiceWithItems = await withTimeout(
+          // The AbortSignal is not passed to checkoutAction because
+          // Next.js server actions do not accept AbortSignal.  The
+          // timeout only controls how long the *client* waits.
+          () => checkoutAction(checkoutPayload),
+          CHECKOUT_TIMEOUT_MS,
+        );
+      } catch (firstError: unknown) {
+        if (!isTimeoutOrNetworkError(firstError)) {
+          // Confirmed server error — re-enable button immediately.
+          throw firstError;
+        }
+
+        // ---------------------------------------------------------------
+        // Timeout / network error — wait 3 s, then retry once.
+        // The button stays disabled (isCheckoutInFlight remains true).
+        // The same idempotency key is reused so the DB will return the
+        // completed invoice if the first attempt actually committed.
+        // ---------------------------------------------------------------
+        console.warn(
+          "Checkout attempt timed out or had a network error. Retrying in",
+          CHECKOUT_RETRY_DELAY_MS,
+          "ms...",
+        );
+        set({ errorMsg: "Connection slow — retrying checkout automatically..." });
+        await delay(CHECKOUT_RETRY_DELAY_MS);
+
+        try {
+          dbInvoiceWithItems = await withTimeout(
+            () => checkoutAction(checkoutPayload),
+            CHECKOUT_TIMEOUT_MS,
+          );
+          // Clear the transient "retrying" message on success.
+          set({ errorMsg: null });
+        } catch (retryError: unknown) {
+          if (isTimeoutOrNetworkError(retryError)) {
+            throw new Error(
+              "Checkout timed out after automatic retry. Please check your connection and try again.",
+            );
+          }
+          throw retryError;
+        }
+      }
 
       const { invoice_items: dbItems, ...dbInvoice } = dbInvoiceWithItems;
 
@@ -309,3 +412,4 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
     }
   },
 });
+

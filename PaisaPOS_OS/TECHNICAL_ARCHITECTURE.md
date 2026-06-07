@@ -390,15 +390,94 @@ If any step fails:
 
 # 13. CONCURRENCY STRATEGY
 
-Inventory rows use:
+### Invoice Sequencing (Lock-Free)
+
+Invoice numbers use native PostgreSQL **SEQUENCE** objects, created
+lazily per (store, fiscal_year) by `_checkout_next_invoice_seq()`.
+
+`nextval()` is non-transactional and never blocks on row locks, so
+concurrent checkouts for the same store allocate sequence numbers
+without serialising.  Gaps in invoice numbering are acceptable.
+
+The legacy `store_invoice_counters` table is preserved for historical
+reads but is **no longer written to** in the checkout path.
+
+### Inventory Deduction (Atomic Conditional UPDATE)
+
+Inventory stock is deducted with a single atomic statement:
+
 ```sql
-FOR UPDATE
+UPDATE inventory
+SET quantity = quantity - X, updated_at = now()
+WHERE variant_id = ? AND quantity >= X;
 ```
 
-to prevent:
-- overselling
-- simultaneous stock corruption
-- race conditions
+This replaces the earlier `SELECT ... FOR UPDATE` + separate `UPDATE`
+pattern.  The lock is held only for the duration of the write itself,
+drastically reducing lock contention under concurrent checkouts for
+overlapping product variants.
+
+If zero rows are affected, the RPC raises an explicit exception
+distinguishing "variant not in inventory" from "insufficient stock".
+
+---
+
+# 13A. CONNECTION POOLING
+
+### Supabase JS Client (`NEXT_PUBLIC_SUPABASE_URL`)
+
+The browser and server-side Supabase JS client communicate over HTTPS
+to the PostgREST API at `https://<project>.supabase.co`.  This URL
+does **not** need to be a direct PostgreSQL connection string.
+
+PostgREST itself connects to PostgreSQL through **Supavisor** (the
+managed connection pooler) in transaction mode, so thousands of HTTP
+requests share a small pool of actual database connections.
+
+### Direct Database Access (`DATABASE_URL`)
+
+The `DATABASE_URL` environment variable (set in both Production and
+Preview Vercel environments) should point to the Supavisor transaction-
+mode endpoint on port **6543**.  Verify in Supabase Dashboard →
+Settings → Database → Connection Pooling → Transaction mode.
+
+> **Audit note (2026-06-07):** `NEXT_PUBLIC_SUPABASE_URL` is correctly
+> set to the Supabase project URL.  `DATABASE_URL` is present in both
+> Production and Preview environments.  Confirm that `DATABASE_URL`
+> uses the pooler URL (port 6543) rather than the direct connection
+> (port 5432) before any service that opens direct PG connections.
+
+---
+
+# 13B. RATE LIMITING INFRASTRUCTURE
+
+### Upstash Redis (Distributed)
+
+The rate limiter in `src/server/rate-limit/rate-limiter.ts` uses a
+two-backend design:
+
+| Backend | When used | Scope |
+|---------|-----------|-------|
+| **Upstash Redis** | `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set | Global / distributed across Vercel Edge workers |
+| **In-memory Map** | Fallback when Redis env vars are absent | Per-serverless-instance only (effectively broken for production) |
+
+> **Audit note (2026-06-07):** Both `UPSTASH_REDIS_REST_URL` and
+> `UPSTASH_REDIS_REST_TOKEN` are confirmed present in the Vercel
+> **Production and Preview** environments.  The distributed rate
+> limiter is correctly configured for production use.
+
+### Rate Limit Tiers
+
+Key limits enforced (per the preconfigured instances):
+
+| Limiter | Budget | Window |
+|---------|--------|--------|
+| `globalLimiter` | 30 req | 10 sec / IP |
+| `checkoutLimiter` | 10 req | 1 min / user |
+| `productMutationLimiter` | 20 req | 1 min / user |
+| `loginLimiter` | 5 req | 15 min / IP+email |
+| `signupLimiter` | 3 req | 1 hour / IP |
+| `bulkImportLimiter` | 2 req | 5 min / user |
 
 ---
 
@@ -646,3 +725,4 @@ The architecture should optimize for:
 - rapid iteration
 
 Not technical sophistication for its own sake.
+

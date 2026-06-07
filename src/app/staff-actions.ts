@@ -8,7 +8,6 @@ import {
   getSupabaseAdminClient,
   getSupabaseEmailAuthClient,
   type StaffLifecycleRpcResult,
-  type StaffInviteAcceptanceResult,
   type StaffProfileRow,
 } from "@/server/supabase/admin-supabase";
 import { getSupabaseServerClient } from "@/server/supabase/dal";
@@ -1169,29 +1168,13 @@ export async function acceptStaffInviteFormAction(
         updatedAt: Date.now(),
       };
     }
-
-    const { data: acceptance, error: acceptanceError } = await adminClient.rpc("accept_staff_invitation", {
-      p_invitation_id: invitationId,
-      p_auth_user_id: authUser.id,
-      p_auth_email: email,
-      p_actor_name: fullName,
-    });
-
-    if (acceptanceError) {
-      return inviteAcceptanceErrorState(acceptanceError);
-    }
-
-    const parsedAcceptance = staffInviteAcceptanceResultSchema.safeParse(acceptance);
-    if (!parsedAcceptance.success) {
-      throw new Error("Staff invite acceptance returned an invalid response.");
-    }
-
+    const originalMetadata = authUser.user_metadata ?? {};
     const authUpdatePayload: {
       password?: string;
       data: Record<string, unknown>;
     } = {
       data: {
-        ...(authUser.user_metadata ?? {}),
+        ...originalMetadata,
         full_name: fullName,
         name: fullName,
       },
@@ -1202,33 +1185,36 @@ export async function acceptStaffInviteFormAction(
 
     const { error: authUpdateError } = await supabase.auth.updateUser(authUpdatePayload);
     if (authUpdateError) {
-      const rollbackContext = parsedAcceptance.data;
-      const { data: rollbackResult, error: rollbackError } = await adminClient.rpc(
-        "rollback_staff_invitation_acceptance",
-        {
-          p_invitation_id: rollbackContext.invitationId,
-          p_auth_user_id: authUser.id,
-          p_accepted_at: rollbackContext.acceptedAt,
-          p_profile_disposition: rollbackContext.profileDisposition,
-          p_previous_profile: (rollbackContext.previousProfile ?? null) as StaffInviteAcceptanceResult["previousProfile"],
-        },
-      );
-      const parsedRollbackResult = parseStaffLifecycleRpcResult(rollbackResult);
-
-      if (rollbackError || !parsedRollbackResult?.ok) {
-        await logStaffActionError("STAFF_INVITE_ACCEPT_ROLLBACK_FAILED", rollbackError ?? parsedRollbackResult, {
-          invitationId,
-          authUserId: authUser.id,
-          profileDisposition: rollbackContext.profileDisposition,
-        });
-      }
-
       await logStaffActionError("STAFF_INVITE_AUTH_UPDATE_FAILED", authUpdateError, {
         invitationId,
         authUserId: authUser.id,
-        rollbackCode: parsedRollbackResult?.code,
       });
       return errorState(authUpdateError, "Staff account setup could not be completed.");
+    }
+
+    const { data: acceptance, error: acceptanceError } = await adminClient.rpc("accept_staff_invitation", {
+      p_invitation_id: invitationId,
+      p_auth_user_id: authUser.id,
+      p_auth_email: email,
+      p_actor_name: fullName,
+    });
+
+    if (acceptanceError) {
+      const { error: compensationError } = await supabase.auth.updateUser({
+        data: originalMetadata,
+      });
+      if (compensationError) {
+        await logStaffActionError("STAFF_INVITE_COMPENSATION_FAILED", compensationError, {
+          invitationId,
+          authUserId: authUser.id,
+        });
+      }
+      return inviteAcceptanceErrorState(acceptanceError);
+    }
+
+    const parsedAcceptance = staffInviteAcceptanceResultSchema.safeParse(acceptance);
+    if (!parsedAcceptance.success) {
+      throw new Error("Staff invite acceptance returned an invalid response.");
     }
 
     revalidatePath("/staff");
