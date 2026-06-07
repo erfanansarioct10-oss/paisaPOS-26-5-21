@@ -116,6 +116,19 @@ export default function SettingsPage() {
     setMfaMessage(null);
     setSetupStep("enrolling");
     try {
+      // Clean up any existing unverified factors first to avoid duplicate friendly name errors
+      const { data: factorsData, error: listError } = await supabase.auth.mfa.listFactors();
+      if (!listError && factorsData?.totp) {
+        const unverifiedFactors = factorsData.totp.filter((f) => (f.status as string) === "unverified");
+        for (const factor of unverifiedFactors) {
+          try {
+            await supabase.auth.mfa.unenroll({ factorId: factor.id });
+          } catch (unenrollErr) {
+            console.error("Failed to unenroll unverified factor:", unenrollErr);
+          }
+        }
+      }
+
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: "totp",
         issuer: "PaisaPOS",
