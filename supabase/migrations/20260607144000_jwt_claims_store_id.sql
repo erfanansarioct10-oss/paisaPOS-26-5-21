@@ -14,10 +14,11 @@ DECLARE
   v_store_id uuid;
   v_claims jsonb;
 BEGIN
-  -- Fetch the user's store_id from public.users
+  -- Fetch the user's store_id from public.users ONLY if they are active
   SELECT store_id INTO v_store_id
   FROM public.users
-  WHERE id = (event->>'user_id')::uuid;
+  WHERE id = (event->>'user_id')::uuid
+    AND status = 'active'::public.user_status;
 
   -- Retrieve the existing claims
   v_claims := event->'claims';

@@ -499,8 +499,8 @@ export async function createDelegationStepUpProofAction(): Promise<DelegationSte
     await enforceRateLimit(delegationGrantLimiter, `delegation_step_up:${user.id}`, "DELEGATION_STEP_UP");
 
     const supabase = await getSupabaseServerClient();
-    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-    const accessToken = sessionData.session?.access_token;
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    const accessToken = session?.access_token;
     if (sessionError || !accessToken) {
       return {
         success: false,
@@ -595,46 +595,41 @@ export async function inviteStaffFormAction(
     await expireOldPendingInvites(store.id, email);
 
     const expiresAt = getStaffInviteExpiresAt();
-    const { data: invitation, error: inviteInsertError } = await adminClient
-      .from("staff_invitations")
-      .insert({
-        store_id: store.id,
-        email,
-        role: "cashier",
-        status: "pending",
-        invited_by_user_id: user.id,
-        expires_at: expiresAt,
-      })
-      .select("id, store_id, email, role, status, invited_by_user_id, accepted_by_user_id, accepted_at, revoked_by_user_id, revoked_at, expires_at, created_at")
-      .single();
+    const { data, error: inviteInsertError } = await adminClient.rpc(
+      "create_staff_invitation",
+      {
+        p_store_id: store.id,
+        p_email: email,
+        p_actor_user_id: user.id,
+        p_expires_at: expiresAt,
+      }
+    );
 
-    if (inviteInsertError || !invitation) {
-      const duplicate = inviteInsertError?.code === "23505";
+    if (inviteInsertError) {
       return {
         success: false,
-        error: duplicate
-          ? "That email already has a pending invite. Use Resend from the Invitations list."
-          : getFriendlyErrorMessage(inviteInsertError),
+        error: getFriendlyErrorMessage(inviteInsertError),
         updatedAt: Date.now(),
       };
     }
 
+    const result = parseStaffLifecycleRpcResult(data);
+    if (!result?.ok || !result.invitationId) {
+      return lifecycleFailureState(result, "The invite could not be sent.");
+    }
+
     const { error: authInviteError } = await sendStaffInviteEmail(adminClient, {
       email,
-      invitationId: invitation.id,
+      invitationId: result.invitationId,
       storeId: store.id,
     });
 
     if (authInviteError) {
       if (!isLocalAuthAdminUnavailable(authInviteError)) {
-        await adminClient
-          .from("staff_invitations")
-          .update({
-            status: "revoked",
-            revoked_by_user_id: user.id,
-            revoked_at: new Date().toISOString(),
-          })
-          .eq("id", invitation.id);
+        await adminClient.rpc("revoke_staff_invitation", {
+          p_invitation_id: result.invitationId,
+          p_actor_user_id: user.id,
+        });
 
         await recordStaffActivityEvent({
           storeId: store.id,
@@ -644,7 +639,7 @@ export async function inviteStaffFormAction(
           privilegeSource,
           delegationId,
           targetType: "staff_invitation",
-          targetId: invitation.id,
+          targetId: result.invitationId,
           targetLabel: email,
           result: "failure",
           errorCode: "auth_invite_failed",
@@ -671,7 +666,7 @@ export async function inviteStaffFormAction(
       privilegeSource,
       delegationId,
       targetType: "staff_invitation",
-      targetId: invitation.id,
+      targetId: result.invitationId,
       targetLabel: email,
       result: "success",
       summary: `${user.name} invited a cashier.`,
@@ -777,17 +772,22 @@ export async function resendStaffInviteAction(
 
     const previousExpiresAt = invitation.expires_at;
     const expiresAt = getStaffInviteExpiresAt();
-    const { data: refreshedInvitation, error: refreshError } = await adminClient
-      .from("staff_invitations")
-      .update({ expires_at: expiresAt })
-      .eq("id", invitation.id)
-      .eq("store_id", store.id)
-      .eq("status", "pending")
-      .select("id, expires_at")
-      .single();
+    const { data, error: refreshError } = await adminClient.rpc(
+      "resend_staff_invitation",
+      {
+        p_invitation_id: invitation.id,
+        p_actor_user_id: user.id,
+        p_expires_at: expiresAt,
+      }
+    );
 
-    if (refreshError || !refreshedInvitation) {
-      throw new Error(refreshError?.message ?? "Invitation could not be refreshed.");
+    if (refreshError) {
+      throw new Error(refreshError.message);
+    }
+
+    const result = parseStaffLifecycleRpcResult(data);
+    if (!result?.ok) {
+      return lifecycleFailureState(result, "The invitation could not be resent.");
     }
 
     const { error: authInviteError } = await sendStaffInviteEmail(adminClient, {
@@ -892,6 +892,12 @@ export async function suspendStaffAction(
     const result = parseStaffLifecycleRpcResult(data);
     if (!result?.ok) {
       return lifecycleFailureState(result, "The cashier could not be suspended.");
+    }
+
+    // Revoke target user sessions and refresh tokens globally in Supabase Auth
+    const { error: authSignOutError } = await adminClient.auth.admin.signOut(userId, "global");
+    if (authSignOutError) {
+      await logStaffActionError("STAFF_SUSPEND_AUTH_SIGNOUT_FAILED", authSignOutError, { targetUserId: userId });
     }
 
     revalidatePath("/staff");

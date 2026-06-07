@@ -112,6 +112,19 @@ function isMissingAuthSessionMessage(message: string | undefined) {
   return /auth session missing/i.test(message ?? "");
 }
 
+function isAuthTokenInvalidError(error: unknown) {
+  if (!error) return false;
+  const err = error as { status?: number; message?: string };
+  const status = err.status;
+  const message = err.message?.toLowerCase() || "";
+  return (
+    status === 400 ||
+    status === 401 ||
+    status === 403 ||
+    /invalid jwt|token is expired|invalid signature|jwt expired|forbidden|user not found/i.test(message)
+  );
+}
+
 function isTransientSessionError(error: unknown) {
   const message = error instanceof Error
     ? error.message
@@ -201,7 +214,25 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       // 1. Get current auth user (getUser() validates JWT against the auth server,
       //    unlike getSession() which only reads from localStorage and can accept stale/stolen tokens)
       const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
-      if (authError && !isMissingAuthSessionMessage(authError.message)) {
+      if (authError) {
+        if (isMissingAuthSessionMessage(authError.message) || isAuthTokenInvalidError(authError)) {
+          console.log("Session token is invalid, expired, or missing. Resetting auth state.");
+          try {
+            await supabase.auth.signOut();
+          } catch {}
+          set({
+            user: null,
+            store: null,
+            products: [],
+            variants: [],
+            invoices: [],
+            invoiceItems: {},
+            activeDelegations: [],
+            isLoading: false,
+            sessionStatus: "unauthenticated",
+          });
+          return;
+        }
         throw new SessionInitializationError("transient", authError.message);
       }
 

@@ -212,6 +212,15 @@ export async function proxy(request: NextRequest) {
 }
 
 function buildCspHeader(nonce: string): string {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  let supabaseWsUrl = "";
+  if (supabaseUrl) {
+    try {
+      const url = new URL(supabaseUrl);
+      supabaseWsUrl = url.protocol === "https:" ? `wss://${url.host}` : `ws://${url.host}`;
+    } catch {}
+  }
+
   const csp = `
     default-src 'self';
     script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isProd ? "" : " 'unsafe-eval'"};
@@ -220,7 +229,7 @@ function buildCspHeader(nonce: string): string {
     style-src 'self' 'unsafe-inline';
     img-src 'self' blob: data:;
     font-src 'self' data:;
-    connect-src 'self' https://*.supabase.co wss://*.supabase.co${isProd ? "" : " http://127.0.0.1:54321 ws://127.0.0.1:54321 http://localhost:54321 ws://localhost:54321"};
+    connect-src 'self' https://*.supabase.co wss://*.supabase.co${isProd ? "" : ` http://127.0.0.1:54321 ws://127.0.0.1:54321 http://localhost:54321 ws://localhost:54321${supabaseUrl ? ` ${supabaseUrl} ${supabaseWsUrl}` : ""}`};
     object-src 'none';
     base-uri 'self';
     form-action 'self';
