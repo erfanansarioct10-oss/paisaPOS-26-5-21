@@ -2,9 +2,9 @@
 import { describe, test, expect, beforeEach, vi, beforeAll, afterAll } from "vitest";
 import { create } from "zustand";
 import { AppState, Product, ProductVariant } from "../types";
-import { createAuthSlice } from "../authSlice";
-import { createInventorySlice } from "../inventorySlice";
-import { createCartSlice } from "../cartSlice";
+import { createAuthSlice } from "@/features/auth/state/auth-slice";
+import { createInventorySlice } from "@/features/inventory/state/inventory-slice";
+import { createCartSlice } from "@/features/billing/state/cart-slice";
 import { supabase } from "@/lib/supabase";
 import * as actions from "@/app/actions";
 
@@ -660,10 +660,18 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
       store.getState().setTab("history");
       expect(mockLocalStorage["paisapos_active_tab"]).toBe("history");
       expect(store.getState().activeTab).toBe("history");
+
+      store.getState().setTab("activity");
+      expect(mockLocalStorage["paisapos_active_tab"]).toBe("activity");
+      expect(store.getState().activeTab).toBe("activity");
+
+      store.getState().setTab("staff");
+      expect(mockLocalStorage["paisapos_active_tab"]).toBe("staff");
+      expect(store.getState().activeTab).toBe("staff");
     });
 
     test("should restore active tab from localStorage during initializeSession", async () => {
-      mockLocalStorage["paisapos_active_tab"] = "history";
+      mockLocalStorage["paisapos_active_tab"] = "staff";
       
       // Reset state to default
       store.setState({ activeTab: "dashboard" });
@@ -671,8 +679,8 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
 
       await store.getState().initializeSession();
 
-      // Should load history tab from localStorage
-      expect(store.getState().activeTab).toBe("history");
+      // Should load staff tab from localStorage
+      expect(store.getState().activeTab).toBe("staff");
     });
 
     test("should clear tab from localStorage on signOut", async () => {

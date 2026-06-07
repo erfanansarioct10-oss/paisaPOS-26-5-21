@@ -217,7 +217,7 @@ CREATE OR REPLACE FUNCTION upsert_product_and_variants(
 When a user doesn't provide SKU values, the importer should auto-generate them using the same pattern as the existing Variant Matrix Generator:
 
 ```typescript
-// File: src/components/inventory-tab.tsx (L152-163)
+// File: src/features/inventory/import/catalog-parser.ts
 const prefix = productName
   .replace(/[^a-zA-Z0-9]/g, "")
   .slice(0, 4)
@@ -235,7 +235,7 @@ Example: `Oversized Linen Shirt`, Size `M`, Color `Black` → `OVER-BLK-M`
 Categories are a fixed dropdown in the current UI:
 
 ```typescript
-// File: src/components/inventory-tab.tsx (L644-649)
+// File: src/features/inventory/components/inventory-quick-product-wizard.tsx
 "Outerwear" | "Bottoms" | "Tops" | "Traditional" | "Accessories"
 ```
 
@@ -569,7 +569,8 @@ This feature succeeds when:
 |------|---------|
 | `supabase/migrations/20260521084324_init_schema.sql` | Product, variant, inventory schema |
 | `supabase/migrations/20260523104500_tenant_scoped_sku.sql` | Store-scoped SKU constraint + upsert RPC |
-| `src/components/inventory-tab.tsx` | Existing product creation flow + variant matrix generator |
+| `src/features/inventory/components/inventory-tab.tsx` | Existing inventory workspace flow |
+| `src/features/inventory/import/catalog-parser.ts` | Catalog parser and SKU generation logic |
 | `src/app/actions.ts` (L138-173) | `upsertProductAction` server action |
 | `src/lib/store/useAppStore.ts` | Zustand store with `addProduct` action |
 | `PaisaPOS_OS/DEVELOPMENT_ROADMAP.md` (Section 13) | Phase 2A roadmap position |

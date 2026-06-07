@@ -2,7 +2,7 @@
 
 Version: 1.0  
 Status: Active  
-Last Updated: 2026-05-21
+Last Updated: 2026-05-29
 
 ---
 
@@ -284,12 +284,10 @@ Avoid:
 ```text
 src/
 ├── app/
-├── components/
 ├── features/
+├── shared/
 ├── lib/
 ├── server/
-├── styles/
-├── types/
 ```
 
 ---
@@ -299,6 +297,11 @@ src/
 - keep files focused
 - avoid giant utility files
 - avoid giant component files
+- `src/components` is retired and should remain empty
+- new domain UI belongs in `src/features/<feature>/components`, not global `src/components`
+- shared UI/layout belongs in `src/shared/ui` or `src/shared/layout`
+- server runtime APIs belong in `src/server` or feature `server/` modules, not general-purpose `src/lib`
+- structural refactors must be wrapper-first to avoid breaking existing imports, and wrappers must be removed once no imports use them
 
 ---
 

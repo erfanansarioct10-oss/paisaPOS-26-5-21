@@ -1,0 +1,71 @@
+⨯ Error [TenantContextError]: Please sign in to continue.
+    at requireTenantContext (src\server\supabase\dal.ts:700:11)
+    at async requirePrivilege (src\server\auth\permissions.ts:263:19)
+    at async requireStaffPageContext (src\app\(authenticated)\staff\page.tsx:17:12)
+    at async StaffPage (src\app\(authenticated)\staff\page.tsx:27:19)
+  698 |   const result = await getCurrentTenantContextResult();
+  699 |   if (!result.ok) {
+> 700 |     throw new TenantContextError(result.reason, result.message);
+      |           ^
+  701 |   }
+  702 |   return result.context;
+  703 | } {
+  reason: 'unauthenticated',
+  digest: '3273732074'
+}
+⨯ Error [TenantContextError]: Please sign in to continue.
+    at requireTenantContext (src\server\supabase\dal.ts:700:11)
+    at async requirePrivilege (src\server\auth\permissions.ts:263:19)
+    at async requireStaffPageContext (src\app\(authenticated)\staff\page.tsx:17:12)
+    at async StaffPage (src\app\(authenticated)\staff\page.tsx:27:19)
+  698 |   const result = await getCurrentTenantContextResult();
+  699 |   if (!result.ok) {
+> 700 |     throw new TenantContextError(result.reason, result.message);
+      |           ^
+  701 |   }
+  702 |   return result.context;
+  703 | } {
+  reason: 'unauthenticated',
+  digest: '670407964'
+}
+⨯ Error [TenantContextError]: Please sign in to continue.
+    at requireTenantContext (src\server\supabase\dal.ts:700:11)
+    at async requirePrivilege (src\server\auth\permissions.ts:263:19)
+    at async requireActivityPageContext (src\app\(authenticated)\activity\page.tsx:20:12)
+    at async ActivityPage (src\app\(authenticated)\activity\page.tsx:30:19)
+  698 |   const result = await getCurrentTenantContextResult();
+  699 |   if (!result.ok) {
+> 700 |     throw new TenantContextError(result.reason, result.message);
+      |           ^
+  701 |   }
+  702 |   return result.context;
+  703 | } {
+  reason: 'unauthenticated',
+  digest: '2209576387'
+}
+⨯ Error [TenantContextError]: This staff account is suspended. Please contact the store owner.
+    at requireTenantContext (src\server\supabase\dal.ts:700:11)
+    at async requirePrivilege (src\server\auth\permissions.ts:263:19)
+    at async checkoutAction (src\app\actions.ts:90:58)
+  698 |   const result = await getCurrentTenantContextResult();
+  699 |   if (!result.ok) {
+> 700 |     throw new TenantContextError(result.reason, result.message);
+      |           ^
+  701 |   }
+  702 |   return result.context;
+  703 | } {
+  reason: 'inactive_profile',
+  digest: '3111895600'
+}
+[browser] Checkout Transaction Failed, Rolled back: Failed to process sale. Please try again. 
+    at checkout (src/features/billing/state/cart-slice.ts:273:15)
+    at async BillingTab.useCallback[handleCheckoutSubmit] (src/features/billing/components/billing-tab.tsx:67:21)
+  271 |     } catch (e: unknown) {
+  272 |       const errMsg = mapCheckoutError(e);
+> 273 |       console.error("Checkout Transaction Failed, Rolled back:", errMsg);
+      |               ^
+  274 |       set({ errorMsg: errMsg });
+  275 |       return false;
+  276 |     } finally { (src/features/billing/state/cart-slice.ts:273:15)
+[browser] Failed to initialize session: This staff account is suspended. Please contact the store owner. (src/features/auth/state/auth-slice.ts:278:15)
+[browser] Failed to initialize session: This staff account is suspended. Please contact the store owner. (src/features/auth/state/auth-slice.ts:278:15)

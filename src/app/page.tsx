@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store/useAppStore";
 import { supabase } from "@/lib/supabase";
 import { Store, Mail, Lock, User, AlertCircle, Loader2, CheckCircle } from "lucide-react";
-import { loginAction, signupAction, requestPasswordResetAction } from "@/app/auth-actions";
-import { getFriendlyErrorMessage, normalizeEmail } from "@/lib/security";
+import { loginAction, signupAction, requestPasswordResetAction } from "@/features/auth/server/actions";
+import { getFriendlyErrorMessage, normalizeEmail, validateRedirectPath } from "@/lib/security";
+import { getInviteRedirectSessionFromHash, getStaffAcceptReturnPath, staffAcceptPath } from "@/lib/invite-redirect";
 
 // ---------------------------------------------------------------------------
 // Client-side rate-limiting constants (defense-in-depth, not a security boundary)
@@ -23,6 +24,14 @@ const formatLockoutTime = (seconds: number): string => {
   const remainingSeconds = seconds % 60;
   return `${minutes}m ${remainingSeconds}s`;
 };
+
+function getStaffInviteNextPathFromLocation() {
+  if (typeof window === "undefined") return null;
+
+  const params = new URLSearchParams(window.location.search);
+  const safeNextPath = validateRedirectPath(params.get("next"), "");
+  return getStaffAcceptReturnPath(safeNextPath);
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -43,6 +52,7 @@ export default function LoginPage() {
   const [localError, setLocalError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [localLoading, setLocalLoading] = useState(false);
+  const [isHandlingInviteRedirect, setIsHandlingInviteRedirect] = useState(false);
 
   // Rate limiting state
   const [failedAttempts, setFailedAttempts] = useState(0);
@@ -51,17 +61,66 @@ export default function LoginPage() {
 
   const isLockedOut = lockoutRemaining > 0;
 
-  // Initialize session on load
+  // Initialize session on load, but intercept Supabase implicit invite links first.
   useEffect(() => {
-    initializeSession();
-  }, [initializeSession]);
+    let cancelled = false;
+
+    const bootstrapSession = async () => {
+      const inviteSession = getInviteRedirectSessionFromHash(window.location.hash);
+      if (!inviteSession) {
+        const staffInviteNextPath = getStaffInviteNextPathFromLocation();
+        if (staffInviteNextPath) {
+          const { data } = await supabase.auth.getUser();
+          if (!cancelled && data.user) {
+            router.replace(staffInviteNextPath);
+            return;
+          }
+        }
+
+        await initializeSession();
+        return;
+      }
+
+      setIsHandlingInviteRedirect(true);
+      setLocalError(null);
+      setSuccessMsg("Opening staff invite...");
+
+      try {
+        const { error } = await supabase.auth.setSession({
+          access_token: inviteSession.accessToken,
+          refresh_token: inviteSession.refreshToken,
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        if (!cancelled) {
+          router.replace(staffAcceptPath(inviteSession.invitationId));
+        }
+      } catch (error: unknown) {
+        if (!cancelled) {
+          window.history.replaceState(null, "", "/");
+          setSuccessMsg(null);
+          setLocalError(getFriendlyErrorMessage(error) || "This invitation could not be opened. Ask the owner to send a new invite.");
+          setIsHandlingInviteRedirect(false);
+        }
+      }
+    };
+
+    void bootstrapSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initializeSession, router]);
 
   // If user session is active, redirect to dashboard automatically
   useEffect(() => {
-    if (user) {
-      router.replace("/dashboard");
+    if (user && !isHandlingInviteRedirect) {
+      router.replace(getStaffInviteNextPathFromLocation() ?? "/dashboard");
     }
-  }, [user, router]);
+  }, [isHandlingInviteRedirect, user, router]);
 
   // Lockout countdown timer
   useEffect(() => {
@@ -122,6 +181,13 @@ export default function LoginPage() {
             throw new Error(res.error);
           }
           setFailedAttempts(0);
+          const staffInviteNextPath = getStaffInviteNextPathFromLocation();
+          if (staffInviteNextPath) {
+            setSuccessMsg("Opening staff invite...");
+            router.replace(staffInviteNextPath);
+            router.refresh();
+            return;
+          }
         } catch (error: unknown) {
           // Track failed login attempts for client-side rate limiting
           const newCount = failedAttempts + 1;

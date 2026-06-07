@@ -2,7 +2,7 @@
 
 import React, { useEffect } from "react";
 import { useAppStore } from "@/lib/store/useAppStore";
-import HistoryTab from "@/components/history-tab";
+import HistoryTab from "@/features/invoices/components/history-tab";
 
 export default function InvoicesPage() {
   const { setTab } = useAppStore();

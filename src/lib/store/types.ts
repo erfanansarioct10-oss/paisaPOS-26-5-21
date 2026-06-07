@@ -2,6 +2,8 @@
 // PaisaPOS — Shared Store Type Definitions
 // =========================================================================
 
+import type { ActiveStaffDelegationPrivilege } from "@/lib/staff-capabilities";
+
 export interface StoreMetadata {
   id: string;
   name: string;
@@ -16,6 +18,7 @@ export interface Profile {
   store_id: string;
   email?: string;
   role?: "owner" | "cashier";
+  status?: "active" | "suspended";
 }
 
 export interface Product {
@@ -70,7 +73,20 @@ export interface Invoice {
   discount_amount: number;
   paid_amount: number;
   payment_method: string;
+  sold_by_user_id?: string | null;
+  sold_by_name?: string | null;
+  sold_by_role?: "owner" | "cashier" | null;
+  sold_with_delegation_id?: string | null;
   created_at: string;
+}
+
+export interface ActivePrivilegeDelegation {
+  id: string;
+  scope: ActiveStaffDelegationPrivilege;
+  reason: string;
+  granted_by_user_id: string;
+  starts_at: string;
+  expires_at: string;
 }
 
 export interface InvoiceItem {
@@ -93,10 +109,11 @@ export interface InvoiceItem {
 
 export interface AppState {
   // Navigation & Core UI
-  activeTab: "dashboard" | "billing" | "inventory" | "history" | "settings";
+  activeTab: "dashboard" | "billing" | "inventory" | "history" | "activity" | "staff" | "settings";
   user: Profile | null;
   store: StoreMetadata | null;
   isLoading: boolean;
+  sessionStatus: "unknown" | "authenticated" | "unauthenticated" | "degraded";
   errorMsg: string | null;
 
   // DB Collections in memory (Zustand synchronizes these from Supabase)
@@ -104,6 +121,7 @@ export interface AppState {
   variants: ProductVariant[];
   invoices: Invoice[];
   invoiceItems: Record<string, InvoiceItem[]>; // Keyed by invoice_id
+  activeDelegations: ActivePrivilegeDelegation[];
 
   // Active Billing POS Cart
   cart: CartItem[];
@@ -111,6 +129,8 @@ export interface AppState {
   customerName: string;
   customerPhone: string;
   paymentMethod: string; // 'Cash' | 'eSewa' | 'Khalti' | 'Fonepay'
+  checkoutIdempotencyKey: string | null;
+  isCheckoutInFlight: boolean;
   activeInvoice: Invoice | null; // Set after successful checkout to trigger receipt
   activeInvoiceItems: InvoiceItem[] | null;
 
@@ -131,7 +151,7 @@ export interface AppState {
 
 
   // ACTIONS
-  setTab: (tab: "dashboard" | "billing" | "inventory" | "history" | "settings") => void;
+  setTab: (tab: "dashboard" | "billing" | "inventory" | "history" | "activity" | "staff" | "settings") => void;
   initializeSession: () => Promise<void>;
   signOut: () => Promise<void>;
 

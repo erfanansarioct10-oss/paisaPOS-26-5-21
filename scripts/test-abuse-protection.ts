@@ -1,5 +1,5 @@
 import { loadEnvConfig } from "@next/env";
-import { RateLimiter } from "../src/lib/rate-limiter";
+import { RateLimiter } from "../src/server/rate-limit/rate-limiter";
 
 // Load environment variables (.env.local, .env, etc.)
 loadEnvConfig(process.cwd());

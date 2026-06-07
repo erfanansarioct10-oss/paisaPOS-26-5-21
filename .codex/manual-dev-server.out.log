@@ -1,0 +1,357 @@
+
+> billing-system-26-5-21@0.1.0 dev
+> node scripts/kill-port.js && next dev
+
+[PaisaPOS] Checking for processes running on port 3000...
+[PaisaPOS] Killing Windows process PID 19544 running on port 3000...
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.13:3000
+- Environments: .env.local, .env
+✓ Ready in 640ms
+Creating turbopack project {
+  dir: 'C:\\nooridigital_assets\\my-projects\\billing-system-26-5-21',
+  testMode: true
+}
+- Experiments (use with caution):
+  · optimizePackageImports
+
+ GET /api/health 200 in 754ms (next.js: 354ms, proxy.ts: 363ms, application-code: 37ms)
+ GET /manifest.webmanifest 200 in 74ms (next.js: 44ms, proxy.ts: 19ms, application-code: 11ms)
+ GET /staff 200 in 1758ms (next.js: 521ms, proxy.ts: 495ms, application-code: 742ms)
+ GET /api/health 200 in 24ms (next.js: 7ms, proxy.ts: 10ms, application-code: 7ms)
+ GET /staff/accept?invitationId=d7980afe-cec9-465f-8817-57692a4252b3 200 in 488ms (next.js: 164ms, proxy.ts: 69ms, application-code: 255ms)
+ GET /manifest.webmanifest 200 in 42ms (next.js: 19ms, proxy.ts: 16ms, application-code: 7ms)
+ GET /staff/accept?invitationId=d7980afe-cec9-465f-8817-57692a4252b3 200 in 211ms (next.js: 11ms, proxy.ts: 80ms, application-code: 120ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dd7980afe-cec9-465f-8817-57692a4252b3 200 in 112ms (next.js: 74ms, proxy.ts: 10ms, application-code: 29ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dd7980afe-cec9-465f-8817-57692a4252b3 200 in 82ms (next.js: 19ms, proxy.ts: 14ms, application-code: 50ms)
+ GET /manifest.webmanifest 200 in 24ms (next.js: 7ms, proxy.ts: 10ms, application-code: 7ms)
+{"timestamp":"2026-05-29T04:34:34.954Z","level":"SECURITY","category":"AUTH_LOGIN_FAILURE","message":"Failed login attempt for email: [redacted-email]","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36","email":"[redacted-email]","errorMessage":"Invalid login credentials"}
+ POST /?next=%2Fstaff%2Faccept%3FinvitationId%3Dd7980afe-cec9-465f-8817-57692a4252b3 200 in 214ms (next.js: 8ms, proxy.ts: 13ms, application-code: 193ms)
+  └─ ƒ loginAction({"email":"cashier-manual-001@paisapos-test.com","password":"##All019All##"}) in 125ms src/features/auth/server/actions.ts
+{"timestamp":"2026-05-29T04:35:22.216Z","level":"ERROR","category":"STAFF_INVITE_RESEND_UNEXPECTED","message":"Staff action failed","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36","invitationId":"d7980afe-cec9-465f-8817-57692a4252b3","errorMessage":"Please sign in to continue."}
+ POST /staff 200 in 71ms (next.js: 6ms, proxy.ts: 10ms, application-code: 55ms)
+  └─ ƒ resendStaffInviteAction({"success":false}, {}) in 18ms src/features/staff/server/actions.ts
+{"timestamp":"2026-05-29T04:35:51.173Z","level":"SECURITY","category":"SERVER_ROUTE_AUTH_DENIED","message":"Server-side authenticated layout denied route access","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36","errorMessage":"Please sign in to continue."}
+ GET /staff 200 in 189ms (next.js: 4ms, proxy.ts: 9ms, application-code: 176ms)
+ GET /manifest.webmanifest 200 in 50ms (next.js: 18ms, proxy.ts: 25ms, application-code: 7ms)
+ GET / 200 in 126ms (next.js: 7ms, proxy.ts: 9ms, application-code: 110ms)
+ GET /manifest.webmanifest 200 in 41ms (next.js: 14ms, proxy.ts: 21ms, application-code: 6ms)
+{"timestamp":"2026-05-29T04:36:10.412Z","level":"SECURITY","category":"AUTH_LOGIN_SUCCESS","message":"User successfully logged in: [redacted-email]","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36","userId":"f03fbf36-0552-4c15-9ae7-0d70eacd4007","email":"[redacted-email]"}
+ POST / 200 in 184ms (next.js: 4ms, proxy.ts: 8ms, application-code: 172ms)
+  └─ ƒ loginAction({"email":"leo.leo77k@gmail.com","password":"##All019All##"}) in 139ms src/features/auth/server/actions.ts
+ GET /manifest.webmanifest 200 in 26ms (next.js: 6ms, proxy.ts: 12ms, application-code: 8ms)
+ GET /manifest.webmanifest 200 in 30ms (next.js: 7ms, proxy.ts: 15ms, application-code: 9ms)
+ GET /dashboard 200 in 345ms (next.js: 108ms, proxy.ts: 74ms, application-code: 163ms)
+ GET /manifest.webmanifest 200 in 43ms (next.js: 24ms, proxy.ts: 12ms, application-code: 7ms)
+ GET /activity 200 in 316ms (next.js: 56ms, proxy.ts: 49ms, application-code: 211ms)
+ GET /manifest.webmanifest 200 in 28ms (next.js: 8ms, proxy.ts: 12ms, application-code: 8ms)
+ GET /staff 200 in 299ms (next.js: 6ms, proxy.ts: 57ms, application-code: 236ms)
+ POST /staff 200 in 330ms (next.js: 5ms, proxy.ts: 49ms, application-code: 275ms)
+  └─ ƒ resendStaffInviteAction({"success":false}, {}) in 264ms src/features/staff/server/actions.ts
+ GET /manifest.webmanifest 200 in 26ms (next.js: 9ms, proxy.ts: 11ms, application-code: 6ms)
+ POST /staff 200 in 509ms (next.js: 7ms, proxy.ts: 60ms, application-code: 441ms)
+  └─ ƒ inviteStaffFormAction({"success":false}, {}) in 205ms src/features/staff/server/actions.ts
+ GET /manifest.webmanifest 200 in 23ms (next.js: 6ms, proxy.ts: 11ms, application-code: 6ms)
+ GET /manifest.webmanifest 200 in 54ms (next.js: 7ms, proxy.ts: 40ms, application-code: 6ms)
+ GET /staff/accept?invitationId=edd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 289ms (next.js: 8ms, proxy.ts: 63ms, application-code: 219ms)
+ GET /staff/accept?invitationId=edd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 214ms (next.js: 6ms, proxy.ts: 78ms, application-code: 129ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 37ms (next.js: 6ms, proxy.ts: 7ms, application-code: 24ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 62ms (next.js: 9ms, proxy.ts: 15ms, application-code: 38ms)
+ GET /manifest.webmanifest 200 in 26ms (next.js: 7ms, proxy.ts: 12ms, application-code: 7ms)
+ GET /staff/accept?invitationId=edd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 167ms (next.js: 7ms, proxy.ts: 7ms, application-code: 152ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 41ms (next.js: 6ms, proxy.ts: 9ms, application-code: 26ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 40ms (next.js: 5ms, proxy.ts: 9ms, application-code: 26ms)
+{"timestamp":"2026-05-29T04:59:56.201Z","level":"ERROR","category":"STAFF_INVITE_RESEND_UNEXPECTED","message":"Staff action failed","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36","invitationId":"edd353f5-29a7-43aa-a23d-f608b4d3f94f","errorMessage":"Please sign in to continue."}
+ POST /staff 200 in 46ms (next.js: 4ms, proxy.ts: 6ms, application-code: 35ms)
+  └─ ƒ resendStaffInviteAction({"success":false}, {}) in 24ms src/features/staff/server/actions.ts
+✓ Compiled in 625ms
+{"timestamp":"2026-05-29T05:00:27.238Z","level":"SECURITY","category":"SERVER_ROUTE_AUTH_DENIED","message":"Server-side authenticated layout denied route access","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36","errorMessage":"Please sign in to continue."}
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 462ms (next.js: 170ms, proxy.ts: 96ms, application-code: 196ms)
+ GET /staff 200 in 461ms (next.js: 291ms, proxy.ts: 99ms, application-code: 70ms)
+ GET /manifest.webmanifest 200 in 94ms (next.js: 74ms, proxy.ts: 8ms, application-code: 12ms)
+ GET / 200 in 110ms (next.js: 9ms, proxy.ts: 7ms, application-code: 94ms)
+ GET / 200 in 38ms (next.js: 6ms, proxy.ts: 8ms, application-code: 24ms)
+{"timestamp":"2026-05-29T05:00:27.507Z","level":"SECURITY","category":"UNAUTHORIZED_REDIRECT","message":"Redirected unauthenticated access attempt from protected route: /dashboard","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36","attemptedPath":"/dashboard"}
+ GET /manifest.webmanifest 200 in 21ms (next.js: 6ms, proxy.ts: 11ms, application-code: 3ms)
+{"timestamp":"2026-05-29T05:00:27.527Z","level":"SECURITY","category":"UNAUTHORIZED_REDIRECT","message":"Redirected unauthenticated access attempt from protected route: /dashboard","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36","attemptedPath":"/dashboard"}
+ GET / 200 in 20ms (next.js: 4ms, proxy.ts: 9ms, application-code: 7ms)
+ GET / 200 in 14ms (next.js: 3ms, proxy.ts: 5ms, application-code: 5ms)
+✓ Compiled in 75ms
+ GET / 200 in 222ms (next.js: 95ms, proxy.ts: 68ms, application-code: 59ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 223ms (next.js: 123ms, proxy.ts: 69ms, application-code: 30ms)
+ GET /manifest.webmanifest 200 in 41ms (next.js: 27ms, proxy.ts: 6ms, application-code: 8ms)
+ GET /staff/accept?invitationId=edd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 403ms (next.js: 129ms, proxy.ts: 4ms, application-code: 270ms)
+{"timestamp":"2026-05-29T05:03:39.384Z","level":"SECURITY","category":"AUTH_LOGIN_SUCCESS","message":"User successfully logged in: [redacted-email]","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36","userId":"f03fbf36-0552-4c15-9ae7-0d70eacd4007","email":"[redacted-email]"}
+ POST / 200 in 217ms (next.js: 5ms, proxy.ts: 10ms, application-code: 202ms)
+  └─ ƒ loginAction({"email":"leo.leo77k@gmail.com","password":"##All019All##"}) in 130ms src/features/auth/server/actions.ts
+ GET /manifest.webmanifest 200 in 28ms (next.js: 7ms, proxy.ts: 13ms, application-code: 9ms)
+ GET /manifest.webmanifest 200 in 49ms (next.js: 29ms, proxy.ts: 14ms, application-code: 7ms)
+ GET /dashboard 200 in 329ms (next.js: 107ms, proxy.ts: 68ms, application-code: 155ms)
+ GET /manifest.webmanifest 200 in 33ms (next.js: 9ms, proxy.ts: 12ms, application-code: 12ms)
+ GET /activity 200 in 300ms (next.js: 39ms, proxy.ts: 58ms, application-code: 203ms)
+ GET /manifest.webmanifest 200 in 27ms (next.js: 6ms, proxy.ts: 13ms, application-code: 8ms)
+ GET /staff 200 in 385ms (next.js: 76ms, proxy.ts: 64ms, application-code: 245ms)
+ POST /staff 200 in 277ms (next.js: 5ms, proxy.ts: 54ms, application-code: 218ms)
+  └─ ƒ resendStaffInviteAction({"success":false}, {}) in 177ms src/features/staff/server/actions.ts
+✓ Compiled in 482ms
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 1289ms (next.js: 155ms, proxy.ts: 815ms, application-code: 319ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 384ms (next.js: 22ms, proxy.ts: 222ms, application-code: 139ms)
+ GET /staff 200 in 1459ms (next.js: 137ms, proxy.ts: 1016ms, application-code: 305ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 216ms (next.js: 7ms, proxy.ts: 7ms, application-code: 203ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 576ms (next.js: 49ms, proxy.ts: 53ms, application-code: 474ms)
+ GET /staff 200 in 707ms (next.js: 9ms, proxy.ts: 78ms, application-code: 620ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 477ms (next.js: 16ms, proxy.ts: 15ms, application-code: 446ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 429ms (next.js: 182ms, proxy.ts: 68ms, application-code: 180ms)
+ GET /staff 200 in 629ms (next.js: 24ms, proxy.ts: 158ms, application-code: 447ms)
+ GET /staff 200 in 632ms (next.js: 72ms, proxy.ts: 172ms, application-code: 387ms)
+ GET /staff 200 in 638ms (next.js: 116ms, proxy.ts: 177ms, application-code: 345ms)
+ GET /staff 200 in 642ms (next.js: 117ms, proxy.ts: 204ms, application-code: 321ms)
+ GET /staff 200 in 554ms (next.js: 198ms, proxy.ts: 146ms, application-code: 210ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 116ms (next.js: 8ms, proxy.ts: 25ms, application-code: 83ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 271ms (next.js: 7ms, proxy.ts: 7ms, application-code: 256ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 236ms (next.js: 14ms, proxy.ts: 13ms, application-code: 209ms)
+ GET /staff 200 in 304ms (next.js: 30ms, proxy.ts: 84ms, application-code: 190ms)
+ GET /staff 200 in 231ms (next.js: 31ms, proxy.ts: 100ms, application-code: 100ms)
+ GET /manifest.webmanifest 200 in 46ms (next.js: 34ms, proxy.ts: 6ms, application-code: 6ms)
+✓ Compiled in 212ms
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 518ms (next.js: 116ms, proxy.ts: 71ms, application-code: 332ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 342ms (next.js: 15ms, proxy.ts: 243ms, application-code: 84ms)
+ GET /staff 200 in 673ms (next.js: 155ms, proxy.ts: 221ms, application-code: 297ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 202ms (next.js: 7ms, proxy.ts: 7ms, application-code: 188ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 159ms (next.js: 64ms, proxy.ts: 11ms, application-code: 84ms)
+ GET /staff 200 in 248ms (next.js: 11ms, proxy.ts: 92ms, application-code: 145ms)
+ GET /staff 200 in 233ms (next.js: 7ms, proxy.ts: 99ms, application-code: 127ms)
+ GET /staff 200 in 233ms (next.js: 53ms, proxy.ts: 99ms, application-code: 81ms)
+ GET /manifest.webmanifest 200 in 36ms (next.js: 25ms, proxy.ts: 5ms, application-code: 6ms)
+✓ Compiled in 502ms
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 404ms (next.js: 153ms, proxy.ts: 71ms, application-code: 180ms)
+ GET /staff 200 in 415ms (next.js: 65ms, proxy.ts: 254ms, application-code: 96ms)
+ GET /manifest.webmanifest 200 in 38ms (next.js: 27ms, proxy.ts: 5ms, application-code: 7ms)
+ GET /staff/accept?invitationId=edd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 400ms (next.js: 139ms, proxy.ts: 8ms, application-code: 253ms)
+ GET /staff/accept?invitationId=edd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 184ms (next.js: 8ms, proxy.ts: 9ms, application-code: 167ms)
+ GET /staff/accept?invitationId=edd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 214ms (next.js: 8ms, proxy.ts: 76ms, application-code: 130ms)
+ GET /manifest.webmanifest 200 in 110ms (next.js: 64ms, proxy.ts: 39ms, application-code: 8ms)
+ GET /staff 200 in 747ms (next.js: 6ms, proxy.ts: 62ms, application-code: 678ms)
+ GET /manifest.webmanifest 200 in 58ms (next.js: 20ms, proxy.ts: 31ms, application-code: 7ms)
+ GET /activity 200 in 538ms (next.js: 213ms, proxy.ts: 63ms, application-code: 262ms)
+ GET /manifest.webmanifest 200 in 30ms (next.js: 8ms, proxy.ts: 12ms, application-code: 10ms)
+ GET /staff 200 in 324ms (next.js: 6ms, proxy.ts: 55ms, application-code: 264ms)
+ POST /staff 200 in 414ms (next.js: 10ms, proxy.ts: 56ms, application-code: 348ms)
+  └─ ƒ revokeStaffInviteAction({"success":false}, {}) in 96ms src/features/staff/server/actions.ts
+ GET /manifest.webmanifest 200 in 21ms (next.js: 5ms, proxy.ts: 8ms, application-code: 8ms)
+ GET /manifest.webmanifest 200 in 30ms (next.js: 10ms, proxy.ts: 12ms, application-code: 7ms)
+ GET /activity 200 in 227ms (next.js: 4ms, proxy.ts: 50ms, application-code: 173ms)
+ GET /manifest.webmanifest 200 in 23ms (next.js: 6ms, proxy.ts: 10ms, application-code: 8ms)
+ GET /staff 200 in 280ms (next.js: 5ms, proxy.ts: 54ms, application-code: 222ms)
+ POST /staff 200 in 472ms (next.js: 5ms, proxy.ts: 52ms, application-code: 415ms)
+  └─ ƒ resendStaffInviteAction({"success":false}, {}) in 209ms src/features/staff/server/actions.ts
+ GET /manifest.webmanifest 200 in 20ms (next.js: 5ms, proxy.ts: 7ms, application-code: 8ms)
+ GET /manifest.webmanifest 200 in 24ms (next.js: 6ms, proxy.ts: 10ms, application-code: 8ms)
+ GET /activity 200 in 267ms (next.js: 4ms, proxy.ts: 52ms, application-code: 211ms)
+ GET /staff/accept?invitationId=edd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 327ms (next.js: 7ms, proxy.ts: 65ms, application-code: 256ms)
+ GET /manifest.webmanifest 200 in 43ms (next.js: 11ms, proxy.ts: 26ms, application-code: 7ms)
+ GET /staff/accept?invitationId=edd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 205ms (next.js: 7ms, proxy.ts: 81ms, application-code: 117ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 34ms (next.js: 4ms, proxy.ts: 6ms, application-code: 24ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3Dedd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 57ms (next.js: 7ms, proxy.ts: 10ms, application-code: 39ms)
+ GET /manifest.webmanifest 200 in 23ms (next.js: 5ms, proxy.ts: 11ms, application-code: 7ms)
+ GET /staff/accept?invitationId=edd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 145ms (next.js: 5ms, proxy.ts: 5ms, application-code: 134ms)
+{"timestamp":"2026-05-29T05:16:23.257Z","level":"SECURITY","category":"SERVER_ROUTE_AUTH_DENIED","message":"Server-side authenticated layout denied route access","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36","errorMessage":"Please sign in to continue."}
+ GET /activity 200 in 337ms (next.js: 6ms, proxy.ts: 8ms, application-code: 323ms)
+ GET /manifest.webmanifest 200 in 36ms (next.js: 18ms, proxy.ts: 10ms, application-code: 8ms)
+ GET / 200 in 168ms (next.js: 7ms, proxy.ts: 12ms, application-code: 149ms)
+ GET /manifest.webmanifest 200 in 43ms (next.js: 22ms, proxy.ts: 13ms, application-code: 9ms)
+ GET / 200 in 99ms (next.js: 5ms, proxy.ts: 8ms, application-code: 86ms)
+ GET /manifest.webmanifest 200 in 34ms (next.js: 12ms, proxy.ts: 15ms, application-code: 7ms)
+{"timestamp":"2026-05-29T05:16:38.319Z","level":"SECURITY","category":"AUTH_LOGIN_SUCCESS","message":"User successfully logged in: [redacted-email]","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36","userId":"f03fbf36-0552-4c15-9ae7-0d70eacd4007","email":"[redacted-email]"}
+ POST / 200 in 186ms (next.js: 6ms, proxy.ts: 9ms, application-code: 171ms)
+  └─ ƒ loginAction({"email":"leo.leo77k@gmail.com","password":"##All019All##"}) in 131ms src/features/auth/server/actions.ts
+ GET /manifest.webmanifest 200 in 28ms (next.js: 8ms, proxy.ts: 13ms, application-code: 7ms)
+ GET /manifest.webmanifest 200 in 39ms (next.js: 6ms, proxy.ts: 26ms, application-code: 7ms)
+ GET /dashboard 200 in 507ms (next.js: 212ms, proxy.ts: 68ms, application-code: 227ms)
+ GET /manifest.webmanifest 200 in 28ms (next.js: 7ms, proxy.ts: 11ms, application-code: 10ms)
+ GET /activity 200 in 291ms (next.js: 4ms, proxy.ts: 53ms, application-code: 234ms)
+ GET /manifest.webmanifest 200 in 27ms (next.js: 6ms, proxy.ts: 12ms, application-code: 8ms)
+ GET /staff 200 in 282ms (next.js: 4ms, proxy.ts: 50ms, application-code: 228ms)
+ GET /manifest.webmanifest 200 in 29ms (next.js: 6ms, proxy.ts: 14ms, application-code: 9ms)
+ POST /staff 200 in 515ms (next.js: 5ms, proxy.ts: 56ms, application-code: 453ms)
+  └─ ƒ resendStaffInviteAction({"success":false}, {}) in 236ms src/features/staff/server/actions.ts
+ GET /manifest.webmanifest 200 in 21ms (next.js: 4ms, proxy.ts: 11ms, application-code: 6ms)
+ GET /manifest.webmanifest 200 in 30ms (next.js: 11ms, proxy.ts: 12ms, application-code: 7ms)
+ GET /activity 200 in 254ms (next.js: 6ms, proxy.ts: 57ms, application-code: 191ms)
+ GET /staff/accept?invitationId=edd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 134ms (next.js: 6ms, proxy.ts: 9ms, application-code: 120ms)
+ GET /staff/accept?invitationId=edd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 199ms (next.js: 8ms, proxy.ts: 79ms, application-code: 111ms)
+ POST /staff/accept?invitationId=edd353f5-29a7-43aa-a23d-f608b4d3f94f 200 in 628ms (next.js: 6ms, proxy.ts: 74ms, application-code: 548ms)
+  └─ ƒ acceptStaffInviteFormAction({"success":false}, {}) in 380ms src/features/staff/server/actions.ts
+ GET /dashboard 200 in 179ms (next.js: 6ms, proxy.ts: 57ms, application-code: 116ms)
+ GET /billing 200 in 164ms (next.js: 79ms, proxy.ts: 52ms, application-code: 34ms)
+ GET /inventory 200 in 187ms (next.js: 78ms, proxy.ts: 53ms, application-code: 56ms)
+ GET /invoices 200 in 209ms (next.js: 83ms, proxy.ts: 73ms, application-code: 53ms)
+ GET /settings 200 in 152ms (next.js: 59ms, proxy.ts: 56ms, application-code: 37ms)
+ GET /settings 200 in 85ms (next.js: 6ms, proxy.ts: 55ms, application-code: 24ms)
+ GET /manifest.webmanifest 200 in 17ms (next.js: 4ms, proxy.ts: 8ms, application-code: 5ms)
+ GET /invoices 200 in 98ms (next.js: 6ms, proxy.ts: 63ms, application-code: 29ms)
+ GET /inventory 200 in 93ms (next.js: 5ms, proxy.ts: 55ms, application-code: 33ms)
+ GET /billing 200 in 97ms (next.js: 6ms, proxy.ts: 64ms, application-code: 28ms)
+ GET /dashboard 200 in 100ms (next.js: 6ms, proxy.ts: 65ms, application-code: 29ms)
+ GET /inventory 200 in 88ms (next.js: 6ms, proxy.ts: 56ms, application-code: 26ms)
+ GET /billing 200 in 97ms (next.js: 5ms, proxy.ts: 61ms, application-code: 30ms)
+ POST /billing 200 in 399ms (next.js: 7ms, proxy.ts: 63ms, application-code: 328ms)
+  └─ ƒ checkoutAction({"customerName":"Irfan","customerPhone":null,"discountAmount":20,"...":"6 items not stringified"}) in 262ms src/features/billing/server/actions.ts
+ GET /invoices 200 in 93ms (next.js: 6ms, proxy.ts: 58ms, application-code: 30ms)
+ GET /invoices 200 in 89ms (next.js: 6ms, proxy.ts: 59ms, application-code: 25ms)
+ GET /inventory 200 in 104ms (next.js: 4ms, proxy.ts: 69ms, application-code: 31ms)
+ GET /billing 200 in 109ms (next.js: 6ms, proxy.ts: 74ms, application-code: 30ms)
+ GET /dashboard 200 in 90ms (next.js: 6ms, proxy.ts: 57ms, application-code: 28ms)
+ GET /settings 200 in 455ms (next.js: 7ms, proxy.ts: 60ms, application-code: 389ms)
+ GET /manifest.webmanifest 200 in 45ms (next.js: 22ms, proxy.ts: 15ms, application-code: 8ms)
+ GET /invoices 200 in 93ms (next.js: 5ms, proxy.ts: 58ms, application-code: 30ms)
+ GET /manifest.webmanifest 200 in 18ms (next.js: 4ms, proxy.ts: 9ms, application-code: 5ms)
+ GET /manifest.webmanifest 200 in 44ms (next.js: 26ms, proxy.ts: 12ms, application-code: 6ms)
+ GET /staff 200 in 399ms (next.js: 5ms, proxy.ts: 51ms, application-code: 343ms)
+ GET /manifest.webmanifest 200 in 32ms (next.js: 11ms, proxy.ts: 13ms, application-code: 8ms)
+ GET /activity 200 in 276ms (next.js: 5ms, proxy.ts: 58ms, application-code: 214ms)
+ GET /billing 200 in 102ms (next.js: 6ms, proxy.ts: 64ms, application-code: 33ms)
+ GET /invoices 200 in 98ms (next.js: 6ms, proxy.ts: 60ms, application-code: 33ms)
+ GET /inventory 200 in 101ms (next.js: 9ms, proxy.ts: 63ms, application-code: 28ms)
+ GET /manifest.webmanifest 200 in 26ms (next.js: 7ms, proxy.ts: 13ms, application-code: 6ms)
+ GET /staff 200 in 388ms (next.js: 7ms, proxy.ts: 63ms, application-code: 319ms)
+ POST /staff 200 in 370ms (next.js: 6ms, proxy.ts: 56ms, application-code: 308ms)
+  └─ ƒ suspendStaffAction({"success":false}, {}) in 102ms src/features/staff/server/actions.ts
+ GET /manifest.webmanifest 200 in 19ms (next.js: 5ms, proxy.ts: 7ms, application-code: 7ms)
+ GET /billing 200 in 84ms (next.js: 5ms, proxy.ts: 51ms, application-code: 28ms)
+ POST /billing 500 in 675ms (next.js: 6ms, proxy.ts: 77ms, application-code: 592ms)
+  └─ ƒ checkoutAction({"customerName":"General Customer","customerPhone":null,"discountAmount":0,"...":"6 items not stringified"}) in 82ms src/features/billing/server/actions.ts
+ GET /billing 200 in 241ms (next.js: 5ms, proxy.ts: 66ms, application-code: 170ms)
+ GET / 200 in 41ms (next.js: 6ms, proxy.ts: 9ms, application-code: 26ms)
+{"timestamp":"2026-05-29T05:24:05.610Z","level":"SECURITY","category":"AUTH_LOGIN_SUCCESS","message":"User successfully logged in: [redacted-email]","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36","userId":"58434ac2-1c66-4407-b901-dd82b4fc04ca","email":"[redacted-email]"}
+ POST / 200 in 197ms (next.js: 7ms, proxy.ts: 9ms, application-code: 181ms)
+  └─ ƒ loginAction({"email":"test@cashier.com","password":"##All019All##"}) in 137ms src/features/auth/server/actions.ts
+ GET /manifest.webmanifest 200 in 28ms (next.js: 6ms, proxy.ts: 13ms, application-code: 9ms)
+ GET /activity 200 in 326ms (next.js: 6ms, proxy.ts: 54ms, application-code: 266ms)
+ GET /manifest.webmanifest 200 in 24ms (next.js: 6ms, proxy.ts: 11ms, application-code: 7ms)
+ GET /staff 200 in 365ms (next.js: 7ms, proxy.ts: 56ms, application-code: 303ms)
+ POST /staff 200 in 376ms (next.js: 5ms, proxy.ts: 58ms, application-code: 312ms)
+  └─ ƒ reactivateStaffAction({"success":false}, {}) in 103ms src/features/staff/server/actions.ts
+ GET /manifest.webmanifest 200 in 22ms (next.js: 4ms, proxy.ts: 12ms, application-code: 6ms)
+{"timestamp":"2026-05-29T05:25:32.198Z","level":"SECURITY","category":"AUTH_LOGIN_SUCCESS","message":"User successfully logged in: [redacted-email]","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36","userId":"58434ac2-1c66-4407-b901-dd82b4fc04ca","email":"[redacted-email]"}
+ POST / 200 in 160ms (next.js: 3ms, proxy.ts: 8ms, application-code: 149ms)
+  └─ ƒ loginAction({"email":"test@cashier.com","password":"##All019All##"}) in 113ms src/features/auth/server/actions.ts
+ GET /dashboard 200 in 173ms (next.js: 6ms, proxy.ts: 62ms, application-code: 106ms)
+ GET /manifest.webmanifest 200 in 28ms (next.js: 6ms, proxy.ts: 13ms, application-code: 9ms)
+ GET /activity 200 in 250ms (next.js: 6ms, proxy.ts: 54ms, application-code: 189ms)
+ GET /manifest.webmanifest 200 in 28ms (next.js: 8ms, proxy.ts: 13ms, application-code: 6ms)
+ GET /staff 200 in 373ms (next.js: 6ms, proxy.ts: 70ms, application-code: 296ms)
+ GET /dashboard 200 in 806ms (next.js: 57ms, proxy.ts: 656ms, application-code: 92ms)
+ GET /staff 200 in 834ms (next.js: 249ms, proxy.ts: 231ms, application-code: 355ms)
+ GET /manifest.webmanifest 200 in 65ms (next.js: 48ms, proxy.ts: 6ms, application-code: 11ms)
+ GET /dashboard 200 in 450ms (next.js: 114ms, proxy.ts: 149ms, application-code: 187ms)
+ GET /staff 200 in 476ms (next.js: 227ms, proxy.ts: 149ms, application-code: 100ms)
+ GET /manifest.webmanifest 200 in 40ms (next.js: 27ms, proxy.ts: 5ms, application-code: 8ms)
+ GET /dashboard 200 in 375ms (next.js: 95ms, proxy.ts: 119ms, application-code: 160ms)
+ GET /staff 200 in 394ms (next.js: 184ms, proxy.ts: 120ms, application-code: 90ms)
+ GET /manifest.webmanifest 200 in 34ms (next.js: 24ms, proxy.ts: 5ms, application-code: 6ms)
+ GET /dashboard 200 in 452ms (next.js: 47ms, proxy.ts: 376ms, application-code: 29ms)
+ GET /staff 200 in 462ms (next.js: 131ms, proxy.ts: 168ms, application-code: 164ms)
+ GET /manifest.webmanifest 200 in 36ms (next.js: 24ms, proxy.ts: 5ms, application-code: 7ms)
+ GET /dashboard 200 in 420ms (next.js: 96ms, proxy.ts: 152ms, application-code: 172ms)
+ GET /staff 200 in 420ms (next.js: 187ms, proxy.ts: 151ms, application-code: 81ms)
+ GET /manifest.webmanifest 200 in 54ms (next.js: 28ms, proxy.ts: 21ms, application-code: 6ms)
+ GET /dashboard 200 in 381ms (next.js: 93ms, proxy.ts: 121ms, application-code: 167ms)
+ GET /staff 200 in 380ms (next.js: 48ms, proxy.ts: 257ms, application-code: 76ms)
+ GET /manifest.webmanifest 200 in 60ms (next.js: 46ms, proxy.ts: 7ms, application-code: 7ms)
+ GET /dashboard 200 in 396ms (next.js: 219ms, proxy.ts: 138ms, application-code: 39ms)
+ GET /staff 200 in 396ms (next.js: 115ms, proxy.ts: 134ms, application-code: 146ms)
+ GET /manifest.webmanifest 200 in 45ms (next.js: 29ms, proxy.ts: 8ms, application-code: 7ms)
+✓ Compiled in 57ms
+ GET /dashboard 200 in 501ms (next.js: 87ms, proxy.ts: 112ms, application-code: 302ms)
+ GET /staff 200 in 503ms (next.js: 268ms, proxy.ts: 105ms, application-code: 129ms)
+ GET /dashboard 200 in 187ms (next.js: 4ms, proxy.ts: 73ms, application-code: 110ms)
+ GET /staff 200 in 193ms (next.js: 27ms, proxy.ts: 73ms, application-code: 93ms)
+ GET /dashboard 200 in 175ms (next.js: 3ms, proxy.ts: 72ms, application-code: 100ms)
+ GET /staff 200 in 170ms (next.js: 9ms, proxy.ts: 91ms, application-code: 71ms)
+ GET /dashboard 200 in 177ms (next.js: 4ms, proxy.ts: 100ms, application-code: 73ms)
+ GET /staff 200 in 139ms (next.js: 6ms, proxy.ts: 74ms, application-code: 59ms)
+ GET /manifest.webmanifest 200 in 37ms (next.js: 25ms, proxy.ts: 6ms, application-code: 6ms)
+✓ Compiled in 47ms
+ GET /dashboard 200 in 629ms (next.js: 128ms, proxy.ts: 200ms, application-code: 302ms)
+ GET /staff 200 in 630ms (next.js: 314ms, proxy.ts: 200ms, application-code: 117ms)
+ GET /dashboard 200 in 202ms (next.js: 3ms, proxy.ts: 79ms, application-code: 120ms)
+ GET /staff 200 in 193ms (next.js: 15ms, proxy.ts: 92ms, application-code: 85ms)
+ GET /dashboard 200 in 226ms (next.js: 4ms, proxy.ts: 135ms, application-code: 87ms)
+ GET /staff 200 in 186ms (next.js: 10ms, proxy.ts: 107ms, application-code: 69ms)
+ GET /manifest.webmanifest 200 in 40ms (next.js: 28ms, proxy.ts: 5ms, application-code: 7ms)
+ GET /dashboard 200 in 471ms (next.js: 264ms, proxy.ts: 161ms, application-code: 46ms)
+ GET /staff 200 in 470ms (next.js: 136ms, proxy.ts: 155ms, application-code: 179ms)
+ GET /manifest.webmanifest 200 in 41ms (next.js: 29ms, proxy.ts: 5ms, application-code: 6ms)
+ GET /dashboard 200 in 405ms (next.js: 219ms, proxy.ts: 137ms, application-code: 49ms)
+ GET /staff 200 in 402ms (next.js: 120ms, proxy.ts: 131ms, application-code: 151ms)
+ GET /manifest.webmanifest 200 in 39ms (next.js: 28ms, proxy.ts: 5ms, application-code: 7ms)
+ GET /dashboard 200 in 466ms (next.js: 98ms, proxy.ts: 159ms, application-code: 209ms)
+ GET /staff 200 in 484ms (next.js: 69ms, proxy.ts: 299ms, application-code: 116ms)
+ GET /manifest.webmanifest 200 in 57ms (next.js: 38ms, proxy.ts: 6ms, application-code: 12ms)
+{"timestamp":"2026-05-29T06:54:47.927Z","level":"SECURITY","category":"BOT_BLOCKED","message":"Blocked bot request from IP: ::1","ip":"::1","userAgent":"","path":"/"}
+{"timestamp":"2026-05-29T06:54:47.949Z","level":"SECURITY","category":"BOT_BLOCKED","message":"Blocked bot request from IP: ::1","ip":"::1","userAgent":"","path":"/"}
+ GET / 200 in 371ms (next.js: 174ms, proxy.ts: 5ms, application-code: 191ms)
+{"timestamp":"2026-05-29T06:54:51.457Z","level":"SECURITY","category":"AUTH_LOGIN_SUCCESS","message":"User successfully logged in: [redacted-email]","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36","userId":"f8982e9c-ded9-457b-854b-796b6d8f9b41","email":"[redacted-email]"}
+ POST / 200 in 206ms (next.js: 15ms, proxy.ts: 7ms, application-code: 184ms)
+  └─ ƒ loginAction({"email":"playwright-e2e-owner@paisapos-test.com","password":"E2eTestPassword123!"}) in 134ms src/features/auth/server/actions.ts
+ GET /dashboard 200 in 164ms (next.js: 4ms, proxy.ts: 68ms, application-code: 93ms)
+ GET /activity 200 in 581ms (next.js: 125ms, proxy.ts: 53ms, application-code: 403ms)
+ GET /activity?q=checkout&actor=&action=&result=all&from=&to= 200 in 260ms (next.js: 4ms, proxy.ts: 67ms, application-code: 189ms)
+ GET /billing 200 in 403ms (next.js: 129ms, proxy.ts: 47ms, application-code: 227ms)
+ GET /billing 200 in 153ms (next.js: 3ms, proxy.ts: 51ms, application-code: 99ms)
+ GET /billing 200 in 213ms (next.js: 3ms, proxy.ts: 47ms, application-code: 163ms)
+ GET /billing 200 in 171ms (next.js: 3ms, proxy.ts: 46ms, application-code: 122ms)
+ POST /billing 200 in 262ms (next.js: 4ms, proxy.ts: 58ms, application-code: 201ms)
+  └─ ƒ checkoutAction({"customerName":"Playwright Buyer","customerPhone":"9801234567","discountAmount":0,"...":"6 items not stringified"}) in 168ms src/features/billing/server/actions.ts
+ GET /billing 200 in 177ms (next.js: 3ms, proxy.ts: 63ms, application-code: 112ms)
+ GET /inventory 200 in 433ms (next.js: 132ms, proxy.ts: 54ms, application-code: 247ms)
+ POST /inventory 200 in 180ms (next.js: 5ms, proxy.ts: 58ms, application-code: 117ms)
+  └─ ƒ upsertProductAction({"category":"Tops","deletedVariantIds":[],"lowStockThreshold":5,"...":"3 items not stringified"}) in 100ms src/features/inventory/server/actions.ts
+ GET /billing 200 in 197ms (next.js: 4ms, proxy.ts: 55ms, application-code: 138ms)
+ POST /billing 200 in 235ms (next.js: 3ms, proxy.ts: 52ms, application-code: 180ms)
+  └─ ƒ checkoutAction({"customerName":"General Customer","customerPhone":null,"discountAmount":0,"...":"6 items not stringified"}) in 173ms src/features/billing/server/actions.ts
+ GET /inventory 200 in 174ms (next.js: 3ms, proxy.ts: 52ms, application-code: 119ms)
+ GET /billing 200 in 166ms (next.js: 3ms, proxy.ts: 47ms, application-code: 116ms)
+ GET /billing 200 in 186ms (next.js: 4ms, proxy.ts: 50ms, application-code: 132ms)
+ GET /billing 200 in 234ms (next.js: 5ms, proxy.ts: 64ms, application-code: 165ms)
+ GET / 200 in 40ms (next.js: 3ms, proxy.ts: 4ms, application-code: 34ms)
+{"timestamp":"2026-05-29T06:55:05.979Z","level":"SECURITY","category":"AUTH_LOGIN_FAILURE","message":"Failed login attempt for email: [redacted-email]","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.96 Safari/537.36","email":"[redacted-email]","errorMessage":"Invalid login credentials"}
+ POST / 200 in 61ms (next.js: 3ms, proxy.ts: 5ms, application-code: 53ms)
+  └─ ƒ loginAction({"email":"unregistered-operator-1780037705874@pois.com","password":"badpass-1"}) in 47ms src/features/auth/server/actions.ts
+{"timestamp":"2026-05-29T06:55:06.145Z","level":"SECURITY","category":"AUTH_LOGIN_FAILURE","message":"Failed login attempt for email: [redacted-email]","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.96 Safari/537.36","email":"[redacted-email]","errorMessage":"Invalid login credentials"}
+ POST / 200 in 65ms (next.js: 5ms, proxy.ts: 4ms, application-code: 56ms)
+  └─ ƒ loginAction({"email":"unregistered-operator-1780037705874@pois.com","password":"badpass-2"}) in 51ms src/features/auth/server/actions.ts
+{"timestamp":"2026-05-29T06:55:06.313Z","level":"SECURITY","category":"AUTH_LOGIN_FAILURE","message":"Failed login attempt for email: [redacted-email]","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.96 Safari/537.36","email":"[redacted-email]","errorMessage":"Invalid login credentials"}
+ POST / 200 in 65ms (next.js: 3ms, proxy.ts: 4ms, application-code: 57ms)
+  └─ ƒ loginAction({"email":"unregistered-operator-1780037705874@pois.com","password":"badpass-3"}) in 51ms src/features/auth/server/actions.ts
+{"timestamp":"2026-05-29T06:55:06.465Z","level":"SECURITY","category":"AUTH_LOGIN_FAILURE","message":"Failed login attempt for email: [redacted-email]","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.96 Safari/537.36","email":"[redacted-email]","errorMessage":"Invalid login credentials"}
+ POST / 200 in 52ms (next.js: 4ms, proxy.ts: 4ms, application-code: 45ms)
+  └─ ƒ loginAction({"email":"unregistered-operator-1780037705874@pois.com","password":"badpass-4"}) in 38ms src/features/auth/server/actions.ts
+{"timestamp":"2026-05-29T06:55:06.634Z","level":"SECURITY","category":"AUTH_LOGIN_FAILURE","message":"Failed login attempt for email: [redacted-email]","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.96 Safari/537.36","email":"[redacted-email]","errorMessage":"Invalid login credentials"}
+ POST / 200 in 54ms (next.js: 3ms, proxy.ts: 5ms, application-code: 47ms)
+  └─ ƒ loginAction({"email":"unregistered-operator-1780037705874@pois.com","password":"badpass-5"}) in 40ms src/features/auth/server/actions.ts
+ GET /billing 200 in 166ms (next.js: 3ms, proxy.ts: 52ms, application-code: 111ms)
+ POST /billing 200 in 233ms (next.js: 3ms, proxy.ts: 57ms, application-code: 173ms)
+  └─ ƒ checkoutAction({"customerName":"General Customer","customerPhone":null,"discountAmount":0,"...":"6 items not stringified"}) in 166ms src/features/billing/server/actions.ts
+ GET /billing 200 in 159ms (next.js: 3ms, proxy.ts: 45ms, application-code: 111ms)
+ GET /billing 200 in 186ms (next.js: 3ms, proxy.ts: 46ms, application-code: 136ms)
+ GET /billing 200 in 178ms (next.js: 3ms, proxy.ts: 47ms, application-code: 128ms)
+ GET /billing 200 in 173ms (next.js: 3ms, proxy.ts: 45ms, application-code: 125ms)
+ GET /billing 200 in 151ms (next.js: 3ms, proxy.ts: 48ms, application-code: 101ms)
+ GET /staff 200 in 292ms (next.js: 3ms, proxy.ts: 46ms, application-code: 243ms)
+ POST /staff 200 in 378ms (next.js: 3ms, proxy.ts: 52ms, application-code: 322ms)
+  └─ ƒ inviteStaffFormAction({"success":false}, {}) in 161ms src/features/staff/server/actions.ts
+ GET /staff/accept?invitationId=58139e4f-e04c-447a-a7db-d2e4f9b63d81 200 in 538ms (next.js: 182ms, proxy.ts: 73ms, application-code: 283ms)
+ GET /dashboard 200 in 167ms (next.js: 3ms, proxy.ts: 45ms, application-code: 119ms)
+ GET /?next=%2Fstaff%2Faccept%3FinvitationId%3D22dcea25-bed2-4642-a8f8-39ced2f6c192 200 in 89ms (next.js: 3ms, proxy.ts: 4ms, application-code: 82ms)
+{"timestamp":"2026-05-29T06:55:17.315Z","level":"SECURITY","category":"AUTH_LOGIN_SUCCESS","message":"User successfully logged in: [redacted-email]","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.96 Safari/537.36","userId":"3124ecd8-91e8-40df-bc28-45f56a3dc07e","email":"[redacted-email]"}
+ POST /?next=%2Fstaff%2Faccept%3FinvitationId%3D22dcea25-bed2-4642-a8f8-39ced2f6c192 200 in 161ms (next.js: 5ms, proxy.ts: 9ms, application-code: 147ms)
+  └─ ƒ loginAction({"email":"pw-return-1780037716215-msk7fs@paisapos-test.com","password":"E2eStaffPassword123!"}) in 123ms src/features/auth/server/actions.ts
+ GET /staff/accept?invitationId=22dcea25-bed2-4642-a8f8-39ced2f6c192 200 in 142ms (next.js: 4ms, proxy.ts: 50ms, application-code: 89ms)
+ GET /staff/accept?invitationId=22dcea25-bed2-4642-a8f8-39ced2f6c192 200 in 170ms (next.js: 4ms, proxy.ts: 78ms, application-code: 88ms)
+ GET /staff 200 in 268ms (next.js: 4ms, proxy.ts: 56ms, application-code: 208ms)
+ POST /staff 200 in 320ms (next.js: 3ms, proxy.ts: 55ms, application-code: 261ms)
+  └─ ƒ suspendStaffAction({"success":false}, {}) in 94ms src/features/staff/server/actions.ts
+ GET /staff 200 in 238ms (next.js: 3ms, proxy.ts: 46ms, application-code: 188ms)

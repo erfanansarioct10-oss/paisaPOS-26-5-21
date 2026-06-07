@@ -4,8 +4,10 @@ import { useEffect } from "react";
 
 export default function GlobalError({
   error,
+  unstable_retry,
 }: {
   error: Error & { digest?: string };
+  unstable_retry?: () => void;
 }) {
   useEffect(() => {
     console.error("Global route error:", error.digest ?? error.message);
@@ -18,6 +20,15 @@ export default function GlobalError({
           <section style={{ maxWidth: 420, textAlign: "center" }}>
             <h1>Something went wrong</h1>
             <p>Please refresh the page.</p>
+            {unstable_retry && (
+              <button
+                type="button"
+                onClick={() => unstable_retry()}
+                style={{ marginTop: 16, padding: "10px 14px", borderRadius: 8, border: 0, cursor: "pointer" }}
+              >
+                Retry
+              </button>
+            )}
           </section>
         </main>
       </body>

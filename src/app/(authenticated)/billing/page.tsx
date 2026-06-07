@@ -2,8 +2,8 @@
 
 import React, { useEffect } from "react";
 import { useAppStore } from "@/lib/store/useAppStore";
-import BillingTab from "@/components/billing-tab";
-import { ErrorBoundary } from "@/components/error-boundary";
+import BillingTab from "@/features/billing/components/billing-tab";
+import { ErrorBoundary } from "@/shared/ui/error-boundary";
 
 export default function BillingPage() {
   const { setTab, cart } = useAppStore();

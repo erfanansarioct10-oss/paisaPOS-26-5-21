@@ -1,0 +1,74 @@
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.13:3000
+- Environments: .env.local, .env
+✓ Ready in 773ms
+Creating turbopack project {
+  dir: 'C:\\nooridigital_assets\\my-projects\\billing-system-26-5-21',
+  testMode: true
+}
+- Experiments (use with caution):
+  · optimizePackageImports
+
+✓ Compiled in 100ms
+{"timestamp":"2026-05-26T04:46:10.915Z","level":"SECURITY","category":"BOT_BLOCKED","message":"Blocked bot request from IP: ::1","ip":"::1","userAgent":"","path":"/"}
+{"timestamp":"2026-05-26T04:46:10.956Z","level":"SECURITY","category":"BOT_BLOCKED","message":"Blocked bot request from IP: ::1","ip":"::1","userAgent":"","path":"/"}
+ GET / 200 in 634ms (next.js: 226ms, proxy.ts: 15ms, application-code: 393ms)
+{"timestamp":"2026-05-26T04:46:13.387Z","level":"SECURITY","category":"AUTH_LOGIN_SUCCESS","message":"User successfully logged in: [redacted-email]","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36","userId":"9914abbe-77ce-497e-81cd-a9aeda2ed77e","email":"[redacted-email]"}
+ POST / 200 in 258ms (next.js: 5ms, proxy.ts: 10ms, application-code: 243ms)
+  └─ ƒ loginAction({"email":"playwright-e2e-owner@paisapos-test.com","password":"E2eTestPassword123!"}) in 184ms src/app/auth-actions.ts
+ GET /dashboard 200 in 352ms (next.js: 106ms, proxy.ts: 93ms, application-code: 154ms)
+ GET /activity 200 in 566ms (next.js: 69ms, proxy.ts: 70ms, application-code: 427ms)
+ GET /activity?q=checkout&actor=&action=&result=all&from=&to= 200 in 315ms (next.js: 5ms, proxy.ts: 66ms, application-code: 244ms)
+ GET /billing 200 in 329ms (next.js: 46ms, proxy.ts: 75ms, application-code: 208ms)
+ POST /billing 200 in 316ms (next.js: 5ms, proxy.ts: 71ms, application-code: 240ms)
+  └─ ƒ checkoutAction({"customerName":"General Customer","customerPhone":null,"discountAmount":0,"...":"6 items not stringified"}) in 231ms src/app/actions.ts
+ GET /staff 200 in 502ms (next.js: 104ms, proxy.ts: 64ms, application-code: 334ms)
+ POST /staff 200 in 476ms (next.js: 8ms, proxy.ts: 116ms, application-code: 352ms)
+  └─ ƒ inviteStaffFormAction({"success":false}, {}) in 151ms src/app/staff-actions.ts
+{"timestamp":"2026-05-26T04:51:34.950Z","level":"SECURITY","category":"BOT_BLOCKED","message":"Blocked bot request from IP: ::1","ip":"::1","userAgent":"","path":"/"}
+{"timestamp":"2026-05-26T04:51:35.017Z","level":"SECURITY","category":"BOT_BLOCKED","message":"Blocked bot request from IP: ::1","ip":"::1","userAgent":"","path":"/"}
+ GET / 200 in 243ms (next.js: 10ms, proxy.ts: 17ms, application-code: 217ms)
+{"timestamp":"2026-05-26T04:51:39.598Z","level":"SECURITY","category":"AUTH_LOGIN_SUCCESS","message":"User successfully logged in: [redacted-email]","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36","userId":"9914abbe-77ce-497e-81cd-a9aeda2ed77e","email":"[redacted-email]"}
+ POST / 200 in 332ms (next.js: 11ms, proxy.ts: 14ms, application-code: 307ms)
+  └─ ƒ loginAction({"email":"playwright-e2e-owner@paisapos-test.com","password":"E2eTestPassword123!"}) in 232ms src/app/auth-actions.ts
+ GET /dashboard 200 in 464ms (next.js: 11ms, proxy.ts: 143ms, application-code: 309ms)
+ GET /activity 200 in 328ms (next.js: 6ms, proxy.ts: 71ms, application-code: 251ms)
+ GET /activity?q=checkout&actor=&action=&result=all&from=&to= 200 in 342ms (next.js: 7ms, proxy.ts: 73ms, application-code: 262ms)
+ GET /billing 200 in 255ms (next.js: 5ms, proxy.ts: 74ms, application-code: 177ms)
+ POST /billing 200 in 303ms (next.js: 5ms, proxy.ts: 79ms, application-code: 218ms)
+  └─ ƒ checkoutAction({"customerName":"General Customer","customerPhone":null,"discountAmount":0,"...":"6 items not stringified"}) in 207ms src/app/actions.ts
+ GET /staff 200 in 319ms (next.js: 5ms, proxy.ts: 61ms, application-code: 254ms)
+ POST /staff 200 in 363ms (next.js: 6ms, proxy.ts: 71ms, application-code: 286ms)
+  └─ ƒ inviteStaffFormAction({"success":false}, {}) in 126ms src/app/staff-actions.ts
+✓ Compiled in 559ms
+{"timestamp":"2026-05-26T04:54:20.185Z","level":"SECURITY","category":"BOT_BLOCKED","message":"Blocked bot request from IP: ::1","ip":"::1","userAgent":"","path":"/"}
+{"timestamp":"2026-05-26T04:54:20.250Z","level":"SECURITY","category":"BOT_BLOCKED","message":"Blocked bot request from IP: ::1","ip":"::1","userAgent":"","path":"/"}
+ GET / 200 in 361ms (next.js: 159ms, proxy.ts: 15ms, application-code: 187ms)
+{"timestamp":"2026-05-26T04:54:22.657Z","level":"SECURITY","category":"AUTH_LOGIN_SUCCESS","message":"User successfully logged in: [redacted-email]","ip":"::1","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36","userId":"9914abbe-77ce-497e-81cd-a9aeda2ed77e","email":"[redacted-email]"}
+ POST / 200 in 223ms (next.js: 4ms, proxy.ts: 8ms, application-code: 211ms)
+  └─ ƒ loginAction({"email":"playwright-e2e-owner@paisapos-test.com","password":"E2eTestPassword123!"}) in 160ms src/app/auth-actions.ts
+ GET /dashboard 200 in 452ms (next.js: 171ms, proxy.ts: 83ms, application-code: 198ms)
+ GET /activity 200 in 597ms (next.js: 131ms, proxy.ts: 67ms, application-code: 399ms)
+ GET /activity?q=checkout&actor=&action=&result=all&from=&to= 200 in 347ms (next.js: 22ms, proxy.ts: 68ms, application-code: 257ms)
+ GET /billing 200 in 510ms (next.js: 141ms, proxy.ts: 70ms, application-code: 299ms)
+ POST /billing 200 in 374ms (next.js: 7ms, proxy.ts: 83ms, application-code: 284ms)
+  └─ ƒ checkoutAction({"customerName":"General Customer","customerPhone":null,"discountAmount":0,"...":"6 items not stringified"}) in 254ms src/app/actions.ts
+ GET /staff 200 in 635ms (next.js: 165ms, proxy.ts: 60ms, application-code: 410ms)
+ POST /staff 200 in 568ms (next.js: 9ms, proxy.ts: 115ms, application-code: 443ms)
+  └─ ƒ inviteStaffFormAction({"success":false}, {}) in 182ms src/app/staff-actions.ts
+ GET / 200 in 45ms (next.js: 3ms, proxy.ts: 6ms, application-code: 35ms)
+ GET / 200 in 96ms (next.js: 5ms, proxy.ts: 12ms, application-code: 79ms)
+ GET /manifest.webmanifest 200 in 160ms (next.js: 123ms, proxy.ts: 17ms, application-code: 20ms)
+ GET / 200 in 49ms (next.js: 3ms, proxy.ts: 4ms, application-code: 41ms)
+ GET /manifest.webmanifest 200 in 14ms (next.js: 3ms, proxy.ts: 6ms, application-code: 4ms)
+ GET / 200 in 38ms (next.js: 3ms, proxy.ts: 4ms, application-code: 31ms)
+ GET /manifest.webmanifest 200 in 15ms (next.js: 4ms, proxy.ts: 7ms, application-code: 3ms)
+ GET / 200 in 71ms (next.js: 4ms, proxy.ts: 6ms, application-code: 61ms)
+ GET /manifest.webmanifest 200 in 57ms (next.js: 17ms, proxy.ts: 12ms, application-code: 29ms)
+ GET / 200 in 49ms (next.js: 3ms, proxy.ts: 6ms, application-code: 40ms)
+ GET /manifest.webmanifest 200 in 16ms (next.js: 4ms, proxy.ts: 8ms, application-code: 4ms)
+ GET / 200 in 100ms (next.js: 8ms, proxy.ts: 15ms, application-code: 77ms)
+ GET /manifest.webmanifest 200 in 22ms (next.js: 5ms, proxy.ts: 9ms, application-code: 9ms)
+ GET /manifest.webmanifest 200 in 22ms (next.js: 5ms, proxy.ts: 9ms, application-code: 8ms)
+[?25h

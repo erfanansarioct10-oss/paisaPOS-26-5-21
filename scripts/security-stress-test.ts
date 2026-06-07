@@ -1,5 +1,5 @@
 import { sanitizeString, sanitizeCSVCell, validateRedirectPath, formatZodError } from "../src/lib/security";
-import { parseCSVLine, parseCatalogFile } from "../src/lib/importer";
+import { parseCSVLine, parseCatalogFile } from "../src/features/inventory/import/catalog-parser";
 import { z } from "zod";
 
 // Color codes for professional console outputs

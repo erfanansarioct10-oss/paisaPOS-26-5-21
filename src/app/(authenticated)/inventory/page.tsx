@@ -2,8 +2,8 @@
 
 import React, { useEffect } from "react";
 import { useAppStore } from "@/lib/store/useAppStore";
-import InventoryTab from "@/components/inventory-tab";
-import { ErrorBoundary } from "@/components/error-boundary";
+import InventoryTab from "@/features/inventory/components/inventory-tab";
+import { ErrorBoundary } from "@/shared/ui/error-boundary";
 
 export default function InventoryPage() {
   const { setTab } = useAppStore();

@@ -1,7 +1,11 @@
 import { describe, test, expect, beforeAll } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { loadEnvConfig } from "@next/env";
-import { retryOnTransientJwtClockSkew } from "./supabase-test-utils";
+import {
+  retryOnTransientJwtClockSkew,
+  upsertCatalogProduct,
+  newIdempotencyKey,
+} from "./supabase-test-utils";
 
 // Load environment variables
 loadEnvConfig(process.cwd());
@@ -84,7 +88,7 @@ describe.runIf(runLiveTests)("PaisaPOS — Advanced Security & Concurrency Stres
           p_low_stock_threshold: 5,
           p_deleted_variant_ids: [],
           p_variants: [
-            { size: "M", color: "Red", sku: `HACK-SKU-${i}-${random}`, price: 100, stock: 10 }
+            { size: "M", color: "Red", sku: `HACK-SKU-${i}-${random.toUpperCase()}`, price: 100, stock: 10 }
           ]
         })
       );
@@ -93,9 +97,11 @@ describe.runIf(runLiveTests)("PaisaPOS — Advanced Security & Concurrency Stres
     const results = await Promise.all(promises);
 
     // 4. Assert that 100% of concurrent attempts were strictly rejected by the RPC owner role gate
+    //    The active-status hardening (migration 20260531022126) changed the message
+    //    to include "active" in the owner check.
     results.forEach((res) => {
       expect(res.error).not.toBeNull();
-      expect(res.error.message).toContain("Only store owners can add or modify products");
+      expect(res.error.message).toContain("Only active store owners can add or modify products");
     });
 
     // Verify no product was successfully created
@@ -132,18 +138,14 @@ describe.runIf(runLiveTests)("PaisaPOS — Advanced Security & Concurrency Stres
       })
     );
 
-    // 2. Owner creates a valid product variant (priced at Rs. 1500)
-    const { data: product } = await client
-      .from("products")
-      .insert({ store_id: storeId, name: "Premium Hoodie", category: "Outerwear" })
-      .select().single();
-
-    const { data: variant } = await client
-      .from("product_variants")
-      .insert({ product_id: product.id, size: "L", color: "Navy", sku: `HOOD-NVY-${random}`, price: 1500 })
-      .select().single();
-
-    await client.from("inventory").insert({ variant_id: variant.id, quantity: 10 });
+    // 2. Owner creates a valid product variant (priced at Rs. 1500) via RPC
+    const { variant } = await upsertCatalogProduct(client, {
+      name: "Premium Hoodie",
+      category: "Outerwear",
+      variants: [
+        { size: "L", color: "Navy", sku: `HOOD-NVY-${random.toUpperCase()}`, price: 1500, stock: 10 }
+      ],
+    });
 
     // 3. Simulate a compromised client attempting to checkout by modifying the total to Rs. 100 (tampering)
     console.log("[Stress Test] Executing price-tampering checkout attack...");
@@ -163,7 +165,8 @@ describe.runIf(runLiveTests)("PaisaPOS — Advanced Security & Concurrency Stres
           unit_price: 100, // Tampered price reported by client
           subtotal: 100
         }
-      ]
+      ],
+      p_idempotency_key: newIdempotencyKey(),
     });
 
     // 4. Assert database transaction aborted the tampered checkout successfully
@@ -171,13 +174,20 @@ describe.runIf(runLiveTests)("PaisaPOS — Advanced Security & Concurrency Stres
     expect(errTamperedCheckout!.message).toContain("Price tampering detected");
 
     // Verify stock remains intact (Rs. 1500 item was not checked out, inventory was not deducted)
-    const { data: inventoryData } = await client.from("inventory").select("quantity").eq("variant_id", variant.id).single();
+    const { data: inventoryData } = await client
+      .from("inventory")
+      .select("quantity")
+      .eq("variant_id", variant.id)
+      .single();
     expect(inventoryData?.quantity).toBe(10);
 
     // 5. Clean up
     console.log("[Stress Test] Cleaning up Price Tampering test data...");
-    await client.from("stores").delete().eq("id", storeId);
-    await client.from("users").delete().eq("id", userId);
+    if (serviceRoleKey) {
+      const adminClient = createClient(supabaseUrl, serviceRoleKey);
+      await adminClient.from("stores").delete().eq("id", storeId);
+      await adminClient.from("users").delete().eq("id", userId);
+    }
     await client.auth.signOut();
   });
 
@@ -202,26 +212,22 @@ describe.runIf(runLiveTests)("PaisaPOS — Advanced Security & Concurrency Stres
       })
     );
 
-    // 2. Create two variants
-    const { data: product } = await client
-      .from("products")
-      .insert({ store_id: storeId, name: "Deadlock Pants", category: "Pants" })
-      .select().single();
+    // 2. Create two variants via the RPC helper
+    const { variant: var1 } = await upsertCatalogProduct(client, {
+      name: "Deadlock Pants Var1",
+      category: "Pants",
+      variants: [
+        { size: "32", color: "Grey", sku: `PAN-GRY-${random.toUpperCase()}`, price: 1000, stock: 100 }
+      ],
+    });
 
-    const { data: var1 } = await client
-      .from("product_variants")
-      .insert({ product_id: product.id, size: "32", color: "Grey", sku: `PAN-GRY-${random}`, price: 1000 })
-      .select().single();
-
-    const { data: var2 } = await client
-      .from("product_variants")
-      .insert({ product_id: product.id, size: "34", color: "Grey", sku: `PAN-GRY-34-${random}`, price: 1000 })
-      .select().single();
-
-    await client.from("inventory").insert([
-      { variant_id: var1.id, quantity: 100 },
-      { variant_id: var2.id, quantity: 100 }
-    ]);
+    const { variant: var2 } = await upsertCatalogProduct(client, {
+      name: "Deadlock Pants Var2",
+      category: "Pants",
+      variants: [
+        { size: "34", color: "Grey", sku: `PAN-GRY-34-${random.toUpperCase()}`, price: 1000, stock: 100 }
+      ],
+    });
 
     // 3. Initiate concurrent checkout floods in opposing locks order (deadlock attack)
     //    We test if the backend sorts checkout items deterministically to avoid Postgres deadlocks.
@@ -252,7 +258,8 @@ describe.runIf(runLiveTests)("PaisaPOS — Advanced Security & Concurrency Stres
           p_discount_amount: 0,
           p_paid_amount: 2000,
           p_payment_method: "Fonepay",
-          p_items: items
+          p_items: items,
+          p_idempotency_key: newIdempotencyKey(),
         })
       );
     }
@@ -270,8 +277,11 @@ describe.runIf(runLiveTests)("PaisaPOS — Advanced Security & Concurrency Stres
 
     // 5. Clean up
     console.log("[Stress Test] Cleaning up Deadlock test records...");
-    await client.from("stores").delete().eq("id", storeId);
-    await client.from("users").delete().eq("id", userId);
+    if (serviceRoleKey) {
+      const adminClient = createClient(supabaseUrl, serviceRoleKey);
+      await adminClient.from("stores").delete().eq("id", storeId);
+      await adminClient.from("users").delete().eq("id", userId);
+    }
     await client.auth.signOut();
   });
 });
