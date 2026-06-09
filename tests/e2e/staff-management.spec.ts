@@ -362,6 +362,7 @@ test.describe("Owner Staff Management", () => {
 
       const cashierRow = page.locator("[data-testid='staff-directory-row']").filter({ hasText: cashierName });
       await expect(cashierRow).toBeVisible();
+      await cashierRow.getByRole("button", { name: "Suspend", exact: true }).click();
       await cashierRow.getByPlaceholder("Type SUSPEND").fill("SUSPEND");
       await cashierRow.getByRole("button", { name: "Suspend access" }).click();
 

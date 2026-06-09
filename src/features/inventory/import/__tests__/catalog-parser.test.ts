@@ -254,5 +254,38 @@ Nepal Cargo,Bottoms,L,Green,"NPR 2,500",250
       expect(sku2).toContain("-BLA-M");
       expect(sku1).not.toBe(sku2); // Verify collision is avoided!
     });
+
+    test("should resolve auto-generated SKU collisions by appending sequential suffixes", async () => {
+      const csvContent = `Product Name,Category,Size,Color,Price,Stock,SKU
+Oversized Tee,Tops,M,Black,1000,5,
+Oversized Tee,Tops,M,Black,1000,5,
+Oversized Tee,Tops,M,Black,1000,5,
+`;
+      const file = new File([csvContent], "auto_sku_collisions.csv", { type: "text/csv" });
+      const result = await parseCatalogFile(file);
+
+      expect(result.errors).toHaveLength(0);
+      expect(result.stats.validRows).toBe(3);
+      
+      const product = result.products[0];
+      expect(product.variants).toHaveLength(3);
+      expect(product.variants[0].sku).toBe("OVER-BLA-M");
+      expect(product.variants[1].sku).toBe("OVER-BLA-M-1");
+      expect(product.variants[2].sku).toBe("OVER-BLA-M-2");
+    });
+
+    test("should successfully parse quoted fields containing multi-line content", async () => {
+      const csvContent = `Product Name,Category,Size,Color,Price,Stock,SKU
+"Oversized\nPremium Tee",Tops,M,Black,1000,5,OVER-M-L
+"Simple Tee",Tops,S,White,800,10,SIMP-S-W
+`;
+      const file = new File([csvContent], "multiline.csv", { type: "text/csv" });
+      const result = await parseCatalogFile(file);
+
+      expect(result.errors).toHaveLength(0);
+      expect(result.stats.validRows).toBe(2);
+      expect(result.products[0].name).toBe("Oversized\nPremium Tee");
+      expect(result.products[1].name).toBe("Simple Tee");
+    });
   });
 });

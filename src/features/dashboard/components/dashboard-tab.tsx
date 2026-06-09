@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore, type Invoice } from "@/lib/store/useAppStore";
 import { DashboardMetricCards } from "./dashboard-metric-cards";
@@ -8,6 +9,8 @@ import { DashboardRecentInvoicesPanel } from "./dashboard-recent-invoices-panel"
 import { DashboardStockWarningsPanel } from "./dashboard-stock-warnings-panel";
 import { buildDashboardMetrics } from "@/features/dashboard/utils/dashboard-metrics";
 import { resolveReceiptInvoiceItems } from "@/features/invoices/utils/receipt-invoice-items";
+import { fetchTodayDashboardMetrics } from "@/features/dashboard/server/dashboard-actions";
+import { DashboardSkeleton } from "./dashboard-skeleton";
 
 export default function DashboardTab() {
   const router = useRouter();
@@ -20,15 +23,47 @@ export default function DashboardTab() {
     invoiceItems,
   } = useAppStore();
 
+  // ---------------------------------------------------------------------------
+  // Server-side accurate today's metrics (no 50-record cap)
+  // ---------------------------------------------------------------------------
+  const [serverMetrics, setServerMetrics] = useState<{
+    todaySalesSum: number;
+    todayInvoicesCount: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!store) return;
+    let cancelled = false;
+    fetchTodayDashboardMetrics()
+      .then((data) => {
+        if (!cancelled) setServerMetrics(data);
+      })
+      .catch((err) => console.error("Failed to fetch dashboard metrics:", err));
+    return () => {
+      cancelled = true;
+    };
+    // Re-fetch when invoices change (after checkout or realtime sync)
+  }, [invoices.length, store]);
+
+  // ---------------------------------------------------------------------------
+  // Client-side metrics (instant fallback; also provides stock/product counts)
+  // ---------------------------------------------------------------------------
   const {
     lowStockCount,
     lowStockVariants,
     outOfStockCount,
     productCount,
-    todayInvoicesCount,
-    todaySalesSum,
+    todayInvoicesCount: clientTodayCount,
+    todaySalesSum: clientTodaySum,
     variantCount,
-  } = buildDashboardMetrics({ invoices, products, variants });
+  } = useMemo(
+    () => buildDashboardMetrics({ invoices, products, variants }),
+    [invoices, products, variants],
+  );
+
+  // Use server metrics when available; fall back to client for instant render
+  const todaySalesSum = serverMetrics?.todaySalesSum ?? clientTodaySum;
+  const todayInvoicesCount = serverMetrics?.todayInvoicesCount ?? clientTodayCount;
 
   const handleViewReceipt = async (invoice: Invoice) => {
     const { fetchInvoiceItems } = useAppStore.getState();
@@ -42,6 +77,10 @@ export default function DashboardTab() {
 
     setActiveInvoice(invoice, filledItems);
   };
+
+  if (!store) {
+    return <DashboardSkeleton />;
+  }
 
   return (
     <div className="space-y-6">

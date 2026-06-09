@@ -213,6 +213,12 @@ export default function LoginPage() {
           throw new Error(signupRes.error);
         }
 
+        if (signupRes.emailConfirmationRequired) {
+          setSuccessMsg("Registration successful! Please check your email inbox for a confirmation link to activate your store.");
+          setLocalLoading(false);
+          return;
+        }
+
         // The server action created the auth user and store/profile, but the
         // client-side Supabase instance doesn't have the session yet (cookies
         // were set server-side). Sign in on the client to establish the session

@@ -285,9 +285,9 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
   // =========================================================================
   // 4. BATCH IMPORT CHUNK-ATOMIC TRANSACTION ROLLBACK SAFETY
   // =========================================================================
-  test("Batch Import: processes chunks of 100 items atomically and rolls back completely on chunk failure", async () => {
+  test("Batch Import: processes chunks with per-product isolation and records individual product failures without rolling back successful products", async () => {
     const random = Math.random().toString(36).slice(2, 7) + Date.now();
-    const email = `test-bulk-rollback-${random}@paisapos-qa.com`;
+    const email = `test-bulk-isolated-${random}@paisapos-qa.com`;
     const password = "SecurityDefinerPass123!";
 
     const client = createClient(supabaseUrl, supabaseAnonKey);
@@ -319,24 +319,39 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
       }
     ];
 
-    console.log("[QA Test] Verifying chunk-atomic rollback: single database transaction for the batch...");
+    console.log("[QA Test] Verifying per-product isolation: single database transaction for the batch...");
     // Call bulk import RPC
-    const { error: errImport } = await client.rpc("bulk_upsert_products_and_variants", {
+    const { data: importResult, error: errImport } = await client.rpc("bulk_upsert_products_and_variants", {
       p_products: bulkPayload
     });
 
-    expect(errImport).not.toBeNull();
-    expect(errImport!.message).toContain("check");
+    expect(errImport).toBeNull();
+    expect(importResult).toBeDefined();
 
-    // Atomic Rollback Verification:
-    // Validate that Product 1 ("Valid Product A") was NOT created in the database because the entire chunk rolled back!
-    const { data: checkProd } = await client
+    const res = importResult as { succeeded: number; failed: Array<{ name: string; error: string }> };
+    expect(res.succeeded).toBe(1);
+    expect(res.failed).toHaveLength(1);
+    expect(res.failed[0].name).toBe("Invalid Product B");
+    expect(res.failed[0].error.toLowerCase()).toContain("check");
+
+    // Isolation Verification:
+    // Validate that Product 1 ("Valid Product A") WAS successfully created in the database despite Product 2 failing!
+    const { data: checkProdA } = await client
       .from("products")
       .select("*")
       .eq("store_id", storeId.data)
       .eq("name", "Valid Product A");
 
-    expect(checkProd?.length).toBe(0); // Successfully rolled back completely! 0% stock/product leakage!
+    expect(checkProdA?.length).toBe(1);
+
+    // Validate that Product 2 ("Invalid Product B") was NOT created in the database!
+    const { data: checkProdB } = await client
+      .from("products")
+      .select("*")
+      .eq("store_id", storeId.data)
+      .eq("name", "Invalid Product B");
+
+    expect(checkProdB?.length).toBe(0);
 
     // Clean up
     console.log("[QA Test] Cleaning up bulk records...");

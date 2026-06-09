@@ -14,7 +14,7 @@ export function DashboardPageHeader({ storeName, onNewSale }: DashboardPageHeade
         </h1>
         <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
           Operational overview for{" "}
-          <span className="font-semibold text-foreground">{storeName || "KTM Streetwear"}</span>.
+          <span className="font-semibold text-foreground">{storeName}</span>.
         </p>
       </div>
 

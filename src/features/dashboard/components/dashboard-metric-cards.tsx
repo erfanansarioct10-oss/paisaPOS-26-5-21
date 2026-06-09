@@ -90,7 +90,7 @@ export function DashboardMetricCards({
           </div>
         </div>
         <div className="mt-3">
-          <h3 className="text-sm font-bold text-foreground truncate">{store?.name || "KTM Boutique"}</h3>
+          <h3 className="text-sm font-bold text-foreground truncate">{store?.name || "No Store"}</h3>
           <p className="text-xs text-muted-foreground mt-1 truncate">
             PAN/VAT: {store?.pan_vat || "Not Specified"}
           </p>

@@ -27,7 +27,7 @@ const MAX_BULK_IMPORT_PRODUCTS = 1000;
 
 const checkoutSchema = z.object({
   storeId: z.string().uuid(),
-  invoiceNumber: z.string().max(50).transform(sanitizeString),
+  invoiceNumber: z.string().max(50).transform(sanitizeString).optional().default("PENDING"),
   idempotencyKey: z.string().uuid().nullable().optional(),
   customerName: z.string().min(1).max(100).transform(sanitizeString),
   customerPhone: z.string().max(20).nullable().transform(val => val ? sanitizeString(val) : null),
@@ -119,6 +119,13 @@ async function checkoutActionImpl(rawParams: unknown) {
   const { user, store, privilegeSource, delegationId } = await requirePrivilege("checkout.create", {
     storeId: params.storeId,
   });
+
+  // RBAC Control: Restrict creation of custom items to users with owner (manager) privileges
+  const hasCustomItems = params.items.some(item => !item.variant_id);
+  if (hasCustomItems && user.role !== "owner") {
+    throw new Error("Unauthorized: Cashiers are not permitted to checkout custom items.");
+  }
+
   const supabase = await getSupabaseServerClient();
 
   // User-scoped rate limiting: 10 checkouts per minute
@@ -161,11 +168,12 @@ async function checkoutActionImpl(rawParams: unknown) {
   );
 
   if (rpcError) {
+    const logInvoiceNumber = params.invoiceNumber === "PENDING" ? "PENDING_SERVER_GENERATION" : params.invoiceNumber;
     // Audit failure in the database outside the rolled-back RPC transaction (MEDIUM-20)
-    await writeLog("ERROR", "CHECKOUT_FAILURE", `Checkout failed for invoice ${params.invoiceNumber}`, {
+    await writeLog("ERROR", "CHECKOUT_FAILURE", `Checkout failed for invoice ${logInvoiceNumber}`, {
       storeId: store.id,
       userId: user.id,
-      invoiceNumber: params.invoiceNumber,
+      invoiceNumber: logInvoiceNumber,
       errorMessage: rpcError.message,
       idempotencyKeyPresent: true,
     });
@@ -178,7 +186,7 @@ async function checkoutActionImpl(rawParams: unknown) {
       privilegeSource,
       delegationId,
       targetType: "invoice",
-      targetLabel: params.invoiceNumber,
+      targetLabel: logInvoiceNumber,
       result: "failure",
       errorCode: "checkout_rpc_error",
       summary: `${user.name} failed to create invoice.`,
@@ -196,10 +204,11 @@ async function checkoutActionImpl(rawParams: unknown) {
 
   const checkoutRpcResult = checkoutRpcResultSchema.safeParse(checkoutRpcResultRaw);
   if (!checkoutRpcResult.success) {
+    const logInvoiceNumber = params.invoiceNumber === "PENDING" ? "PENDING_SERVER_GENERATION" : params.invoiceNumber;
     await writeLog("ERROR", "CHECKOUT_RPC_CONTRACT_ERROR", "Checkout RPC returned an invalid result shape", {
       storeId: store.id,
       userId: user.id,
-      invoiceNumber: params.invoiceNumber,
+      invoiceNumber: logInvoiceNumber,
       idempotencyKeyPresent: true,
       parseError: formatZodError(checkoutRpcResult.error),
     });
@@ -383,8 +392,6 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
 
   let succeededCount = 0;
   const failedProducts: Array<{ name: string; error: string }> = [];
-  let failedChunkError: string | undefined = undefined;
-  let skippedRemainder: string[] | undefined = undefined;
 
   const CHUNK_SIZE = 100;
   const ownerScopedClient = privilegeSource === "delegation" ? null : await getSupabaseServerClient();
@@ -405,7 +412,7 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
     }));
 
     try {
-      let count: number | null = null;
+      let rpcResult: unknown = null;
       let error: { message: string } | null = null;
 
       if (privilegeSource === "delegation") {
@@ -419,7 +426,7 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
             p_products: rpcPayload,
           },
         );
-        count = result.data;
+        rpcResult = result.data;
         error = result.error;
       } else {
         const result = await ownerScopedClient!.rpc(
@@ -428,7 +435,7 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
             p_products: rpcPayload,
           },
         );
-        count = result.data;
+        rpcResult = result.data;
         error = result.error;
       }
 
@@ -442,8 +449,32 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
         throw new Error(error.message);
       }
 
-      succeededCount += count || chunk.length;
+      // Parse the new JSONB result: { succeeded: number, failed: Array<{ name, error }> }
+      const parsed = rpcResult as { succeeded?: number; failed?: Array<{ name: string; error: string }> } | null;
+      if (parsed && typeof parsed === "object") {
+        succeededCount += parsed.succeeded ?? 0;
+        if (Array.isArray(parsed.failed)) {
+          for (const f of parsed.failed) {
+            const errMsg = f.error?.toLowerCase() ?? "";
+            if (
+              errMsg.includes("product_variants_store_sku_key") ||
+              errMsg.includes("product_variants_sku_key") ||
+              errMsg.includes("duplicate key") ||
+              errMsg.includes("unique constraint")
+            ) {
+              failedProducts.push({ name: f.name, error: "A variant with this SKU already exists." });
+            } else {
+              failedProducts.push({ name: f.name, error: f.error || "Database operation failed." });
+            }
+          }
+        }
+      } else {
+        // Fallback: if we can't parse the result, assume the whole chunk succeeded
+        succeededCount += chunk.length;
+      }
     } catch (e: unknown) {
+      // Catastrophic chunk-level failure (network, auth, etc.) — mark entire chunk as failed
+      // but continue to next chunk instead of aborting
       console.error(`Error in bulkUpsertProductsAction at chunk index ${i}:`, e);
       let errorMsg = "Database operation failed.";
       if (e instanceof Error) {
@@ -460,47 +491,42 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
         errorMsg = "Failed to save product: A variant with this SKU already exists.";
       }
 
-      failedChunkError = errorMsg;
-
-      // This chunk rolls back atomically. Mark all products in this chunk as failed.
       chunk.forEach(p => {
         failedProducts.push({ name: p.name, error: errorMsg });
       });
-
-      // Remaining products in other chunks are skipped.
-      const remainder = products.slice(i + CHUNK_SIZE);
-      skippedRemainder = remainder.map(p => p.name);
 
       await writeLog("ERROR", "BULK_IMPORT_CHUNK_FAILURE", `Bulk import failed at chunk index ${i}`, {
         chunkStartIndex: i,
         errorMessage: errorMsg,
         failedCount: chunk.length,
-        skippedCount: remainder.length,
       });
 
-      break; // Halt subsequent chunks immediately
+      // For auth/unauthorized errors, stop processing — there's no point continuing
+      if (msg.includes("unauthorized") || msg.includes("unauthenticated")) {
+        break;
+      }
+      // Otherwise continue to next chunk
     }
   }
 
-  if (privilegeSource !== "delegation" || failedChunkError) {
+  if (privilegeSource !== "delegation" || failedProducts.length > 0) {
     await recordActivityEvent({
       storeId: store.id,
       actor: bulkUser,
-      action: failedChunkError ? "product.import_failed" : "product.imported",
+      action: failedProducts.length > 0 ? "product.import_partial" : "product.imported",
       actionScope: "catalog.manage",
       privilegeSource,
       delegationId,
       targetType: "catalog_import",
-      result: failedChunkError ? "failure" : "success",
-      errorCode: failedChunkError ? "bulk_import_chunk_error" : null,
-      summary: failedChunkError
-        ? `${bulkUser.name} imported ${succeededCount} products before a catalog import failure${privilegeSource === "delegation" ? " with temporary access" : ""}.`
+      result: failedProducts.length > 0 ? "failure" : "success",
+      errorCode: failedProducts.length > 0 ? "bulk_import_partial_error" : null,
+      summary: failedProducts.length > 0
+        ? `${bulkUser.name} imported ${succeededCount} products with ${failedProducts.length} failures${privilegeSource === "delegation" ? " with temporary access" : ""}.`
         : `${bulkUser.name} imported ${succeededCount} products.`,
       metadata: withDelegationGrantor(delegationGrantorUserId, {
         requestedCount: total,
         succeededCount,
         failedCount: failedProducts.length,
-        skippedCount: skippedRemainder?.length ?? 0,
       }),
     });
   }
@@ -508,10 +534,9 @@ export async function bulkUpsertProductsAction(rawParams: unknown) {
   return {
     succeededCount,
     failedProducts,
-    failedChunkError,
-    skippedRemainder,
   };
 }
+
 
 export async function deleteProductAction(productId: string) {
   const cleanProductId = z.string().uuid().parse(productId);

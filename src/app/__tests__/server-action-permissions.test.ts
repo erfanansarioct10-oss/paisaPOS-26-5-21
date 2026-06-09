@@ -179,7 +179,13 @@ function createMaybeSingleQuery<T>(result: { data: T | null; error: { message: s
   const query = {
     select: vi.fn(() => query),
     eq: vi.fn(() => query),
+    update: vi.fn(() => query),
+    delete: vi.fn(() => query),
     maybeSingle: vi.fn(async () => result),
+    then: (
+      resolve: (value: { data: T | null; error: { message: string } | null }) => void,
+      reject: (reason: unknown) => void,
+    ) => Promise.resolve(result).then(resolve, reject),
   };
   return query;
 }
@@ -908,10 +914,10 @@ describe("Server Action permission abuse gates", () => {
     expect(enforceRateLimit).toHaveBeenNthCalledWith(
       2,
       staffInviteAcceptLimiter,
-      `staff_invite_accept_ip:127.0.0.1:${invitationId}`,
+      `staff_invite_accept_ip:127.0.0.1`,
       "STAFF_INVITE_ACCEPT_IP",
     );
-    expect(updateUser.mock.invocationCallOrder[0]).toBeLessThan(rpc.mock.invocationCallOrder[0]);
+    expect(rpc.mock.invocationCallOrder[0]).toBeLessThan(updateUser.mock.invocationCallOrder[0]);
     expect(recordActivityEvent).not.toHaveBeenCalled();
   });
 
@@ -920,8 +926,16 @@ describe("Server Action permission abuse gates", () => {
       email: "cashier@example.com",
       updateError: { message: "Auth service unavailable" },
     });
-    const { rpc } = mockStaffInviteAcceptanceRpc({
-      data: null,
+    const { rpc, from } = mockStaffInviteAcceptanceRpc({
+      data: {
+        invitationId,
+        storeId,
+        acceptedAt: "2026-05-26T03:29:25.000Z",
+        actorName: "Mina Cashier",
+        actorEmail: "cashier@example.com",
+        profileDisposition: "created",
+        previousProfile: null,
+      },
       error: null,
     });
 
@@ -940,11 +954,13 @@ describe("Server Action permission abuse gates", () => {
       error: "Auth service unavailable",
     });
     expect(updateUser).toHaveBeenCalledTimes(1);
-    expect(rpc).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith("accept_staff_invitation", expect.any(Object));
+    expect(from).toHaveBeenCalledWith("staff_invitations");
+    expect(from).toHaveBeenCalledWith("users");
     expect(recordActivityEvent).not.toHaveBeenCalled();
   });
 
-  test("reverts Auth user setup when database invite acceptance fails", async () => {
+  test("does not update Auth user when database invite acceptance fails", async () => {
     const { updateUser } = mockInviteeSession({
       email: "cashier@example.com",
     });
@@ -967,19 +983,7 @@ describe("Server Action permission abuse gates", () => {
       error: "An unexpected error occurred. Please try again.",
     });
 
-    expect(updateUser).toHaveBeenCalledTimes(2);
-    expect(updateUser).toHaveBeenNthCalledWith(1, {
-      data: {
-        full_name: "Mina Cashier",
-        name: "Mina Cashier",
-      },
-      password: "Cashier123",
-    });
-    expect(updateUser).toHaveBeenNthCalledWith(2, {
-      data: {
-        full_name: "Mina Cashier",
-      },
-    });
+    expect(updateUser).toHaveBeenCalledTimes(0);
 
     expect(rpc).toHaveBeenCalledWith("accept_staff_invitation", expect.objectContaining({
       p_invitation_id: invitationId,
@@ -1091,7 +1095,7 @@ describe("Server Action permission abuse gates", () => {
       error: expected,
     });
     expect(rpc).toHaveBeenCalledWith("accept_staff_invitation", expect.any(Object));
-    expect(updateUser).toHaveBeenCalledTimes(2);
+    expect(updateUser).toHaveBeenCalledTimes(0);
     expect(recordActivityEvent).not.toHaveBeenCalled();
   });
 
@@ -1935,6 +1939,25 @@ describe("Server Action permission abuse gates", () => {
         delegationId: null,
       }),
     );
+  });
+
+  test("denies cashier checkout with custom items", async () => {
+    mockTenant("cashier");
+
+    await expect(
+      checkoutAction({
+        ...validCheckoutPayload,
+        items: [
+          {
+            variant_id: null,
+            custom_name: "Hemming Service",
+            quantity: 1,
+            unit_price: 300,
+            subtotal: 300,
+          },
+        ],
+      }),
+    ).rejects.toThrow(/Cashiers are not permitted to checkout custom items/i);
   });
 
   test("returns an idempotent checkout replay without duplicating activity", async () => {

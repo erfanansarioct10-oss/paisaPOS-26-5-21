@@ -3,6 +3,7 @@
 import { AlertTriangle, Check, Loader2, Percent, Phone, Plus, ShoppingCart, Trash2, User } from "lucide-react";
 import type { CartItem } from "@/lib/store/useAppStore";
 import type { BillingSubTab } from "@/features/billing/components/billing-ui-types";
+import { useAppStore } from "@/lib/store/useAppStore";
 
 type BillingCartPanelProps = {
   activeSubTab: BillingSubTab;
@@ -47,6 +48,8 @@ export function BillingCartPanel({
   totalItemsCount,
   updateCartQuantity,
 }: BillingCartPanelProps) {
+  const user = useAppStore((state) => state.user);
+
   return (
     <div className={`lg:col-span-5 bg-card border border-border rounded-xl shadow-sm flex flex-col h-full min-h-0 overflow-hidden ${activeSubTab === "cart" ? "flex" : "hidden lg:flex"}`}>
       <div className="px-5 py-4 border-b border-border flex items-center justify-between shrink-0 bg-muted/20">
@@ -55,14 +58,16 @@ export function BillingCartPanel({
           <h3 className="font-semibold text-foreground">Billing Cart</h3>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onOpenCustomItem}
-            className="text-[10px] sm:text-[11px] font-bold px-2 py-1 sm:px-2.5 sm:py-1.5 border border-border bg-card text-muted-foreground hover:text-foreground rounded-lg transition-all flex items-center gap-1 shadow-sm"
-          >
-            <Plus className="w-3 h-3" />
-            <span>Custom</span>
-          </button>
+          {user?.role === "owner" && (
+            <button
+              type="button"
+              onClick={onOpenCustomItem}
+              className="text-[10px] sm:text-[11px] font-bold px-2 py-1 sm:px-2.5 sm:py-1.5 border border-border bg-card text-muted-foreground hover:text-foreground rounded-lg transition-all flex items-center gap-1 shadow-sm"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Custom</span>
+            </button>
+          )}
           <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-bold border border-primary/10">
             {totalItemsCount} Item{totalItemsCount !== 1 ? "s" : ""}
           </span>
@@ -175,7 +180,10 @@ export function BillingCartPanel({
               placeholder="Discount Rs."
               value={cartDiscount || ""}
               onChange={(event) => {
-                const val = Number(event.target.value);
+                const raw = event.target.value;
+                // Guard against NaN from empty, "e", or invalid numeric strings
+                const parsed = Number(raw);
+                const val = Number.isFinite(parsed) ? parsed : 0;
                 if (val < 0) {
                   setCartDiscount(0);
                 } else if (val > subtotal) {

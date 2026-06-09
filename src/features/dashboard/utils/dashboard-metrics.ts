@@ -17,6 +17,25 @@ export type DashboardMetrics = {
   variantCount: number;
 };
 
+/**
+ * Nepal Standard Time offset in milliseconds (UTC+5:45).
+ * NST has no DST, so this is a fixed constant.
+ */
+const NEPAL_OFFSET_MS = 5.75 * 3600_000;
+
+/**
+ * Returns the start-of-today in UTC, computed using Nepal Standard Time.
+ * This ensures the "today" boundary is identical on both the Node.js server
+ * (which may run in UTC) and the browser client (in Nepal TZ), preventing
+ * React hydration mismatches.
+ */
+function getTodayStartUTC(now: Date): Date {
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60_000;
+  const nepalNow = new Date(utcMs + NEPAL_OFFSET_MS);
+  nepalNow.setUTCHours(0, 0, 0, 0);
+  return new Date(nepalNow.getTime() - NEPAL_OFFSET_MS);
+}
+
 export function buildDashboardMetrics({
   invoices,
   products,
@@ -24,10 +43,9 @@ export function buildDashboardMetrics({
   now = new Date(),
 }: BuildDashboardMetricsInput): DashboardMetrics {
   const productsById = new Map(products.map((product) => [product.id, product]));
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
+  const todayStartISO = getTodayStartUTC(now).toISOString();
 
-  const todayInvoices = invoices.filter((invoice) => new Date(invoice.created_at) >= todayStart);
+  const todayInvoices = invoices.filter((invoice) => invoice.created_at >= todayStartISO);
   const lowStockVariants = variants.filter((variant) => {
     const parent = productsById.get(variant.product_id);
     const threshold = parent?.low_stock_threshold ?? 5;
@@ -45,3 +63,4 @@ export function buildDashboardMetrics({
     variantCount: variants.length,
   };
 }
+

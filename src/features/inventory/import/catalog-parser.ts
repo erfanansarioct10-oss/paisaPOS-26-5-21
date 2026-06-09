@@ -88,6 +88,55 @@ export function parseCSVLine(line: string): string[] {
 }
 
 /**
+ * Full CSV text parser supporting quoted multi-line fields.
+ */
+export function parseCSVText(text: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentField = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const nextChar = text[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentField += '"';
+        i++; // Skip escaped double quote
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      currentRow.push(currentField.trim());
+      currentField = "";
+    } else if ((char === '\r' || char === '\n') && !inQuotes) {
+      currentRow.push(currentField.trim());
+      currentField = "";
+      if (currentRow.length > 0 && !currentRow.every(cell => cell === "")) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      if (char === '\r' && nextChar === '\n') {
+        i++; // Skip LF in CRLF
+      }
+    } else {
+      currentField += char;
+    }
+  }
+
+  // Handle final row and field
+  if (currentField || currentRow.length > 0) {
+    currentRow.push(currentField.trim());
+    if (currentRow.length > 0 && !currentRow.every(cell => cell === "")) {
+      rows.push(currentRow);
+    }
+  }
+
+  return rows;
+}
+
+/**
  * Normalizes headers and returns a mapping of standard field names to their index in the row.
  */
 export function matchHeaders(headers: string[]): Record<string, number> {
@@ -170,11 +219,7 @@ export async function parseCatalogFile(file: File): Promise<ParsedImport> {
     );
   } else if (fileType === "csv") {
     const text = await file.text();
-    const lines = text.split(/\r?\n/);
-    rawRows = lines
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .map((line) => parseCSVLine(line));
+    rawRows = parseCSVText(text);
   } else {
     throw new Error("Unsupported file format. Please upload a .csv or .xlsx catalog.");
   }
@@ -284,7 +329,13 @@ export async function parseCatalogFile(file: File): Promise<ParsedImport> {
     // SKU Generation & Unique constraints
     let sku = rawSku;
     if (!sku) {
-      sku = generateAutoSKU(name, rawColor, rawSize);
+      const baseSku = generateAutoSKU(name, rawColor, rawSize);
+      sku = baseSku;
+      let collisionCounter = 0;
+      while (uniqueSkusInFile.has(sku.toUpperCase())) {
+        collisionCounter++;
+        sku = `${baseSku}-${collisionCounter}`;
+      }
     } else {
       sku = sku.toUpperCase().replace(/[^A-Z0-9-_]/g, "");
       if (sku.length > 100) {

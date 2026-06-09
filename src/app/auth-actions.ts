@@ -323,6 +323,14 @@ export async function signupAction(rawParams: unknown) {
       return { error: "Registration failed. Please check your credentials." };
     }
 
+    if (!signUpData.session) {
+      await writeLog("SECURITY", "AUTH_SIGNUP_AWAITING_CONFIRMATION", `User signed up, awaiting email confirmation: ${email}`, {
+        userId: signUpData.user.id,
+        email,
+      });
+      return { success: true, emailConfirmationRequired: true };
+    }
+
     // 2. Perform the onboarding store registration RPC
     const { data: storeId, error: onboardingError } = await retryOnTransientJwtClockSkew(() =>
       supabase.rpc("register_store_and_user", {

@@ -22,12 +22,13 @@ import {
   Shield,
   ShieldCheck,
   ShieldAlert,
+  Lock,
 } from "lucide-react";
 
 const initialFormState: SettingsFormState = { success: false };
 
 export default function SettingsPage() {
-  const { store, user, signOut, initializeSession, setTab } = useAppStore();
+  const { store, user, signOut, setTab, updateLocalStore, updateLocalUser } = useAppStore();
   const { theme, setTheme } = useTheme();
   const [themeMounted, setThemeMounted] = useState(false);
   const {
@@ -59,15 +60,22 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (storeActionState.success && storeActionState.savedAt) {
-      initializeSession();
+      updateLocalStore({
+        name: storeName,
+        phone: storePhone,
+        address: storeAddress,
+        pan_vat: storePanVat,
+      });
     }
-  }, [storeActionState.success, storeActionState.savedAt, initializeSession]);
+  }, [storeActionState.success, storeActionState.savedAt, storeName, storePhone, storeAddress, storePanVat, updateLocalStore]);
 
   useEffect(() => {
     if (profileActionState.success && profileActionState.savedAt) {
-      initializeSession();
+      updateLocalUser({
+        name: profileName,
+      });
     }
-  }, [profileActionState.success, profileActionState.savedAt, initializeSession]);
+  }, [profileActionState.success, profileActionState.savedAt, profileName, updateLocalUser]);
 
   // MFA Enrollment State
   interface MfaFactor {
@@ -86,6 +94,14 @@ export default function SettingsPage() {
   const [verificationCode, setVerificationCode] = useState("");
   const [verifyingCode, setVerifyingCode] = useState(false);
   const [disablingMfa, setDisablingMfa] = useState(false);
+
+  // MFA Disable Re-Authentication State
+  const [mfaDisableModal, setMfaDisableModal] = useState<{
+    isOpen: boolean;
+    factorId: string | null;
+  }>({ isOpen: false, factorId: null });
+  const [mfaDisablePassword, setMfaDisablePassword] = useState("");
+  const [mfaReauthError, setMfaReauthError] = useState<string | null>(null);
 
   // Load MFA Factors on mount
   const loadMfaFactors = async () => {
@@ -177,33 +193,62 @@ export default function SettingsPage() {
     }
   };
 
-  // Disable MFA
-  const handleDisableMfa = async (factorId: string) => {
-    if (!confirm("Are you sure you want to disable Multi-Factor Authentication? This will lower your account security.")) {
-      return;
-    }
-    setMfaError(null);
-    setMfaMessage(null);
+  // Disable MFA — Step 1: Show re-authentication modal
+  const handleDisableMfa = (factorId: string) => {
+    setMfaDisableModal({ isOpen: true, factorId });
+    setMfaDisablePassword("");
+    setMfaReauthError(null);
+  };
+
+  // Disable MFA — Step 2: Re-authenticate and unenroll
+  const handleConfirmDisableMfa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const factorId = mfaDisableModal.factorId;
+    if (!factorId || !user?.email) return;
+
+    setMfaReauthError(null);
     setDisablingMfa(true);
 
     try {
-      const { error } = await supabase.auth.mfa.unenroll({
-        factorId
+      // Re-authenticate the user with their password
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: mfaDisablePassword,
       });
-      if (error) throw error;
+
+      if (authError) {
+        setMfaReauthError("Incorrect password. Please try again.");
+        return;
+      }
+
+      // Password verified — proceed with unenroll
+      const { error: unenrollError } = await supabase.auth.mfa.unenroll({
+        factorId,
+      });
+      if (unenrollError) throw unenrollError;
 
       setMfaMessage("MFA has been disabled for your account.");
+      setMfaDisableModal({ isOpen: false, factorId: null });
+      setMfaDisablePassword("");
       await loadMfaFactors();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       setMfaError(message || "Failed to disable MFA.");
+      setMfaDisableModal({ isOpen: false, factorId: null });
     } finally {
       setDisablingMfa(false);
     }
   };
 
   // Cancel Setup Flow
-  const handleCancelSetup = () => {
+  const handleCancelSetup = async () => {
+    if (enrollData?.id) {
+      try {
+        await supabase.auth.mfa.unenroll({ factorId: enrollData.id });
+      } catch (err) {
+        console.error("Failed to clean up unverified factor on cancellation:", err);
+      }
+    }
     setSetupStep("idle");
     setEnrollData(null);
     setVerificationCode("");
@@ -530,6 +575,76 @@ export default function SettingsPage() {
           )}
         </div>
       </div>
+
+      {/* MFA DISABLE RE-AUTH MODAL */}
+      {mfaDisableModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+          <div className="bg-card border border-border rounded-xl w-full max-w-sm shadow-lg">
+            <div className="flex items-center gap-2.5 px-5 py-4 border-b border-border">
+              <div className="p-2 bg-red-500/10 text-red-500 rounded-lg">
+                <Lock className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground text-sm">Confirm Identity</h3>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Re-enter your password to disable MFA</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmDisableMfa} className="p-5 space-y-4">
+              {mfaReauthError && (
+                <div className="bg-red-500/10 border border-red-500/25 rounded-lg p-3 flex items-start gap-2.5 text-xs text-red-400">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <p>{mfaReauthError}</p>
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="mfa-disable-password" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
+                  Account Password
+                </label>
+                <input
+                  id="mfa-disable-password"
+                  type="password"
+                  required
+                  autoFocus
+                  value={mfaDisablePassword}
+                  onChange={(e) => setMfaDisablePassword(e.target.value)}
+                  placeholder="Enter your password"
+                  className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                />
+              </div>
+
+              <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
+                <p className="text-[10px] text-amber-600 dark:text-amber-400 leading-normal">
+                  <strong>Warning:</strong> Disabling MFA will lower your account security. Anyone with your password will be able to access your account.
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMfaDisableModal({ isOpen: false, factorId: null });
+                    setMfaDisablePassword("");
+                    setMfaReauthError(null);
+                  }}
+                  className="flex-1 h-11 flex items-center justify-center border border-border text-sm font-semibold rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={disablingMfa || !mfaDisablePassword}
+                  className="flex-1 h-11 inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {disablingMfa ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldAlert className="w-4 h-4" />}
+                  <span>{disablingMfa ? "Verifying..." : "Disable MFA"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* DANGER ZONE */}
       <div className="bg-card border border-red-500/20 rounded-xl p-5 sm:p-6 shadow-sm space-y-4">

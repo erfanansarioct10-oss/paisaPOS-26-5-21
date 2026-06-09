@@ -47,13 +47,20 @@ export function sanitizeString(val: string): string {
  * We escape them by prepending a single quote (').
  */
 export function sanitizeCSVCell(val: string): string {
-  const clean = sanitizeString(val);
-  
-  if (clean.startsWith("=") || clean.startsWith("+") || clean.startsWith("-") || clean.startsWith("@")) {
-    return `'${clean}`;
+  if (typeof val !== "string") return "";
+
+  const normalized = val.normalize("NFKC");
+  // Remove control characters except tab (\t), newline (\n), and carriage return (\r)
+  let clean = normalized.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, "");
+  // Strip standard HTML and script tags to prevent Cross-Site Scripting (XSS)
+  clean = clean.replace(/<[^>]*>/g, "");
+  const trimmed = clean.trim();
+
+  if (trimmed.startsWith("=") || trimmed.startsWith("+") || trimmed.startsWith("-") || trimmed.startsWith("@")) {
+    return `'${trimmed}`;
   }
-  
-  return clean;
+
+  return trimmed;
 }
 
 /**

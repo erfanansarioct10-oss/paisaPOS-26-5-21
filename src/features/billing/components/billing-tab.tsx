@@ -74,9 +74,19 @@ export default function BillingTab() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "/" && document.activeElement !== searchInputRef.current) {
-        event.preventDefault();
-        searchInputRef.current?.focus();
+      if (event.key === "/") {
+        const target = document.activeElement;
+        // Don't intercept `/` when any editable element has focus
+        const isEditable =
+          target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement ||
+          target instanceof HTMLSelectElement ||
+          (target instanceof HTMLElement && target.isContentEditable);
+        if (!isEditable) {
+          event.preventDefault();
+          searchInputRef.current?.focus();
+        }
+        return; // Early return — don't process further for `/`
       }
 
       if (event.key === "Escape" && document.activeElement === searchInputRef.current) {

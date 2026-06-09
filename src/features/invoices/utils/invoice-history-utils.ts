@@ -25,6 +25,7 @@ export function formatInvoiceDate(isoString: string) {
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "Asia/Kathmandu",
     });
   } catch {
     return isoString;
@@ -73,22 +74,34 @@ export function filterInvoices(
     let matchesDate = true;
     if (dateFilter !== "All Time") {
       const invoiceDate = new Date(invoice.created_at);
+
+      // Use Nepal Standard Time (UTC+5:45) for date boundary calculations
+      // to ensure consistency between SSR and client rendering.
+      const NEPAL_OFFSET_MS = 5.75 * 3600_000;
       const now = new Date();
-      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      const utcMs = now.getTime() + now.getTimezoneOffset() * 60_000;
+      const nepalNow = new Date(utcMs + NEPAL_OFFSET_MS);
+
+      // Start of today in UTC (Nepal midnight converted to UTC)
+      const nepalTodayStart = new Date(nepalNow);
+      nepalTodayStart.setUTCHours(0, 0, 0, 0);
+      const startOfToday = new Date(nepalTodayStart.getTime() - NEPAL_OFFSET_MS);
+
+      // End of today in UTC (Nepal 23:59:59.999 converted to UTC)
+      const nepalTodayEnd = new Date(nepalNow);
+      nepalTodayEnd.setUTCHours(23, 59, 59, 999);
+      const endOfToday = new Date(nepalTodayEnd.getTime() - NEPAL_OFFSET_MS);
 
       if (dateFilter === "Today") {
         matchesDate = invoiceDate >= startOfToday && invoiceDate <= endOfToday;
       } else if (dateFilter === "Yesterday") {
-        const startOfYesterday = new Date(startOfToday);
-        startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-        const endOfYesterday = new Date(endOfToday);
-        endOfYesterday.setDate(endOfYesterday.getDate() - 1);
+        const startOfYesterday = new Date(startOfToday.getTime() - 86_400_000);
+        const endOfYesterday = new Date(endOfToday.getTime() - 86_400_000);
         matchesDate = invoiceDate >= startOfYesterday && invoiceDate <= endOfYesterday;
       } else if (dateFilter === "This Week") {
-        const startOfWeek = new Date(startOfToday);
-        const day = startOfWeek.getDay();
-        startOfWeek.setDate(startOfWeek.getDate() - day);
+        // Calculate Nepal day-of-week from nepalNow
+        const nepalDay = nepalNow.getUTCDay();
+        const startOfWeek = new Date(startOfToday.getTime() - nepalDay * 86_400_000);
         matchesDate = invoiceDate >= startOfWeek && invoiceDate <= endOfToday;
       }
     }

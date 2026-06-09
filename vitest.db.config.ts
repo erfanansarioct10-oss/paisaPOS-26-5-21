@@ -5,6 +5,7 @@ export default mergeConfig(baseConfig, defineConfig({
   test: {
     include: [
       "src/lib/store/__tests__/auth-stress.test.ts",
+      "src/lib/store/__tests__/invoice-history.test.ts",
       "src/lib/store/__tests__/live-crud.test.ts",
       "src/lib/store/__tests__/production-blockers.test.ts",
       "src/lib/store/__tests__/rls-verification.test.ts",

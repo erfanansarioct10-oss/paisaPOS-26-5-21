@@ -213,6 +213,15 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
 
     const previousVariants = get().variants;
 
+    // Assign a unique ID to this request for stale-rollback prevention
+    const requestId = Date.now() + Math.random();
+    set({
+      latestStockRequestIds: {
+        ...get().latestStockRequestIds,
+        [variantId]: requestId,
+      },
+    });
+
     // Optimistic Update: instantly update stock count for this variant in UI
     set({
       variants: previousVariants.map(v =>
@@ -251,9 +260,11 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
       const errMsg = mapProductError(e);
       console.error("Error updating stock directly:", e);
       
-      // Revert stock level of this variant to the original stock level only if it is the last pending request
+      // CRITICAL FIX: Only roll back if this is the LATEST request for this variant.
+      // Prevents stale rollback from erasing a newer successful update.
+      const isLatest = get().latestStockRequestIds[variantId] === requestId;
       const activeReqs = get().pendingStockRequests[variantId] ?? 0;
-      if (activeReqs <= 1) {
+      if (isLatest && activeReqs <= 1) {
         const origStock = get().originalStockLevels[variantId] ?? newStock;
         set({
           variants: get().variants.map(v =>
@@ -272,11 +283,13 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
       const nextRequests = { ...get().pendingStockRequests };
       const nextUpdates = { ...get().pendingStockUpdates };
       const nextOriginalsFinal = { ...get().originalStockLevels };
+      const nextLatestIds = { ...get().latestStockRequestIds };
 
       if (currentReqs <= 1) {
         delete nextRequests[variantId];
         delete nextUpdates[variantId];
         delete nextOriginalsFinal[variantId];
+        delete nextLatestIds[variantId];
       } else {
         nextRequests[variantId] = currentReqs - 1;
       }
@@ -285,6 +298,7 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
         pendingStockRequests: nextRequests,
         pendingStockUpdates: nextUpdates,
         originalStockLevels: nextOriginalsFinal,
+        latestStockRequestIds: nextLatestIds,
       });
     }
   },
@@ -395,8 +409,6 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
   ): Promise<{
     succeededCount: number;
     failedProducts: Array<{ name: string; error: string }>;
-    failedChunkError?: string;
-    skippedRemainder?: string[];
   }> => {
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       set({ errorMsg: "Operation failed: Internet connection is offline." });
@@ -413,8 +425,6 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
 
     let succeededCount = 0;
     const failedProducts: Array<{ name: string; error: string }> = [];
-    let failedChunkError: string | undefined = undefined;
-    let skippedRemainder: string[] | undefined = undefined;
     const total = parsedProducts.length;
 
     if (onProgress) {
@@ -440,8 +450,6 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
       const result = await bulkUpsertProductsAction(payloads);
       succeededCount = result.succeededCount;
       failedProducts.push(...result.failedProducts);
-      failedChunkError = result.failedChunkError;
-      skippedRemainder = result.skippedRemainder;
 
     } catch (e: unknown) {
       console.error("Error bulk importing products:", e);
@@ -492,8 +500,6 @@ export const createInventorySlice = (set: SetState, get: GetState) => ({
     return {
       succeededCount,
       failedProducts,
-      failedChunkError,
-      skippedRemainder,
     };
   },
 });

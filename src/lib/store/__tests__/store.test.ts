@@ -129,7 +129,7 @@ vi.mock("@/app/actions", () => {
       const newInvoice = {
         id: invoiceId,
         store_id: params.storeId,
-        invoice_number: params.invoiceNumber,
+        invoice_number: params.invoiceNumber || "INV-2026-0001",
         customer_name: params.customerName,
         customer_phone: params.customerPhone,
         total_amount: params.totalAmount,
@@ -191,7 +191,9 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
       store: {
         id: "test-store-id",
         name: "Test KTM Streetwear",
-        created_at: new Date().toISOString(),
+        phone: "",
+        address: "",
+        pan_vat: "",
       },
       products: [
         {
@@ -201,6 +203,7 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
           category: "Tops",
           image_url: null,
           low_stock_threshold: 3,
+          is_favorite: false,
         },
         {
           id: "prod-2",
@@ -209,6 +212,7 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
           category: "Bottoms",
           image_url: null,
           low_stock_threshold: 2,
+          is_favorite: false,
         }
       ],
       variants: [
@@ -692,6 +696,51 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
       expect(store.getState().activeTab).toBe("dashboard");
     });
 
+    test("should update store details locally without triggering full refetch", () => {
+      store.setState({
+        store: {
+          id: "test-store-id",
+          name: "Original Store Name",
+          phone: "123456",
+          address: "Old Road",
+          pan_vat: "111",
+        },
+      });
+
+      store.getState().updateLocalStore({
+        name: "New Store Name",
+        phone: "987654",
+      });
+
+      const updatedStore = store.getState().store;
+      expect(updatedStore?.name).toBe("New Store Name");
+      expect(updatedStore?.phone).toBe("987654");
+      expect(updatedStore?.address).toBe("Old Road"); // preserved
+      expect(updatedStore?.pan_vat).toBe("111"); // preserved
+    });
+
+    test("should update user profile details locally without triggering full refetch", () => {
+      store.setState({
+        user: {
+          id: "user-1",
+          name: "Original User Name",
+          store_id: "test-store-id",
+          email: "test@example.com",
+          role: "owner",
+          status: "active",
+        },
+      });
+
+      store.getState().updateLocalUser({
+        name: "New User Name",
+      });
+
+      const updatedUser = store.getState().user;
+      expect(updatedUser?.name).toBe("New User Name");
+      expect(updatedUser?.email).toBe("test@example.com"); // preserved
+      expect(updatedUser?.role).toBe("owner"); // preserved
+    });
+
     test("should correctly map inventory quantity to variant stock for both array and object formats", async () => {
       // Create a store where fetchStoreData is NOT mocked:
       const unmockedStore = createTestStore();
@@ -699,7 +748,9 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
         store: {
           id: "test-store-id",
           name: "Test Store",
-          created_at: new Date().toISOString(),
+          phone: "",
+          address: "",
+          pan_vat: "",
         },
       });
 
@@ -783,6 +834,108 @@ describe("PaisaPOS — Core Store & Transactional Engine Tests", () => {
         const varNull = variants.find(v => v.id === "var-null");
         expect(varNull).toBeDefined();
         expect(varNull?.stock).toBe(0);
+      } finally {
+        mockFrom.mockRestore();
+      }
+    });
+
+    test("should merge incoming db invoices with existing local store cache to prevent pagination truncation", async () => {
+      const unmockedStore = createTestStore();
+      unmockedStore.setState({
+        store: {
+          id: "test-store-id",
+          name: "Test Store",
+          phone: "",
+          address: "",
+          pan_vat: "",
+        },
+        invoices: [
+          {
+            id: "old-inv-1",
+            store_id: "test-store-id",
+            invoice_number: "INV-OLD-1",
+            customer_name: null,
+            customer_phone: null,
+            total_amount: 1000,
+            discount_amount: 0,
+            paid_amount: 1000,
+            payment_method: "Cash",
+            created_at: "2026-06-08T10:00:00.000Z",
+          },
+          {
+            id: "old-inv-2",
+            store_id: "test-store-id",
+            invoice_number: "INV-OLD-2",
+            customer_name: null,
+            customer_phone: null,
+            total_amount: 1500,
+            discount_amount: 0,
+            paid_amount: 1500,
+            payment_method: "Cash",
+            created_at: "2026-06-08T09:00:00.000Z",
+          }
+        ],
+      });
+
+      const createChainMock = (data: any) => {
+        const chain: any = {
+          select: () => chain,
+          eq: () => chain,
+          order: () => chain,
+          limit: () => chain,
+        };
+        chain.then = (resolve: any) => {
+          resolve({ data, error: null });
+        };
+        return chain;
+      };
+
+      const mockFrom = vi.spyOn(supabase, "from").mockImplementation((table: string) => {
+        if (table === "products") {
+          return createChainMock([]);
+        }
+        if (table === "product_variants") {
+          return createChainMock([]);
+        }
+        if (table === "invoices") {
+          return createChainMock([
+            {
+              id: "new-inv-3",
+              store_id: "test-store-id",
+              invoice_number: "INV-NEW-3",
+              customer_name: null,
+              customer_phone: null,
+              total_amount: 2000,
+              discount_amount: 0,
+              paid_amount: 2000,
+              payment_method: "Cash",
+              created_at: "2026-06-08T11:00:00.000Z",
+            },
+            {
+              id: "old-inv-1",
+              store_id: "test-store-id",
+              invoice_number: "INV-OLD-1",
+              customer_name: null,
+              customer_phone: null,
+              total_amount: 1000,
+              discount_amount: 0,
+              paid_amount: 1000,
+              payment_method: "Cash",
+              created_at: "2026-06-08T10:00:00.000Z",
+            }
+          ]);
+        }
+        return createChainMock([]);
+      });
+
+      try {
+        await unmockedStore.getState().fetchStoreData();
+
+        const invoices = unmockedStore.getState().invoices;
+        expect(invoices.length).toBe(3);
+        expect(invoices[0].id).toBe("new-inv-3");
+        expect(invoices[1].id).toBe("old-inv-1");
+        expect(invoices[2].id).toBe("old-inv-2");
       } finally {
         mockFrom.mockRestore();
       }

@@ -120,8 +120,23 @@ export interface AppState {
   products: Product[];
   variants: ProductVariant[];
   invoices: Invoice[];
+  hasMoreInvoices: boolean;
   invoiceItems: Record<string, InvoiceItem[]>; // Keyed by invoice_id
   activeDelegations: ActivePrivilegeDelegation[];
+
+  // Invoices History & Search State
+  historyFilters: {
+    searchQuery: string;
+    paymentMethodFilter: string;
+    dateFilter: string;
+    page: number;
+  };
+  historyInvoices: Invoice[];
+  historyTotalCount: number;
+  historyTotalSales: number;
+  historyMethodBreakdown: Record<string, number>;
+  historyHasMore: boolean;
+  historyLoading: boolean;
 
   // Active Billing POS Cart
   cart: CartItem[];
@@ -143,6 +158,7 @@ export interface AppState {
   pendingStockUpdates: Record<string, number>;
   pendingStockRequests: Record<string, number>;
   originalStockLevels: Record<string, number>;
+  latestStockRequestIds: Record<string, number>;
 
   // In-flight concurrency tracking for favorite updates
   pendingFavoriteUpdates: Record<string, boolean>;
@@ -154,12 +170,17 @@ export interface AppState {
   setTab: (tab: "dashboard" | "billing" | "inventory" | "history" | "activity" | "staff" | "settings") => void;
   initializeSession: () => Promise<void>;
   signOut: () => Promise<void>;
+  updateLocalStore: (updatedStore: Partial<StoreMetadata>) => void;
+  updateLocalUser: (updatedUser: Partial<Profile>) => void;
 
   // Synchronizers
   fetchStoreData: (options?: { forceLoading?: boolean }) => Promise<void>;
   loadMoreInvoices: (limit?: number) => Promise<void>;
   fetchInvoiceItems: (invoiceId: string) => Promise<InvoiceItem[]>;
   clearError: () => void;
+
+  setHistoryFilters: (filters: Partial<AppState["historyFilters"]>) => Promise<void>;
+  fetchHistoryData: () => Promise<void>;
 
   // Products & Variants Management
   addProduct: (
@@ -205,8 +226,6 @@ export interface AppState {
   ) => Promise<{
     succeededCount: number;
     failedProducts: Array<{ name: string; error: string }>;
-    failedChunkError?: string;
-    skippedRemainder?: string[];
   }>;
 
   // Billing POS Cart Actions

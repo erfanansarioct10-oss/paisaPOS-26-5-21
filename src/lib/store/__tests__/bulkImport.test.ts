@@ -9,7 +9,7 @@ import * as actions from "@/app/actions";
 
 
 
-// Mock the Server Actions
+// Mock the Server Actions — now returns JSONB-shaped result with per-product isolation
 vi.mock("@/app/actions", () => {
   return {
     upsertProductAction: vi.fn(),
@@ -19,6 +19,8 @@ vi.mock("@/app/actions", () => {
       for (const params of products) {
         if (params.name === "Fail Product") {
           failedProducts.push({ name: params.name, error: "Database validation error for this product" });
+        } else if (params.name === "Duplicate SKU Product") {
+          failedProducts.push({ name: params.name, error: "A variant with this SKU already exists." });
         } else {
           succeededCount++;
         }
@@ -152,9 +154,13 @@ describe("PaisaPOS — Bulk Import Store Actions & Integration Tests", () => {
 
     // Verify single consolidated fetchStoreData sync triggered at the end
     expect(fetchStoreDataSpy).toHaveBeenCalledTimes(1);
+
+    // Verify no failedChunkError or skippedRemainder in the result (removed in row isolation fix)
+    expect(result).not.toHaveProperty("failedChunkError");
+    expect(result).not.toHaveProperty("skippedRemainder");
   });
 
-  test("should handle partial batch failures, record error reasons, and continue importing other products", async () => {
+  test("should handle partial batch failures with per-product error isolation", async () => {
     const productsToImport = [
       {
         name: "Success Item 1",
@@ -178,6 +184,7 @@ describe("PaisaPOS — Bulk Import Store Actions & Integration Tests", () => {
 
     const result = await store.getState().bulkImportProducts(productsToImport);
 
+    // With per-product isolation, 2 succeed and only the bad one fails
     expect(result.succeededCount).toBe(2);
     expect(result.failedProducts).toHaveLength(1);
     expect(result.failedProducts[0]).toEqual({
@@ -188,6 +195,63 @@ describe("PaisaPOS — Bulk Import Store Actions & Integration Tests", () => {
     // Ensure it still turned off isImporting state on completion
     expect(store.getState().isImporting).toBe(false);
     expect(fetchStoreDataSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("should isolate duplicate SKU errors to individual products without failing others", async () => {
+    const productsToImport = [
+      {
+        name: "Good Product A",
+        category: "Tops",
+        lowStockThreshold: 3,
+        variants: [{ size: "S", color: "Red", sku: "GOOD-A-S", price: 1500, stock: 10 }],
+      },
+      {
+        name: "Good Product B",
+        category: "Tops",
+        lowStockThreshold: 3,
+        variants: [{ size: "M", color: "Blue", sku: "GOOD-B-M", price: 1800, stock: 12 }],
+      },
+      {
+        name: "Duplicate SKU Product", // Triggers duplicate SKU error in mock
+        category: "Tops",
+        lowStockThreshold: 3,
+        variants: [{ size: "L", color: "Green", sku: "DUP-SKU-L", price: 2000, stock: 8 }],
+      },
+      {
+        name: "Good Product C",
+        category: "Bottoms",
+        lowStockThreshold: 3,
+        variants: [{ size: "30", color: "Black", sku: "GOOD-C-30", price: 2200, stock: 6 }],
+      },
+      {
+        name: "Fail Product",
+        category: "Bottoms",
+        lowStockThreshold: 3,
+        variants: [{ size: "32", color: "Navy", sku: "FAIL-32", price: 2200, stock: 4 }],
+      },
+    ];
+
+    const result = await store.getState().bulkImportProducts(productsToImport);
+
+    // 3 good products succeed, 2 fail individually
+    expect(result.succeededCount).toBe(3);
+    expect(result.failedProducts).toHaveLength(2);
+
+    // Verify the correct products failed with correct error messages
+    expect(result.failedProducts).toContainEqual({
+      name: "Duplicate SKU Product",
+      error: "A variant with this SKU already exists.",
+    });
+    expect(result.failedProducts).toContainEqual({
+      name: "Fail Product",
+      error: "Database validation error for this product",
+    });
+
+    // All good products (A, B, C) should have succeeded
+    // The fact that succeededCount === 3 confirms this
+
+    expect(store.getState().isImporting).toBe(false);
+    expect(store.getState().isLoading).toBe(false);
   });
 
   test("should fail immediately with correct store error state when client is offline", async () => {

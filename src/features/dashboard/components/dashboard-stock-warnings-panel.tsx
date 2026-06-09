@@ -1,4 +1,4 @@
-import type { SVGProps } from "react";
+import { useMemo, type SVGProps } from "react";
 import type { Product, ProductVariant } from "@/lib/store/useAppStore";
 
 type DashboardStockWarningsPanelProps = {
@@ -12,6 +12,10 @@ export function DashboardStockWarningsPanel({
   lowStockCount,
   products,
 }: DashboardStockWarningsPanelProps) {
+  const productsMap = useMemo(() => {
+    return new Map(products.map((p) => [p.id, p]));
+  }, [products]);
+
   return (
     <div className="bg-card border border-border rounded-xl shadow-sm flex flex-col p-5">
       <div className="pb-3 border-b border-border flex items-center justify-between">
@@ -32,7 +36,7 @@ export function DashboardStockWarningsPanel({
           </div>
         ) : (
           lowStockVariants.map((variant) => {
-            const parent = products.find((product) => product.id === variant.product_id);
+            const parent = productsMap.get(variant.product_id);
             const isOutOfStock = (variant.stock ?? 0) === 0;
 
             return (

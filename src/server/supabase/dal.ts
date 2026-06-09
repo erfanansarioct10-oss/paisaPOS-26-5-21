@@ -965,9 +965,7 @@ export async function getStaffManagementDTO(
     staffResult,
     invitationResult,
     delegationResult,
-    activeCashiersCountResult,
-    suspendedCashiersCountResult,
-    pendingInvitesCountResult,
+    staffSummaryResult,
   ] = await Promise.all([
     adminClient
       .from("users")
@@ -1000,24 +998,18 @@ export async function getStaffManagementDTO(
       .order("expires_at", { ascending: true })
       .order("id", { ascending: true })
       .range(delegationRange.from, delegationRange.to),
-    adminClient
-      .from("users")
-      .select("id", { count: "exact", head: true })
-      .eq("store_id", context.store.id)
-      .eq("role", "cashier")
-      .eq("status", "active"),
-    adminClient
-      .from("users")
-      .select("id", { count: "exact", head: true })
-      .eq("store_id", context.store.id)
-      .eq("role", "cashier")
-      .eq("status", "suspended"),
-    adminClient
-      .from("staff_invitations")
-      .select("id", { count: "exact", head: true })
-      .eq("store_id", context.store.id)
-      .eq("status", "pending")
-      .gt("expires_at", now),
+    (adminClient as unknown as {
+      rpc(
+        fn: string,
+        args: Record<string, unknown>,
+      ): Promise<{
+        data: Record<string, unknown>[] | null;
+        error: { message: string } | null;
+      }>;
+    }).rpc("get_store_staff_summary", {
+      p_store_id: context.store.id,
+      p_now: now,
+    }),
   ]);
 
   if (staffResult.error) {
@@ -1029,15 +1021,21 @@ export async function getStaffManagementDTO(
   if (delegationResult.error) {
     throw new Error(delegationResult.error.message);
   }
-  if (activeCashiersCountResult.error) {
-    throw new Error(activeCashiersCountResult.error.message);
+  if (staffSummaryResult.error) {
+    throw new Error(staffSummaryResult.error.message);
   }
-  if (suspendedCashiersCountResult.error) {
-    throw new Error(suspendedCashiersCountResult.error.message);
-  }
-  if (pendingInvitesCountResult.error) {
-    throw new Error(pendingInvitesCountResult.error.message);
-  }
+
+  const staffSummary = ((staffSummaryResult.data?.[0] ?? {
+    active_cashiers: 0,
+    suspended_cashiers: 0,
+    pending_invites: 0,
+    active_delegations: 0,
+  }) as unknown) as {
+    active_cashiers: number;
+    suspended_cashiers: number;
+    pending_invites: number;
+    active_delegations: number;
+  };
 
   const staffRows = (staffResult.data ?? []) as StaffProfileRow[];
   const staffNames = new Map(staffRows.map((row) => [row.id, row.name]));
@@ -1142,10 +1140,10 @@ export async function getStaffManagementDTO(
       ),
     },
     counts: {
-      activeCashiers: activeCashiersCountResult.count ?? 0,
-      suspendedCashiers: suspendedCashiersCountResult.count ?? 0,
-      pendingInvites: pendingInvitesCountResult.count ?? 0,
-      activeDelegations: delegationResult.count ?? activeDelegations.length,
+      activeCashiers: Number(staffSummary.active_cashiers),
+      suspendedCashiers: Number(staffSummary.suspended_cashiers),
+      pendingInvites: Number(staffSummary.pending_invites),
+      activeDelegations: Number(staffSummary.active_delegations),
     },
   };
 }

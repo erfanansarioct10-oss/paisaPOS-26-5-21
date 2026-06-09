@@ -7,7 +7,7 @@ import {
   ACTIVE_STAFF_DELEGATION_PRIVILEGES,
   filterActiveStaffDelegations,
 } from "@/lib/staff-capabilities";
-import type { AppState, ProductVariant } from "@/lib/store/types";
+import type { AppState, ProductVariant, StoreMetadata, Profile } from "@/lib/store/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 let activeRealtimeChannel: RealtimeChannel | null = null;
@@ -151,6 +151,41 @@ function safeSessionErrorMessage(error: unknown) {
   return "We could not sync your session. Please try again.";
 }
 
+function getUtcDateBoundaries(dateFilter: string) {
+  if (dateFilter === "All Time") {
+    return { start: null, end: null };
+  }
+
+  const NEPAL_OFFSET_MS = 5.75 * 3600_000;
+  const now = new Date();
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60_000;
+  const nepalNow = new Date(utcMs + NEPAL_OFFSET_MS);
+
+  // Start of today in UTC (Nepal midnight converted to UTC)
+  const nepalTodayStart = new Date(nepalNow);
+  nepalTodayStart.setUTCHours(0, 0, 0, 0);
+  const startOfToday = new Date(nepalTodayStart.getTime() - NEPAL_OFFSET_MS);
+
+  // End of today in UTC (Nepal 23:59:59.999 converted to UTC)
+  const nepalTodayEnd = new Date(nepalNow);
+  nepalTodayEnd.setUTCHours(23, 59, 59, 999);
+  const endOfToday = new Date(nepalTodayEnd.getTime() - NEPAL_OFFSET_MS);
+
+  if (dateFilter === "Today") {
+    return { start: startOfToday.toISOString(), end: endOfToday.toISOString() };
+  } else if (dateFilter === "Yesterday") {
+    const startOfYesterday = new Date(startOfToday.getTime() - 86_400_000);
+    const endOfYesterday = new Date(endOfToday.getTime() - 86_400_000);
+    return { start: startOfYesterday.toISOString(), end: endOfYesterday.toISOString() };
+  } else if (dateFilter === "This Week") {
+    const nepalDay = nepalNow.getUTCDay();
+    const startOfWeek = new Date(startOfToday.getTime() - nepalDay * 86_400_000);
+    return { start: startOfWeek.toISOString(), end: endOfToday.toISOString() };
+  }
+
+  return { start: null, end: null };
+}
+
 type SetState = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
 type GetState = () => AppState;
 
@@ -168,8 +203,23 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
   products: [] as AppState["products"],
   variants: [] as AppState["variants"],
   invoices: [] as AppState["invoices"],
+  hasMoreInvoices: true,
   invoiceItems: {} as AppState["invoiceItems"],
   activeDelegations: [] as AppState["activeDelegations"],
+
+  // Invoices History & Search State
+  historyFilters: {
+    searchQuery: "",
+    paymentMethodFilter: "All",
+    dateFilter: "All Time",
+    page: 1,
+  },
+  historyInvoices: [] as AppState["historyInvoices"],
+  historyTotalCount: 0,
+  historyTotalSales: 0,
+  historyMethodBreakdown: {} as Record<string, number>,
+  historyHasMore: true,
+  historyLoading: false,
 
   // Modals
   isProductModalOpen: false,
@@ -180,6 +230,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
   pendingStockUpdates: {} as Record<string, number>,
   pendingStockRequests: {} as Record<string, number>,
   originalStockLevels: {} as Record<string, number>,
+  latestStockRequestIds: {} as Record<string, number>,
 
   // Concurrency tracking for favorite updates
   pendingFavoriteUpdates: {} as Record<string, boolean>,
@@ -194,6 +245,18 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       localStorage.setItem("paisapos_active_tab", tab);
     }
     set({ activeTab: tab });
+  },
+
+  updateLocalStore: (updatedStore: Partial<StoreMetadata>) => {
+    set((state) => ({
+      store: state.store ? { ...state.store, ...updatedStore } : null,
+    }));
+  },
+
+  updateLocalUser: (updatedUser: Partial<Profile>) => {
+    set((state) => ({
+      user: state.user ? { ...state.user, ...updatedUser } : null,
+    }));
   },
 
   // -----------------------------------------------------------------------
@@ -290,7 +353,78 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
 
       const activeDelegations = await loadActiveDelegations({ ...profile, store_id: profileStoreId });
 
-      // Success: Save Session details, trigger data fetches
+      // =====================================================================
+      // CRITICAL FIX: Fetch store data BEFORE marking authenticated.
+      // Previously, we set sessionStatus: "authenticated" here, which caused
+      // the loader to disappear and the UI to render with empty arrays.
+      // Now we fetch all data first and set everything in one atomic call.
+      // =====================================================================
+      const [productsResult, variantsResult, invoicesResult] = await Promise.all([
+        supabase
+          .from("products")
+          .select("id, store_id, name, category, image_url, low_stock_threshold, is_favorite, created_at")
+          .eq("store_id", store.id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("product_variants")
+          .select(`
+            id,
+            product_id,
+            size,
+            color,
+            sku,
+            price,
+            created_at,
+            inventory (quantity)
+          `)
+          .eq("store_id", store.id),
+        supabase
+          .from("invoices")
+          .select("id, store_id, invoice_number, customer_name, customer_phone, total_amount, discount_amount, paid_amount, payment_method, sold_by_user_id, sold_by_name, sold_by_role, sold_with_delegation_id, created_at")
+          .eq("store_id", store.id)
+          .order("created_at", { ascending: false })
+          .limit(50),
+      ]);
+
+      if (productsResult.error) throw new SessionInitializationError("transient", productsResult.error.message);
+      if (variantsResult.error) throw new SessionInitializationError("transient", variantsResult.error.message);
+      if (invoicesResult.error) throw new SessionInitializationError("transient", invoicesResult.error.message);
+
+      const dbProducts = productsResult.data || [];
+      const dbVariants = variantsResult.data || [];
+      const dbInvoices = (invoicesResult.data || []).map((invoice) => ({
+        ...invoice,
+        discount_amount: invoice.discount_amount ?? 0,
+      }));
+
+      const mappedVariants: ProductVariant[] = dbVariants.map((v: unknown) => {
+        const item = v as {
+          id: string;
+          product_id: string;
+          size: string;
+          color: string;
+          sku: string;
+          price: string | number;
+          inventory?: { quantity: number }[] | { quantity: number } | null;
+          created_at: string;
+        };
+        const dbStock = Array.isArray(item.inventory)
+          ? (item.inventory[0]?.quantity ?? 0)
+          : (item.inventory?.quantity ?? 0);
+        return {
+          id: item.id,
+          product_id: item.product_id,
+          size: item.size,
+          color: item.color,
+          sku: item.sku,
+          price: Number(item.price),
+          stock: dbStock,
+          created_at: item.created_at,
+        };
+      });
+
+      // ATOMIC: Set user, store, AND data in one single call.
+      // The loader stays visible until everything is ready — no empty-state flicker.
       set({
         user: {
           id: profile.id,
@@ -307,13 +441,16 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
           address: store.address ?? "",
           pan_vat: store.pan_vat ?? "",
         },
+        products: dbProducts.map((p) => ({ ...p })),
+        variants: mappedVariants,
+        invoices: dbInvoices,
+        hasMoreInvoices: dbInvoices.length >= 50,
+        invoiceItems: {},
         activeDelegations,
         sessionStatus: "authenticated",
       });
 
-      subscribeToRealtimeChanges(profileStoreId, get().fetchStoreData, () => get().isImporting);
-
-      await get().fetchStoreData();
+      subscribeToRealtimeChanges(store.id, get().fetchStoreData, () => get().isImporting);
     } catch (e: unknown) {
       const errMsg = safeSessionErrorMessage(e);
       console.warn("Failed to initialize session:", e instanceof Error ? e.message : String(e));
@@ -501,13 +638,24 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
         };
       });
 
+      const existingInvoices = get().invoices;
+      const mergedInvoices = [
+        ...dbInvoices,
+        ...existingInvoices.filter((ext) => !dbInvoices.some((db) => db.id === ext.id)),
+      ].sort((a, b) => b.created_at.localeCompare(a.created_at));
+
       set({
         products: mappedProducts,
         variants: mappedVariants,
-        invoices: dbInvoices,
+        invoices: mergedInvoices,
+        hasMoreInvoices: dbInvoices.length >= 50 ? (get().invoices.length > 0 ? get().hasMoreInvoices : true) : false,
         invoiceItems: invoiceItemsMap,
         activeDelegations,
       });
+
+      if (get().activeTab === "history") {
+        get().fetchHistoryData().catch((err) => console.error("Error fetching history data during store sync:", err));
+      }
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : String(e);
       console.error("Error fetching store database:", errMsg);
@@ -549,7 +697,10 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
               discount_amount: invoice.discount_amount ?? 0,
             })),
           ],
+          hasMoreInvoices: moreInvoices.length >= limit,
         });
+      } else {
+        set({ hasMoreInvoices: false });
       }
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : String(e);
@@ -587,5 +738,111 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
 
   clearError: () => {
     set({ errorMsg: null });
+  },
+
+  setHistoryFilters: async (newFilters: Partial<AppState["historyFilters"]>) => {
+    const currentFilters = get().historyFilters;
+    const updatedFilters = { ...currentFilters, ...newFilters };
+    
+    // Reset page to 1 if any filter other than page changes
+    if (
+      newFilters.searchQuery !== undefined ||
+      newFilters.paymentMethodFilter !== undefined ||
+      newFilters.dateFilter !== undefined
+    ) {
+      updatedFilters.page = 1;
+    }
+
+    set({ historyFilters: updatedFilters });
+    await get().fetchHistoryData();
+  },
+
+  fetchHistoryData: async () => {
+    const { store, historyFilters } = get();
+    if (!store) return;
+
+    set({ historyLoading: true, errorMsg: null });
+
+    try {
+      const { searchQuery, paymentMethodFilter, dateFilter, page } = historyFilters;
+      const PAGE_SIZE = 20;
+
+      // 1. Fetch Invoices matching filters & page
+      let query = supabase
+        .from("invoices")
+        .select("id, store_id, invoice_number, customer_name, customer_phone, total_amount, discount_amount, paid_amount, payment_method, sold_by_user_id, sold_by_name, sold_by_role, sold_with_delegation_id, created_at")
+        .eq("store_id", store.id);
+
+      if (searchQuery.trim()) {
+        const queryTerm = `%${searchQuery.trim()}%`;
+        query = query.or(
+          `invoice_number.ilike.${queryTerm},customer_name.ilike.${queryTerm},customer_phone.ilike.${queryTerm},payment_method.ilike.${queryTerm},sold_by_name.ilike.${queryTerm},sold_by_role.ilike.${queryTerm}`
+        );
+      }
+
+      if (paymentMethodFilter !== "All") {
+        query = query.ilike("payment_method", paymentMethodFilter);
+      }
+
+      const { start, end } = getUtcDateBoundaries(dateFilter);
+      if (start) {
+        query = query.gte("created_at", start);
+      }
+      if (end) {
+        query = query.lte("created_at", end);
+      }
+
+      const fromRow = (page - 1) * PAGE_SIZE;
+      const toRow = page * PAGE_SIZE - 1;
+      query = query.order("created_at", { ascending: false }).range(fromRow, toRow);
+
+      // 2. Fetch Aggregated Summary statistics
+      const [invoicesResult, summaryResult] = await Promise.all([
+        query,
+        supabase.rpc("get_store_invoice_summary", {
+          p_store_id: store.id,
+          p_start_date: start ?? undefined,
+          p_end_date: end ?? undefined,
+          p_payment_method: paymentMethodFilter,
+          p_search_query: searchQuery.trim() || undefined,
+        }),
+      ]);
+
+      if (invoicesResult.error) throw invoicesResult.error;
+      if (summaryResult.error) throw summaryResult.error;
+
+      const dbInvoices = (invoicesResult.data || []).map((invoice) => ({
+        ...invoice,
+        discount_amount: invoice.discount_amount ?? 0,
+      }));
+
+      const summary = (summaryResult.data && summaryResult.data[0]) || {
+        total_sales: 0,
+        total_count: 0,
+        cash_sales: 0,
+        esewa_sales: 0,
+        khalti_sales: 0,
+        fonepay_sales: 0,
+      };
+
+      set({
+        historyInvoices: dbInvoices,
+        historyTotalCount: Number(summary.total_count),
+        historyTotalSales: Number(summary.total_sales),
+        historyMethodBreakdown: {
+          "Cash": Number(summary.cash_sales),
+          "eSewa": Number(summary.esewa_sales),
+          "Khalti": Number(summary.khalti_sales),
+          "Fonepay": Number(summary.fonepay_sales),
+        },
+        historyHasMore: dbInvoices.length >= PAGE_SIZE,
+      });
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.error("Error fetching invoice history:", errMsg);
+      set({ errorMsg: "Failed to fetch invoice history: " + errMsg });
+    } finally {
+      set({ historyLoading: false });
+    }
   },
 });

@@ -10,10 +10,7 @@ import { checkoutAction } from "@/features/billing/server/actions";
 // ---------------------------------------------------------------------------
 
 /** Maximum time (ms) to wait for a single checkout server action call. */
-const CHECKOUT_TIMEOUT_MS = 15_000;
-
-/** Delay (ms) before the automatic retry after a timeout. */
-const CHECKOUT_RETRY_DELAY_MS = 3_000;
+const CHECKOUT_TIMEOUT_MS = 30_000;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -210,7 +207,8 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
   // CART METADATA SETTERS
   // -----------------------------------------------------------------------
   setCartDiscount: (discount: number) => {
-    if (discount < 0) discount = 0;
+    // Defense-in-depth: reject NaN/Infinity — always keep store clean
+    if (!Number.isFinite(discount) || discount < 0) discount = 0;
     set({ cartDiscount: discount, checkoutIdempotencyKey: null });
   },
 
@@ -250,7 +248,6 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
       paymentMethod,
       checkoutIdempotencyKey,
       isCheckoutInFlight,
-      invoices,
       variants,
       products,
     } = get();
@@ -275,9 +272,6 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
       const subtotalPrice = cart.reduce((sum, item) => sum + item.quantity * item.price, 0);
       const totalAmount = Math.max(0, subtotalPrice - cartDiscount);
 
-      // Dynamic Invoice Number Generation
-      const invoiceNumStr = `INV-${new Date().getFullYear()}-${String(invoices.length + 1).padStart(4, "0")}`;
-
       // Real Supabase checkout via Server Action (MEDIUM-09, MEDIUM-20)
       const itemsPayload = cart.map(item => ({
         variant_id: item.is_custom ? null : item.variant_id,
@@ -289,7 +283,6 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
 
       const checkoutPayload = {
         storeId: store.id,
-        invoiceNumber: invoiceNumStr,
         idempotencyKey,
         customerName: customerName || "General Customer",
         customerPhone: customerPhone || null,
@@ -301,52 +294,48 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
       };
 
       // -------------------------------------------------------------------
-      // Attempt 1: call with timeout
+      // Checkout attempt with timeout and exponential backoff retry loop
       // -------------------------------------------------------------------
       let dbInvoiceWithItems;
-      try {
-        dbInvoiceWithItems = await withTimeout(
-          // The AbortSignal is not passed to checkoutAction because
-          // Next.js server actions do not accept AbortSignal.  The
-          // timeout only controls how long the *client* waits.
-          () => checkoutAction(checkoutPayload),
-          CHECKOUT_TIMEOUT_MS,
-        );
-      } catch (firstError: unknown) {
-        if (!isTimeoutOrNetworkError(firstError)) {
-          // Confirmed server error — re-enable button immediately.
-          throw firstError;
-        }
+      const MAX_RETRIES = 2;
+      let attempt = 0;
 
-        // ---------------------------------------------------------------
-        // Timeout / network error — wait 3 s, then retry once.
-        // The button stays disabled (isCheckoutInFlight remains true).
-        // The same idempotency key is reused so the DB will return the
-        // completed invoice if the first attempt actually committed.
-        // ---------------------------------------------------------------
-        console.warn(
-          "Checkout attempt timed out or had a network error. Retrying in",
-          CHECKOUT_RETRY_DELAY_MS,
-          "ms...",
-        );
-        set({ errorMsg: "Connection slow — retrying checkout automatically..." });
-        await delay(CHECKOUT_RETRY_DELAY_MS);
-
+      while (attempt <= MAX_RETRIES) {
         try {
+          if (attempt > 0) {
+            const backoffMs = Math.pow(2, attempt) * 2000; // 4000ms, then 8000ms
+            console.warn(
+              `Checkout attempt ${attempt} timed out or had a network error. Retrying in ${backoffMs} ms...`,
+            );
+            set({ errorMsg: `Connection slow — retrying checkout (attempt ${attempt}/${MAX_RETRIES})...` });
+            await delay(backoffMs);
+          }
+
           dbInvoiceWithItems = await withTimeout(
+            // The AbortSignal is not passed to checkoutAction because
+            // Next.js server actions do not accept AbortSignal. The
+            // timeout only controls how long the *client* waits.
             () => checkoutAction(checkoutPayload),
             CHECKOUT_TIMEOUT_MS,
           );
-          // Clear the transient "retrying" message on success.
+          // Clear any transient error messages on success.
           set({ errorMsg: null });
-        } catch (retryError: unknown) {
-          if (isTimeoutOrNetworkError(retryError)) {
-            throw new Error(
-              "Checkout timed out after automatic retry. Please check your connection and try again.",
-            );
+          break;
+        } catch (error: unknown) {
+          if (!isTimeoutOrNetworkError(error) || attempt === MAX_RETRIES) {
+            if (isTimeoutOrNetworkError(error)) {
+              throw new Error(
+                "Checkout timed out after automatic retries. Please check your connection and try again.",
+              );
+            }
+            throw error;
           }
-          throw retryError;
+          attempt++;
         }
+      }
+
+      if (!dbInvoiceWithItems) {
+        throw new Error("Checkout failed: Server did not return invoice details.");
       }
 
       const { invoice_items: dbItems, ...dbInvoice } = dbInvoiceWithItems;

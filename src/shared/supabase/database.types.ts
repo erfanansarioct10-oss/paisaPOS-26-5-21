@@ -888,7 +888,7 @@ export type Database = {
       }
       bulk_upsert_products_and_variants: {
         Args: { p_products: Json }
-        Returns: number
+        Returns: Json
       }
       bulk_upsert_products_and_variants_for_delegation: {
         Args: {
@@ -897,11 +897,11 @@ export type Database = {
           p_products: Json
           p_store_id: string
         }
-        Returns: number
+        Returns: Json
       }
       bulk_upsert_products_and_variants_unchecked: {
         Args: { p_products: Json }
-        Returns: number
+        Returns: Json
       }
       create_invoice_and_deduct_stock:
         | {
@@ -968,6 +968,23 @@ export type Database = {
         Returns: boolean
       }
       detect_threat_anomalies: { Args: never; Returns: undefined }
+      get_store_invoice_summary: {
+        Args: {
+          p_end_date?: string
+          p_payment_method?: string
+          p_search_query?: string
+          p_start_date?: string
+          p_store_id: string
+        }
+        Returns: {
+          cash_sales: number
+          esewa_sales: number
+          fonepay_sales: number
+          khalti_sales: number
+          total_count: number
+          total_sales: number
+        }[]
+      }
       get_user_store_id: { Args: never; Returns: string }
       grant_privilege_delegation: {
         Args: {

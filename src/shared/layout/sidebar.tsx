@@ -130,9 +130,13 @@ export default function Sidebar() {
               <span className="text-sm font-semibold truncate text-foreground leading-tight">
                 {user?.name || "Sunil Shrestha"}
               </span>
-              <span className="text-xs text-muted-foreground truncate leading-normal">
-                {store?.name || "KTM Streetwear"}
-              </span>
+              {store?.name ? (
+                <span className="text-xs text-muted-foreground truncate leading-normal">
+                  {store.name}
+                </span>
+              ) : (
+                <div className="h-3 w-24 bg-muted/60 animate-pulse rounded mt-1 shrink-0" />
+              )}
             </div>
           </div>
         </div>

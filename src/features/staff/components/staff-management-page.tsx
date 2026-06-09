@@ -24,7 +24,7 @@ export default function StaffManagementPage({ staffManagement }: StaffManagement
     <div className="space-y-6">
       <StaffPageHeader staffManagement={staffManagement} />
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,420px)_1fr] gap-6 items-start">
+      <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,420px)_1fr] gap-6 items-start">
         <StaffInvitePanel />
         <StaffDirectorySection staffManagement={staffManagement} />
       </div>

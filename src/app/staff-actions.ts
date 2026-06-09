@@ -354,6 +354,9 @@ async function getAppUrl() {
     const head = await headers();
     const host = head.get("host") || "localhost:3000";
     const proto = head.get("x-forwarded-proto") === "https" ? "https" : "http";
+    if (/ngrok-free\.app|localtunnel\.me/i.test(host)) {
+      return `${proto}://${host}`;
+    }
     if (!/^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(host)) {
       return "http://localhost:3000";
     }
@@ -457,25 +460,6 @@ function getFreshestAuthenticationMethod(methods: unknown) {
     }
     return freshest;
   }, null);
-}
-
-async function expireOldPendingInvites(storeId: string, email?: string) {
-  const adminClient = getSupabaseAdminClient();
-  let query = adminClient
-    .from("staff_invitations")
-    .update({ status: "expired" })
-    .eq("store_id", storeId)
-    .eq("status", "pending")
-    .lte("expires_at", new Date().toISOString());
-
-  if (email) {
-    query = query.eq("email", email);
-  }
-
-  const { error } = await query;
-  if (error) {
-    throw new Error(error.message);
-  }
 }
 
 async function getProfileForUserId(userId: string): Promise<StaffProfileRow | null> {
@@ -592,7 +576,6 @@ export async function inviteStaffFormAction(
     }
 
     await enforceRateLimit(staffInviteLimiter, `staff_invite:${user.id}`, "STAFF_INVITE");
-    await expireOldPendingInvites(store.id, email);
 
     const expiresAt = getStaffInviteExpiresAt();
     const { data, error: inviteInsertError } = await adminClient.rpc(
@@ -1123,7 +1106,7 @@ export async function acceptStaffInviteFormAction(
     const clientIp = await getClientIp();
     await enforceRateLimit(
       staffInviteAcceptLimiter,
-      `staff_invite_accept_ip:${clientIp}:${invitationId}`,
+      `staff_invite_accept_ip:${clientIp}`,
       "STAFF_INVITE_ACCEPT_IP",
     );
 
@@ -1174,6 +1157,33 @@ export async function acceptStaffInviteFormAction(
         updatedAt: Date.now(),
       };
     }
+    // ---------------------------------------------------------------
+    // COMPENSATION PATTERN: DB-first, Auth-second
+    //
+    // The DB operation (accept_staff_invitation) is fully reversible
+    // via SQL if the subsequent Auth update fails. The Auth operation
+    // (password set) is irreversible — we can't rollback a password
+    // we don't know. So we always do the reversible step first.
+    // ---------------------------------------------------------------
+
+    // Step 1: Accept invitation in DB (reversible)
+    const { data: acceptance, error: acceptanceError } = await adminClient.rpc("accept_staff_invitation", {
+      p_invitation_id: invitationId,
+      p_auth_user_id: authUser.id,
+      p_auth_email: email,
+      p_actor_name: fullName,
+    });
+
+    if (acceptanceError) {
+      return inviteAcceptanceErrorState(acceptanceError);
+    }
+
+    const parsedAcceptance = staffInviteAcceptanceResultSchema.safeParse(acceptance);
+    if (!parsedAcceptance.success) {
+      throw new Error("Staff invite acceptance returned an invalid response.");
+    }
+
+    // Step 2: Update Auth user (password + metadata) — irreversible
     const originalMetadata = authUser.user_metadata ?? {};
     const authUpdatePayload: {
       password?: string;
@@ -1191,36 +1201,38 @@ export async function acceptStaffInviteFormAction(
 
     const { error: authUpdateError } = await supabase.auth.updateUser(authUpdatePayload);
     if (authUpdateError) {
-      await logStaffActionError("STAFF_INVITE_AUTH_UPDATE_FAILED", authUpdateError, {
-        invitationId,
-        authUserId: authUser.id,
-      });
-      return errorState(authUpdateError, "Staff account setup could not be completed.");
-    }
+      // Auth failed — rollback DB: revert the invitation back to pending
+      // so the user can retry. This is safe because the DB RPC is idempotent.
+      try {
+        await adminClient
+          .from("staff_invitations")
+          .update({
+            status: "pending",
+            accepted_by_user_id: null,
+            accepted_at: null,
+          })
+          .eq("id", invitationId);
 
-    const { data: acceptance, error: acceptanceError } = await adminClient.rpc("accept_staff_invitation", {
-      p_invitation_id: invitationId,
-      p_auth_user_id: authUser.id,
-      p_auth_email: email,
-      p_actor_name: fullName,
-    });
-
-    if (acceptanceError) {
-      const { error: compensationError } = await supabase.auth.updateUser({
-        data: originalMetadata,
-      });
-      if (compensationError) {
-        await logStaffActionError("STAFF_INVITE_COMPENSATION_FAILED", compensationError, {
+        // Also remove the staff profile row if it was just created
+        if (!existingProfile) {
+          await adminClient
+            .from("users")
+            .delete()
+            .eq("id", authUser.id)
+            .eq("role", "cashier");
+        }
+      } catch (compensationError) {
+        await logStaffActionError("STAFF_INVITE_DB_COMPENSATION_FAILED", compensationError, {
           invitationId,
           authUserId: authUser.id,
         });
       }
-      return inviteAcceptanceErrorState(acceptanceError);
-    }
 
-    const parsedAcceptance = staffInviteAcceptanceResultSchema.safeParse(acceptance);
-    if (!parsedAcceptance.success) {
-      throw new Error("Staff invite acceptance returned an invalid response.");
+      await logStaffActionError("STAFF_INVITE_AUTH_UPDATE_FAILED", authUpdateError, {
+        invitationId,
+        authUserId: authUser.id,
+      });
+      return errorState(authUpdateError, "Staff account setup could not be completed. Please try again.");
     }
 
     revalidatePath("/staff");

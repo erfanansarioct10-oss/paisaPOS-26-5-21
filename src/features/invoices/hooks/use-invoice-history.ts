@@ -1,39 +1,44 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useAppStore, type Invoice } from "@/lib/store/useAppStore";
 import { resolveReceiptInvoiceItems } from "@/features/invoices/utils/receipt-invoice-items";
-import {
-  filterInvoices,
-  getInvoiceMethodBreakdown,
-  PAGE_SIZE,
-  type InvoiceDateFilter,
-  type InvoicePaymentMethodFilter,
+import type {
+  InvoiceDateFilter,
+  InvoicePaymentMethodFilter,
 } from "@/features/invoices/utils/invoice-history-utils";
 
 export function useInvoiceHistory() {
-  const { invoices, products, variants, invoiceItems, setActiveInvoice } = useAppStore();
-  const [searchQuery, setSearchQuery] = useState("");
-  const [paymentMethodFilter, setPaymentMethodFilter] = useState<InvoicePaymentMethodFilter>("All");
-  const [dateFilter, setDateFilter] = useState<InvoiceDateFilter>("All Time");
-  const [currentPage, setCurrentPage] = useState(1);
+  const {
+    products,
+    variants,
+    invoiceItems,
+    setActiveInvoice,
+    historyFilters,
+    historyInvoices,
+    historyTotalCount,
+    historyTotalSales,
+    historyMethodBreakdown,
+    historyLoading,
+    setHistoryFilters,
+    fetchHistoryData,
+  } = useAppStore();
 
-  const filteredInvoices = useMemo(
-    () => filterInvoices(invoices, searchQuery, paymentMethodFilter, dateFilter),
-    [dateFilter, invoices, paymentMethodFilter, searchQuery],
-  );
-  const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / PAGE_SIZE));
-  const safePage = Math.min(currentPage, totalPages);
-  const paginatedInvoices = useMemo(
-    () => filteredInvoices.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
-    [filteredInvoices, safePage],
-  );
+  useEffect(() => {
+    fetchHistoryData();
+  }, [fetchHistoryData]);
 
-  const totalSales = useMemo(
-    () => filteredInvoices.reduce((sum, invoice) => sum + invoice.total_amount, 0),
-    [filteredInvoices],
-  );
-  const methodBreakdown = useMemo(() => getInvoiceMethodBreakdown(filteredInvoices), [filteredInvoices]);
+  const totalPages = useMemo(() => {
+    return Math.max(1, Math.ceil(historyTotalCount / 20));
+  }, [historyTotalCount]);
+
+  const isAllTransactions = useMemo(() => {
+    return (
+      historyFilters.searchQuery === "" &&
+      historyFilters.paymentMethodFilter === "All" &&
+      historyFilters.dateFilter === "All Time"
+    );
+  }, [historyFilters]);
 
   const handleReprint = useCallback(
     async (invoice: Invoice) => {
@@ -51,37 +56,42 @@ export function useInvoiceHistory() {
     [invoiceItems, products, setActiveInvoice, variants],
   );
 
-  const handleSearchQueryChange = useCallback((value: string) => {
-    setSearchQuery(value);
-    setCurrentPage(1);
-  }, []);
+  const handleSearchQueryChange = useCallback(
+    (value: string) => {
+      setHistoryFilters({ searchQuery: value });
+    },
+    [setHistoryFilters],
+  );
 
-  const handlePaymentMethodChange = useCallback((value: InvoicePaymentMethodFilter) => {
-    setPaymentMethodFilter(value);
-    setCurrentPage(1);
-  }, []);
+  const handlePaymentMethodChange = useCallback(
+    (value: InvoicePaymentMethodFilter) => {
+      setHistoryFilters({ paymentMethodFilter: value });
+    },
+    [setHistoryFilters],
+  );
 
-  const handleDateFilterChange = useCallback((value: InvoiceDateFilter) => {
-    setDateFilter(value);
-    setCurrentPage(1);
-  }, []);
+  const handleDateFilterChange = useCallback(
+    (value: InvoiceDateFilter) => {
+      setHistoryFilters({ dateFilter: value });
+    },
+    [setHistoryFilters],
+  );
 
   const handleLoadMore = useCallback(async () => {
-    const { loadMoreInvoices } = useAppStore.getState();
-    await loadMoreInvoices();
+    // Disable loadedInvoiceCount to hide load more, but keep function signature.
   }, []);
 
   const handlePreviousPage = useCallback(() => {
-    setCurrentPage((page) => Math.max(1, page - 1));
-  }, []);
+    setHistoryFilters({ page: Math.max(1, historyFilters.page - 1) });
+  }, [historyFilters.page, setHistoryFilters]);
 
   const handleNextPage = useCallback(() => {
-    setCurrentPage((page) => Math.min(totalPages, page + 1));
-  }, [totalPages]);
+    setHistoryFilters({ page: Math.min(totalPages, historyFilters.page + 1) });
+  }, [historyFilters.page, totalPages, setHistoryFilters]);
 
   return {
-    dateFilter,
-    filteredInvoices,
+    dateFilter: historyFilters.dateFilter as InvoiceDateFilter,
+    filteredInvoices: historyInvoices,
     handleDateFilterChange,
     handleLoadMore,
     handleNextPage,
@@ -89,15 +99,16 @@ export function useInvoiceHistory() {
     handlePreviousPage,
     handleReprint,
     handleSearchQueryChange,
-    isAllTransactions: filteredInvoices.length === invoices.length,
-    loadedInvoiceCount: invoices.length,
-    methodBreakdown,
-    paginatedInvoices,
-    paymentMethodFilter,
-    safePage,
-    searchQuery,
-    totalCount: filteredInvoices.length,
+    isAllTransactions,
+    loadedInvoiceCount: 0, // Disable Load More scrolling panel in favor of pagination
+    methodBreakdown: historyMethodBreakdown,
+    paginatedInvoices: historyInvoices,
+    paymentMethodFilter: historyFilters.paymentMethodFilter as InvoicePaymentMethodFilter,
+    safePage: historyFilters.page,
+    searchQuery: historyFilters.searchQuery,
+    totalCount: historyTotalCount,
     totalPages,
-    totalSales,
+    totalSales: historyTotalSales,
+    historyLoading,
   };
 }

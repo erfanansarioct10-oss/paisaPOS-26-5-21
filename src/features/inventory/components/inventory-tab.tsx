@@ -170,12 +170,17 @@ export default function InventoryTab() {
   const handleSave = async (event: FormEvent) => {
     event.preventDefault();
 
+    // Guard against double-submission from Enter key while save is in flight
+    if (isLoading) return;
     if (!prodName || generatedVariants.length === 0) return;
+
+    // Enforce low stock threshold minimum validation (minimum 1)
+    const validatedThreshold = Math.max(1, lowStockThreshold || 1);
 
     const success = await addProduct(
       prodName,
       category,
-      lowStockThreshold,
+      validatedThreshold,
       generatedVariants,
     );
 
@@ -232,6 +237,9 @@ export default function InventoryTab() {
 
   const handleSaveEdit = async (event: FormEvent) => {
     event.preventDefault();
+
+    // Guard against double-submission from Enter key while save is in flight
+    if (isLoading) return;
     if (!editProductId || !editName || editVariants.length === 0) return;
 
     const invalid = editVariants.some(
@@ -252,7 +260,7 @@ export default function InventoryTab() {
       editProductId,
       editName,
       editCategory,
-      editLowStock,
+      Math.max(1, editLowStock || 1),
       editVariants,
       deletedVariantIds,
     );
