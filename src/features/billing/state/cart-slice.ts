@@ -390,6 +390,11 @@ export const createCartSlice = (set: SetState, get: GetState) => ({
         };
       });
 
+      // Refresh invoice history data so /invoices page reflects the new sale
+      get().fetchHistoryData().catch((err) =>
+        console.error("Error refreshing invoice history after checkout:", err)
+      );
+
       return true;
     } catch (e: unknown) {
       const errMsg = mapCheckoutError(e);
