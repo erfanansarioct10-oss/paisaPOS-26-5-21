@@ -801,10 +801,10 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
         query,
         supabase.rpc("get_store_invoice_summary", {
           p_store_id: store.id,
-          p_start_date: (start ?? null) as any,
-          p_end_date: (end ?? null) as any,
+          p_start_date: (start ?? null) as unknown as string,
+          p_end_date: (end ?? null) as unknown as string,
           p_payment_method: paymentMethodFilter,
-          p_search_query: (searchQuery.trim() || null) as any,
+          p_search_query: (searchQuery.trim() || null) as unknown as string,
         }),
       ]);
 
