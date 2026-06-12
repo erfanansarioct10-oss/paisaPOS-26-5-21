@@ -22,11 +22,14 @@ export function useInvoiceHistory() {
     historyLoading,
     setHistoryFilters,
     fetchHistoryData,
+    store,
   } = useAppStore();
 
   useEffect(() => {
-    fetchHistoryData();
-  }, [fetchHistoryData]);
+    if (store?.id) {
+      fetchHistoryData();
+    }
+  }, [fetchHistoryData, store?.id]);
 
   const totalPages = useMemo(() => {
     return Math.max(1, Math.ceil(historyTotalCount / 20));
