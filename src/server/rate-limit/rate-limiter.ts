@@ -304,8 +304,8 @@ export const delegationGrantLimiter = new RateLimiter(10, 24 * 60 * 60 * 1000);
 /** Temporary privilege revocations: 30 per hour per owner */
 export const delegationRevokeLimiter = new RateLimiter(30, 60 * 60 * 1000);
 
-/** Global request flood protection: 30 per 10 seconds per IP */
-export const globalLimiter = new RateLimiter(30, 10 * 1000);
+/** Global request flood protection: 100 per 10 seconds per IP */
+export const globalLimiter = new RateLimiter(100, 10 * 1000);
 
 // ---------------------------------------------------------------------------
 // Bot Detection Utilities

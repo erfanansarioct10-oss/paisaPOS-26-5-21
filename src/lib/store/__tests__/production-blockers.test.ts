@@ -403,10 +403,10 @@ describe.runIf(runLiveTests)("PaisaPOS — Phase 1 Production Hardening Verifica
 // 5. MIDDLEWARE VERIFICATION EXPANSION (ABUSE SIMULATION / RATE LIMIT STRESS)
 // =========================================================================
 describe("PaisaPOS — Middleware Verification & Abuse Simulation Suite", () => {
-  test("Middleware Abuse Simulation: floods request pipeline with >30 rapid requests, verifies 429 status code and active runtime rate limiting", async () => {
-    console.log("[QA Test] Flooding middleware request pipeline with 35 rapid requests...");
+  test("Middleware Abuse Simulation: floods request pipeline with >100 rapid requests, verifies 429 status code and active runtime rate limiting", async () => {
+    console.log("[QA Test] Flooding middleware request pipeline with 105 rapid requests...");
 
-    const requestsCount = 35;
+    const requestsCount = 105;
     const fetchPromises = [];
     const clientIp = `198.51.100.${Math.floor(Math.random() * 255)}`; // Unique mock IP for this run
 
@@ -455,8 +455,8 @@ describe("PaisaPOS — Middleware Verification & Abuse Simulation Suite", () => 
     console.log(`  - Allowed (OK/Redirect): ${allowedCount}`);
     console.log(`  - Blocked (429 Too Many Requests): ${blockedCount}`);
 
-    // Expect that at most 30 requests are allowed (global IP threshold is 30)
-    expect(allowedCount).toBeLessThanOrEqual(30);
+    // Expect that at most 100 requests are allowed (global IP threshold is 100)
+    expect(allowedCount).toBeLessThanOrEqual(100);
     expect(blockedCount).toBeGreaterThan(0);
     expect(containsRetryAfter).toBe(true);
   });
