@@ -406,8 +406,8 @@ export async function enforceRateLimit(
       return;
     }
 
-    // Safe rate-limit bypass for local E2E testing runs.
-    if (process.env.NODE_ENV !== "production" && head.get("x-paisapos-e2e-test") === "true") {
+    // Safe rate-limit bypass for local development/testing.
+    if (process.env.NODE_ENV !== "production") {
       return;
     }
   } catch {

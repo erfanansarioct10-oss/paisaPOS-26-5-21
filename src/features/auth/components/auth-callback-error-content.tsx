@@ -30,7 +30,7 @@ function callbackErrorCopy(reason: string | undefined, hashError?: AuthRedirectH
     return "Too many sign-in link attempts were made from this connection. Please wait a moment and try the link again.";
   }
   if (reason === "missing_code") {
-    return "This sign-in link is incomplete. Open the latest email from PaisaPOS or ask the store owner to resend the invitation.";
+    return "This sign-in link is incomplete. Open the latest email from Chlorif or ask the store owner to resend the invitation.";
   }
   if (reason === "exchange_failed") {
     return "This sign-in link could not be verified. It may have expired or already been used.";

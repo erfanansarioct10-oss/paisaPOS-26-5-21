@@ -21,19 +21,19 @@ const outfit = Outfit({
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.APP_URL || "https://paisa-pos-26-5-21.vercel.app"),
-  title: "PaisaPOS - Real-Time Billing & Inventory Sync",
+  title: "Chlorif - Real-Time Billing & Inventory Sync",
   description: "High-speed, inventory-first POS billing terminal for fashion boutiques and clothing stores in Nepal.",
-  applicationName: "PaisaPOS",
+  applicationName: "Chlorif",
   openGraph: {
-    title: "PaisaPOS",
+    title: "Chlorif",
     description: "High-speed, inventory-first POS billing terminal for fashion boutiques and clothing stores in Nepal.",
     url: "/",
-    siteName: "PaisaPOS",
+    siteName: "Chlorif",
     type: "website",
   },
   twitter: {
     card: "summary",
-    title: "PaisaPOS",
+    title: "Chlorif",
     description: "High-speed, inventory-first POS billing terminal for fashion boutiques and clothing stores in Nepal.",
   },
 };

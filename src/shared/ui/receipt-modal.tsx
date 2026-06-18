@@ -75,7 +75,7 @@ export default function ReceiptModal() {
             {/* Store branding info */}
             <div className="text-center pb-4 border-b border-dashed border-slate-300">
               <h2 className="font-outfit font-extrabold text-xl tracking-tight uppercase">
-                {store?.name || "PaisaPOS Store"}
+                {store?.name || "Chlorif Store"}
               </h2>
               {store?.address && (
                 <p className="text-xs text-slate-500 mt-0.5">
@@ -190,7 +190,7 @@ export default function ReceiptModal() {
               <p className="font-medium">Thank you for your purchase!</p>
               <p>Items can be exchanged within 7 days with invoice.</p>
               <p className="font-mono text-[8px] text-slate-400 mt-2">
-                Powered by PaisaPOS
+                Powered by Chlorif
               </p>
             </div>
           </div>

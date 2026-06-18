@@ -19,6 +19,7 @@ import {
   validateAuthStringSafety,
   validatePasswordComplexity,
 } from "@/lib/security";
+import { sendVerificationEmail, sendPasswordResetOtpEmail } from "@/lib/mail";
 
 const normalizedEmailSchema = z.preprocess(
   (val) => typeof val === "string" ? normalizeEmail(val) : val,
@@ -299,63 +300,55 @@ export async function signupAction(rawParams: unknown) {
       return { error: STAFF_ACCOUNT_OWNER_BLOCK };
     }
 
-    // 1. Sign up the user
-    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-          store_name: storeName,
-        },
-      },
+    // Check if the user already exists in auth.users
+    const adminClient = getSupabaseAdminClient();
+    const { data: userId, error: rpcError } = await (adminClient as any).rpc("get_user_id_by_email", {
+      p_email: email,
     });
 
-    if (signUpError) {
-      await writeLog("SECURITY", "AUTH_SIGNUP_FAILURE", `Failed sign up attempt for email: ${email}`, {
+    if (rpcError) {
+      await logRawServerError("SIGNUP_USER_EXISTS_CHECK_FAILED", "Failed to check if user exists", rpcError);
+      return { error: "Registration is temporarily unavailable. Please try again." };
+    }
+
+    if (userId) {
+      return { error: "An account with this email already exists." };
+    }
+
+    // Generate secure random verification token
+    const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    // Store pending signup details
+    const { error: insertError } = await (adminClient as any)
+      .from("pending_signups")
+      .upsert({
         email,
-        errorMessage: signUpError.message,
-      });
-      return { error: getFriendlyErrorMessage(signUpError.message) };
+        password,
+        full_name: fullName,
+        store_name: storeName,
+        token,
+        expires_at: expiresAt,
+      }, { onConflict: "email" });
+
+    if (insertError) {
+      await logRawServerError("PENDING_SIGNUP_INSERT_FAILED", "Failed to insert pending signup", insertError);
+      return { error: "Registration is temporarily unavailable. Please try again." };
     }
 
-    if (!signUpData.session) {
-      await writeLog("SECURITY", "AUTH_SIGNUP_AWAITING_CONFIRMATION", `User signed up, awaiting email confirmation: ${email}`, {
-        userId: signUpData.user?.id || "N/A",
-        email,
-      });
-      return { success: true, emailConfirmationRequired: true };
+    // Send verification email via SMTP
+    try {
+      await sendVerificationEmail(email, fullName, token);
+    } catch (mailError) {
+      await logRawServerError("SIGNUP_EMAIL_SEND_FAILED", "Failed to send signup verification email", mailError);
+      return { error: "Failed to send verification email. Please try again." };
     }
 
-    if (!signUpData.user) {
-      return { error: "Registration failed. Please check your credentials." };
-    }
-
-    // 2. Perform the onboarding store registration RPC
-    const { data: storeId, error: onboardingError } = await retryOnTransientJwtClockSkew(() =>
-      supabase.rpc("register_store_and_user", {
-        p_full_name: fullName,
-        p_store_name: storeName,
-      })
-    );
-
-    if (onboardingError) {
-      await writeLog("SECURITY", "AUTH_ONBOARDING_FAILURE", `Failed onboarding store registration for user ${signUpData.user.id}`, {
-        userId: signUpData.user.id,
-        email,
-        errorMessage: onboardingError.message,
-      });
-      return { error: getFriendlyErrorMessage(onboardingError.message) };
-    }
-
-    // Log successful onboarding
-    await writeLog("SECURITY", "AUTH_SIGNUP_SUCCESS", `Store registered successfully: "${storeName}" (User: ${email})`, {
-      userId: signUpData.user.id,
-      storeId,
+    await writeLog("SECURITY", "AUTH_SIGNUP_AWAITING_CONFIRMATION", `User signed up, awaiting email confirmation: ${email}`, {
       email,
     });
 
-    return { success: true, storeId };
+    return { success: true, emailConfirmationRequired: true };
   } catch (err: unknown) {
     return { error: getFriendlyErrorMessage(err) };
   }
@@ -378,32 +371,44 @@ export async function requestPasswordResetAction(email: string) {
     const ip = await getClientIp();
     await enforceRateLimit(passwordResetLimiter, `reset_password:${ip}`, "RESET_PASSWORD");
 
-    const supabase = await getSupabaseServerClient();
-
-    // Preview deploys should use their generated Vercel URL even when APP_URL is set globally.
-    let origin = process.env.VERCEL_ENV === "preview" ? getVercelOrigin() : null;
-    origin = origin || process.env.APP_URL || null;
-    origin = origin || getVercelOrigin();
-    if (!origin && process.env.NODE_ENV !== "production") {
-      const headersList = await headers();
-      const host = headersList.get("host") || "localhost:3000";
-      const proto = headersList.get("x-forwarded-proto") || "http";
-      origin = `${proto}://${host}`;
-    }
-    if (!origin) {
-      origin = "https://paisa-pos-26-5-21.vercel.app"; // Production fallback
-    }
-
-    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-      redirectTo: `${origin}/auth/callback?type=recovery`,
+    const adminClient = getSupabaseAdminClient();
+    const { data: userId, error: rpcError } = await (adminClient as any).rpc("get_user_id_by_email", {
+      p_email: cleanEmail,
     });
 
-    if (error) {
-      await writeLog("SECURITY", "AUTH_PASSWORD_RESET_FAILURE", `Failed reset request for email: ${cleanEmail}`, {
+    if (rpcError) {
+      await logRawServerError("PASSWORD_RESET_USER_EXISTS_CHECK_FAILED", "Failed to check if user exists for reset", rpcError);
+      return { error: "Failed to request password reset. Please try again." };
+    }
+
+    if (!userId) {
+      return { error: "This email has not been registered." };
+    }
+
+    // Generate 6-digit OTP code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+    // Store reset code in DB
+    const { error: codeError } = await (adminClient as any)
+      .from("password_reset_codes")
+      .insert({
         email: cleanEmail,
-        errorMessage: error.message,
+        code,
+        expires_at: expiresAt,
       });
-      return { success: true };
+
+    if (codeError) {
+      await logRawServerError("PASSWORD_RESET_CODE_INSERT_FAILED", "Failed to insert reset code", codeError);
+      return { error: "Failed to request password reset. Please try again." };
+    }
+
+    // Send password reset OTP email
+    try {
+      await sendPasswordResetOtpEmail(cleanEmail, code);
+    } catch (mailError) {
+      await logRawServerError("RESET_PASSWORD_EMAIL_SEND_FAILED", "Failed to send reset OTP email", mailError);
+      return { error: "Failed to send password reset code. Please try again." };
     }
 
     await writeLog("SECURITY", "AUTH_PASSWORD_RESET_REQUESTED", `Password reset requested for email: ${cleanEmail}`);
@@ -462,6 +467,163 @@ export async function updatePasswordAction(rawParams: unknown) {
     await writeLog("SECURITY", "AUTH_PASSWORD_UPDATE_SUCCESS", `Password changed and sessions revoked for user ${user.id}`, {
       userId: user.id,
     });
+
+    return { success: true };
+  } catch (err: unknown) {
+    return { error: getFriendlyErrorMessage(err) };
+  }
+}
+
+/**
+ * Verify Signup Token Action
+ * Confirms user's email, creates their auth user, and registers the store/profile
+ */
+export async function verifySignupTokenAction(token: string) {
+  try {
+    const adminClient = getSupabaseAdminClient();
+    const { data: pending, error: pendingError } = await (adminClient as any)
+      .from("pending_signups")
+      .select("*")
+      .eq("token", token)
+      .gt("expires_at", new Date().toISOString())
+      .maybeSingle();
+
+    if (pendingError || !pending) {
+      return { error: "This verification link is invalid, expired, or has already been used. Please register again." };
+    }
+
+    const pendingData = pending as any;
+
+    // Create the user in auth schema using Admin SDK
+    const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
+      email: pendingData.email,
+      password: pendingData.password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: pendingData.full_name,
+        store_name: pendingData.store_name,
+      }
+    });
+
+    if (createError) {
+      await logRawServerError("VERIFY_SIGNUP_CREATE_USER_FAILED", "Failed to create confirmed user from pending signup", createError, {
+        email: pendingData.email,
+      });
+      return { error: getFriendlyErrorMessage(createError.message) };
+    }
+
+    // Delete the pending signup record
+    await (adminClient as any).from("pending_signups").delete().eq("id", pendingData.id);
+
+    await writeLog("SECURITY", "AUTH_SIGNUP_CONFIRMED", `User email verified and account activated: ${pendingData.email}`, {
+      userId: newUser.user.id,
+      email: pendingData.email,
+    });
+
+    return { success: true };
+  } catch (err: unknown) {
+    return { error: getFriendlyErrorMessage(err) };
+  }
+}
+
+/**
+ * Verify Password Reset Code Action
+ * Validates the 6-digit OTP code and returns a temporary token
+ */
+export async function verifyPasswordResetCodeAction(email: string, code: string) {
+  try {
+    const cleanEmail = normalizeEmail(email);
+    const adminClient = getSupabaseAdminClient();
+    
+    const { data: record, error: recordError } = await (adminClient as any)
+      .from("password_reset_codes")
+      .select("*")
+      .eq("email", cleanEmail)
+      .eq("code", code)
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (recordError || !record) {
+      return { error: "Invalid or expired verification code." };
+    }
+
+    const recordData = record as any;
+
+    // Generate reset verification token
+    const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    
+    const { error: updateError } = await (adminClient as any)
+      .from("password_reset_codes")
+      .update({ token })
+      .eq("id", recordData.id);
+
+    if (updateError) {
+      await logRawServerError("PASSWORD_RESET_TOKEN_UPDATE_FAILED", "Failed to update reset token", updateError);
+      return { error: "Failed to verify code. Please try again." };
+    }
+
+    return { success: true, token };
+  } catch (err: unknown) {
+    return { error: getFriendlyErrorMessage(err) };
+  }
+}
+
+/**
+ * Reset Password With Token Action
+ * Resets user password using the temporary verification token
+ */
+export async function resetPasswordWithTokenAction(email: string, token: string, rawParams: unknown) {
+  try {
+    const cleanEmail = normalizeEmail(email);
+    const validation = updatePasswordSchema.safeParse(rawParams);
+    if (!validation.success) {
+      return { error: formatZodError(validation.error) };
+    }
+
+    const adminClient = getSupabaseAdminClient();
+
+    // Verify the token
+    const { data: record, error: recordError } = await (adminClient as any)
+      .from("password_reset_codes")
+      .select("*")
+      .eq("email", cleanEmail)
+      .eq("token", token)
+      .gt("expires_at", new Date().toISOString())
+      .maybeSingle();
+
+    if (recordError || !record) {
+      return { error: "Your password reset session is invalid or expired. Please request a new code." };
+    }
+
+    // Get the user ID from auth.users
+    const { data: userId, error: rpcError } = await (adminClient as any).rpc("get_user_id_by_email", {
+      p_email: cleanEmail,
+    });
+
+    if (rpcError || !userId) {
+      return { error: "User account could not be found." };
+    }
+
+    // Update user's password in auth schema
+    const { error: updateError } = await adminClient.auth.admin.updateUserById(
+      userId as string,
+      { password: validation.data.password }
+    );
+
+    if (updateError) {
+      await logRawServerError("RESET_PASSWORD_UPDATE_FAILED", "Failed to update password using token", updateError);
+      return { error: getFriendlyErrorMessage(updateError.message) };
+    }
+
+    // Delete reset codes for this email
+    await (adminClient as any).from("password_reset_codes").delete().eq("email", cleanEmail);
+
+    // Revoke all sessions globally to force re-authentication
+    await adminClient.auth.admin.signOut(userId as string, "global");
+
+    await writeLog("SECURITY", "AUTH_PASSWORD_RESET_SUCCESS", `Password reset successfully via OTP for user ${userId as string}`);
 
     return { success: true };
   } catch (err: unknown) {

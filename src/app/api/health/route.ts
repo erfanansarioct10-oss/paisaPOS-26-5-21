@@ -11,7 +11,7 @@ export async function GET() {
   return NextResponse.json(
     {
       status: configured ? "ok" : "degraded",
-      service: "paisapos",
+      service: "chlorif",
       timestamp: new Date().toISOString(),
       checks: {
         supabaseEnv: configured,

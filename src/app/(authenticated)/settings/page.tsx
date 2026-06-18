@@ -147,7 +147,7 @@ export default function SettingsPage() {
 
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: "totp",
-        issuer: "PaisaPOS",
+        issuer: "Chlorif",
         friendlyName: user?.email || "User Account"
       });
       if (error) throw error;
@@ -371,7 +371,7 @@ export default function SettingsPage() {
           </div>
 
           <p className="text-xs text-muted-foreground leading-normal">
-            Choose how PaisaPOS looks on your device. This preference is saved locally on this browser.
+            Choose how Chlorif looks on your device. This preference is saved locally on this browser.
           </p>
 
           <div className="grid grid-cols-3 gap-3">
@@ -652,7 +652,7 @@ export default function SettingsPage() {
           <h2 className="font-semibold text-red-500 text-sm">Danger Zone</h2>
         </div>
         <p className="text-xs text-muted-foreground">
-          Sign out of your current session. You will need to enter your credentials again to access PaisaPOS.
+          Sign out of your current session. You will need to enter your credentials again to access Chlorif.
         </p>
         <button onClick={signOut} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition-all">
           <LogOut className="w-4 h-4" />
