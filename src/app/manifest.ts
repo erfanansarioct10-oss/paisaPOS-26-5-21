@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "PaisaPOS",
-    short_name: "PaisaPOS",
+    name: "Chlorif",
+    short_name: "Chlorif",
     description: "High-speed billing and inventory sync for Nepalese boutiques.",
     start_url: "/",
     display: "standalone",

@@ -8,7 +8,7 @@ import {
 import { PermissionDeniedError, requirePrivilege } from "@/server/auth/permissions";
 
 export const metadata: Metadata = {
-  title: "Activity Log | PaisaPOS",
+  title: "Activity Log | Chlorif",
 };
 
 type ActivityPageProps = {

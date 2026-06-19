@@ -5,7 +5,7 @@ import { getStaffManagementDTO } from "@/server/supabase/dal";
 import { PermissionDeniedError, requirePrivilege } from "@/server/auth/permissions";
 
 export const metadata: Metadata = {
-  title: "Staff | PaisaPOS",
+  title: "Staff | Chlorif",
 };
 
 type StaffPageProps = {

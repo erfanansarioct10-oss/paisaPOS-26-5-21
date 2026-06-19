@@ -214,7 +214,7 @@ export default function LoginPage() {
         }
 
         if (signupRes.emailConfirmationRequired) {
-          setSuccessMsg("Registration successful! Please check your email inbox for a confirmation link to activate your store.");
+          setSuccessMsg("Registration successful! A verification link has been sent to your email. Please check your Gmail inbox and click the link to verify your account and enter the system.");
           setLocalLoading(false);
           return;
         }
@@ -308,8 +308,11 @@ export default function LoginPage() {
       if (!result.success) throw new Error("Failed to send reset email.");
 
       setSuccessMsg(
-        "If an account exists for that email, a password reset link has been sent."
+        "A 6-digit verification code has been sent to your email! Redirecting..."
       );
+      setTimeout(() => {
+        router.push(`/auth/verify-code?email=${encodeURIComponent(normalizeEmail(email))}`);
+      }, 2000);
     } catch (err: unknown) {
       const friendlyError = getFriendlyErrorMessage(err);
       setLocalError(friendlyError);
@@ -357,7 +360,7 @@ export default function LoginPage() {
           <Store className="w-6 h-6 text-primary-foreground" />
         </div>
         <h1 className="mt-4 font-outfit text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl flex items-center justify-center gap-2">
-          <span>PaisaPOS</span>
+          <span>Chlorif</span>
           <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-xs font-bold uppercase tracking-wider">
             Beta
           </span>
@@ -454,132 +457,149 @@ export default function LoginPage() {
             </>
           ) : (
             <>
-              {/* ============================================================== */}
-              {/* CREDENTIALS FORM (Login / Register)                             */}
-              {/* ============================================================== */}
-              <form onSubmit={handleAuth} className="space-y-4">
-                {!isLogin && (
-                  <>
+              {!isLogin && successMsg ? (
+                <div className="text-center">
+                  <button
+                    onClick={() => {
+                      setIsLogin(true);
+                      setLocalError(null);
+                      setSuccessMsg(null);
+                    }}
+                    className="text-xs font-medium text-muted-foreground hover:text-foreground transition-all underline"
+                  >
+                    Already have a store account? Sign In
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* ============================================================== */}
+                  {/* CREDENTIALS FORM (Login / Register)                             */}
+                  {/* ============================================================== */}
+                  <form onSubmit={handleAuth} className="space-y-4">
+                    {!isLogin && (
+                      <>
+                        <div>
+                          <label htmlFor="name" className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                            Your Name
+                          </label>
+                          <div className="relative">
+                            <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/80" />
+                            <input
+                              id="name"
+                              type="text"
+                              required
+                              placeholder="e.g. Sunil Shrestha"
+                              value={fullName}
+                              onChange={(e) => setFullName(e.target.value)}
+                              className="block w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label htmlFor="store" className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                            Clothing Store Name
+                          </label>
+                          <div className="relative">
+                            <Store className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/80" />
+                            <input
+                              id="store"
+                              type="text"
+                              required
+                              placeholder="e.g. KTM Boutique Hub"
+                              value={storeName}
+                              onChange={(e) => setStoreName(e.target.value)}
+                              className="block w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
+
                     <div>
-                      <label htmlFor="name" className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
-                        Your Name
+                      <label htmlFor="email" className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                        Store Email Address
                       </label>
                       <div className="relative">
-                        <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/80" />
+                        <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/80" />
                         <input
-                          id="name"
-                          type="text"
+                          id="email"
+                          type="email"
                           required
-                          placeholder="e.g. Sunil Shrestha"
-                          value={fullName}
-                          onChange={(e) => setFullName(e.target.value)}
+                          placeholder="name@store.com"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
                           className="block w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label htmlFor="store" className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
-                        Clothing Store Name
+                      <label htmlFor="pass" className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                        Password
                       </label>
                       <div className="relative">
-                        <Store className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/80" />
+                        <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/80" />
                         <input
-                          id="store"
-                          type="text"
+                          id="pass"
+                          type="password"
                           required
-                          placeholder="e.g. KTM Boutique Hub"
-                          value={storeName}
-                          onChange={(e) => setStoreName(e.target.value)}
+                          placeholder="••••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
                           className="block w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
                         />
                       </div>
                     </div>
-                  </>
-                )}
 
-                <div>
-                  <label htmlFor="email" className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
-                    Store Email Address
-                  </label>
-                  <div className="relative">
-                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/80" />
-                    <input
-                      id="email"
-                      type="email"
-                      required
-                      placeholder="name@store.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="block w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-                    />
-                  </div>
-                </div>
+                    {/* FORGOT PASSWORD LINK (login mode only) */}
+                    {isLogin && (
+                      <div className="text-right">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsForgotPassword(true);
+                            setLocalError(null);
+                            setSuccessMsg(null);
+                          }}
+                          className="text-xs font-medium text-muted-foreground hover:text-foreground transition-all underline"
+                        >
+                          Forgot your password?
+                        </button>
+                      </div>
+                    )}
 
-                <div>
-                  <label htmlFor="pass" className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/80" />
-                    <input
-                      id="pass"
-                      type="password"
-                      required
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="block w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-                    />
-                  </div>
-                </div>
-
-                {/* FORGOT PASSWORD LINK (login mode only) */}
-                {isLogin && (
-                  <div className="text-right">
                     <button
-                      type="button"
+                      type="submit"
+                      disabled={localLoading || isLoading || isLockedOut}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-lg hover:opacity-95 shadow transition-all focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                    >
+                      {(localLoading || isLoading) ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Please wait...</span>
+                        </>
+                      ) : (
+                        <span>{isLogin ? "Sign In to Store" : "Register Store & Owner"}</span>
+                      )}
+                    </button>
+                  </form>
+
+                  {/* TOGGLE TAB */}
+                  <div className="text-center">
+                    <button
                       onClick={() => {
-                        setIsForgotPassword(true);
+                        setIsLogin(!isLogin);
                         setLocalError(null);
                         setSuccessMsg(null);
                       }}
                       className="text-xs font-medium text-muted-foreground hover:text-foreground transition-all underline"
                     >
-                      Forgot your password?
+                      {isLogin ? "Need a new store account? Register here" : "Already have a store account? Sign In"}
                     </button>
                   </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={localLoading || isLoading || isLockedOut}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground font-semibold text-sm rounded-lg hover:opacity-95 shadow transition-all focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-                >
-                  {(localLoading || isLoading) ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Please wait...</span>
-                    </>
-                  ) : (
-                    <span>{isLogin ? "Sign In to Store" : "Register Store & Owner"}</span>
-                  )}
-                </button>
-              </form>
-
-              {/* TOGGLE TAB */}
-              <div className="text-center">
-                <button
-                  onClick={() => {
-                    setIsLogin(!isLogin);
-                    setLocalError(null);
-                    setSuccessMsg(null);
-                  }}
-                  className="text-xs font-medium text-muted-foreground hover:text-foreground transition-all underline"
-                >
-                  {isLogin ? "Need a new store account? Register here" : "Already have a store account? Sign In"}
-                </button>
-              </div>
+                </>
+              )}
             </>
           )}
         </div>

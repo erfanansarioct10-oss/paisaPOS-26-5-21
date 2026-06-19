@@ -71,7 +71,7 @@ export default function AuthenticatedShell({
 
           <div className="flex items-center justify-center gap-2 text-foreground">
             <Loader2 className="w-5 h-5 animate-spin text-primary" />
-            <span className="font-semibold text-sm">Syncing PaisaPOS database...</span>
+            <span className="font-semibold text-sm">Syncing Chlorif database...</span>
           </div>
 
           <p className="text-xs text-muted-foreground max-w-xs leading-normal">

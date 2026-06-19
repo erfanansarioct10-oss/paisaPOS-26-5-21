@@ -57,7 +57,7 @@ export function InventoryImportWizard({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", "PaisaPOS_Catalog_Template.csv");
+    link.setAttribute("download", "Chlorif_Catalog_Template.csv");
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();

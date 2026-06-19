@@ -141,7 +141,7 @@ export default function StaffAcceptPage({ invitationId, currentEmail, invitePrev
               Accept Staff Invite
             </h1>
             <p className="text-xs text-muted-foreground mt-0.5">
-              PaisaPOS cashier access
+              Chlorif cashier access
             </p>
           </div>
         </div>
@@ -158,7 +158,7 @@ export default function StaffAcceptPage({ invitationId, currentEmail, invitePrev
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Store invite</p>
               <p className="mt-1 text-sm font-semibold text-foreground">
-                {invitePreview.storeName ?? "PaisaPOS store"}
+                {invitePreview.storeName ?? "Chlorif store"}
               </p>
             </div>
             <div>

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import AuthCallbackErrorContent from "@/features/auth/components/auth-callback-error-content";
 
 export const metadata: Metadata = {
-  title: "Sign-in Link Issue | PaisaPOS",
+  title: "Sign-in Link Issue | Chlorif",
 };
 
 type CallbackErrorPageProps = {

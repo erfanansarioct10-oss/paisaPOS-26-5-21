@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/server/supabase/dal";
 import { getStaffInvitePreview } from "@/server/staff/staff-invite-preview";
 
 export const metadata: Metadata = {
-  title: "Accept Staff Invite | PaisaPOS",
+  title: "Accept Staff Invite | Chlorif",
 };
 
 type StaffAcceptRouteProps = {

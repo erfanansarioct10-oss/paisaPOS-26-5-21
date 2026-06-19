@@ -56,7 +56,7 @@ export default function Sidebar() {
       <div className="flex md:hidden items-center justify-between px-4 py-3 bg-card border-b border-border text-foreground sticky top-0 z-40">
         <div className="flex items-center gap-2">
           <Store className="w-5 h-5 text-primary" />
-          <span className="font-outfit font-bold tracking-tight text-lg">PaisaPOS</span>
+          <span className="font-outfit font-bold tracking-tight text-lg">Chlorif</span>
           <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[9px] font-bold uppercase tracking-wider leading-none">
             Beta
           </span>
@@ -108,7 +108,7 @@ export default function Sidebar() {
           <div className="flex flex-col">
             <div className="flex items-center gap-1.5">
               <span className="font-outfit font-extrabold tracking-tight text-xl text-foreground">
-                PaisaPOS
+                Chlorif
               </span>
               <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[9px] font-bold uppercase tracking-wider leading-none">
                 Beta
