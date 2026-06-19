@@ -7,6 +7,7 @@ import {
   deleteProductAction,
   toggleProductFavoriteAction,
   updateProfileAction,
+  updateSecurityPinAction,
   updateStoreAction,
   upsertProductAction,
 } from "../actions";
@@ -464,7 +465,7 @@ describe("Server Action permission abuse gates", () => {
         durationHours: "2",
         reason: "Owner away",
         confirmText: "GRANT",
-        stepUpProofId: invitationId,
+        securityPin: "1234",
       })),
     },
     {
@@ -1101,7 +1102,7 @@ describe("Server Action permission abuse gates", () => {
 
   test("login throttling is scoped by IP and IP+email fingerprint, not email alone", async () => {
     const signInWithPassword = vi.fn(async () => ({
-      data: { user: { id: ownerId } },
+      data: { user: { id: ownerId, email_confirmed_at: new Date().toISOString() } },
       error: null,
     }));
     vi.mocked(getSupabaseServerClient).mockResolvedValue({
@@ -1287,6 +1288,7 @@ describe("Server Action permission abuse gates", () => {
         durationHours: "2",
         reason: "Owner away",
         confirmText: "GRANT",
+        securityPin: "1234",
       }),
     );
 
@@ -1611,62 +1613,41 @@ describe("Server Action permission abuse gates", () => {
     expect(recordActivityEvent).not.toHaveBeenCalled();
   });
 
-  test("mints a one-time delegation step-up proof after fresh AAL2 MFA", async () => {
+  test("allows updating security PIN with valid 4-6 digit code", async () => {
     mockTenant("owner");
-    mockFreshAal2Session();
-    const insertQuery = createInsertSingleQuery({
-      data: {
-        id: invitationId,
-        expires_at: "2026-05-26T03:55:00.000Z",
-      },
-      error: null,
-    });
-    const from = vi.fn((table: string) => {
-      if (table === "staff_step_up_proofs") return insertQuery;
-      throw new Error(`Unexpected table ${table}`);
-    });
+    const usersQuery = createAwaitableQuery({ error: null });
+    const from = vi.fn(() => usersQuery);
     vi.mocked(getSupabaseAdminClient).mockReturnValue({ from } as never);
 
-    const result = await createDelegationStepUpProofAction();
+    await expect(updateSecurityPinAction({ pin: "123456" })).resolves.toBe(true);
 
-    expect(result).toMatchObject({
-      success: true,
-      proofId: invitationId,
-      expiresAt: "2026-05-26T03:55:00.000Z",
-    });
-    expect(insertQuery.insert).toHaveBeenCalledWith(
+    expect(getSupabaseServerClient).not.toHaveBeenCalled();
+    expect(from).toHaveBeenCalledWith("users");
+    expect(usersQuery.update).toHaveBeenCalledWith({ security_pin: "123456" });
+    expect(usersQuery.eq).toHaveBeenCalledWith("id", ownerId);
+    expect(recordActivityEvent).toHaveBeenCalledWith(
       expect.objectContaining({
-        store_id: storeId,
-        user_id: ownerId,
-        purpose: "delegation.grant",
-        assurance_level: "aal2",
-        authentication_method: "totp",
+        action: "profile.security_pin_updated",
+        privilegeSource: "owner_role",
+        targetId: ownerId,
       }),
     );
   });
 
-  test("does not mint a delegation step-up proof for stale MFA", async () => {
+  test("rejects invalid security PIN length or format", async () => {
     mockTenant("owner");
-    mockFreshAal2Session({
-      timestampSeconds: Math.floor((Date.now() - 11 * 60 * 1000) / 1000),
-    });
-
-    const result = await createDelegationStepUpProofAction();
-
-    expect(result).toMatchObject({
-      success: false,
-      error: "Enter a fresh MFA code before granting temporary access.",
-    });
-    expect(getSupabaseAdminClient).not.toHaveBeenCalled();
+    await expect(updateSecurityPinAction({ pin: "12" })).rejects.toThrow("Invalid security PIN");
+    await expect(updateSecurityPinAction({ pin: "1234567" })).rejects.toThrow("Invalid security PIN");
+    await expect(updateSecurityPinAction({ pin: "abcd" })).rejects.toThrow("Invalid security PIN");
   });
 
-  test("denies owner delegation grants without a step-up proof", async () => {
+  test("denies owner delegation grants with invalid security PIN", async () => {
     mockTenant("owner");
     const rpc = vi.fn(async () => ({
       data: {
         ok: false,
-        code: "step_up_required",
-        message: "Verify your identity with MFA before granting temporary access.",
+        code: "security_pin_invalid",
+        message: "Incorrect security PIN. Please try again.",
       },
       error: null,
     }));
@@ -1680,12 +1661,13 @@ describe("Server Action permission abuse gates", () => {
         durationHours: "2",
         reason: "Owner away",
         confirmText: "GRANT",
+        securityPin: "9999",
       }),
     );
 
     expect(result).toMatchObject({
       success: false,
-      error: "Verify your identity with MFA before granting temporary access.",
+      error: "Incorrect security PIN. Please try again.",
     });
     expect(rpc).toHaveBeenCalledWith("grant_privilege_delegation", {
       p_store_id: storeId,
@@ -1694,26 +1676,26 @@ describe("Server Action permission abuse gates", () => {
       p_scope: "catalog.manage",
       p_duration_hours: 2,
       p_reason: "Owner away",
-      p_step_up_proof_id: null,
+      p_security_pin: "9999",
     });
     expect(recordActivityEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "delegation.grant_denied",
         actionScope: "staff.manage",
         result: "failure",
-        errorCode: "step_up_required",
+        errorCode: "security_pin_invalid",
       }),
       { strict: true },
     );
   });
 
-  test("denies owner delegation grants with expired or reused step-up proof", async () => {
+  test("denies owner delegation grants when security PIN is not set", async () => {
     mockTenant("owner");
     const rpc = vi.fn(async () => ({
       data: {
         ok: false,
-        code: "step_up_invalid_or_expired",
-        message: "Your identity verification expired. Enter a fresh MFA code and try again.",
+        code: "security_pin_not_set",
+        message: "Please set up a Security PIN in settings before granting temporary access.",
       },
       error: null,
     }));
@@ -1727,13 +1709,13 @@ describe("Server Action permission abuse gates", () => {
         durationHours: "2",
         reason: "Owner away",
         confirmText: "GRANT",
-        stepUpProofId: invitationId,
+        securityPin: "1234",
       }),
     );
 
     expect(result).toMatchObject({
       success: false,
-      error: "Your identity verification expired. Enter a fresh MFA code and try again.",
+      error: "Please set up a Security PIN in settings before granting temporary access.",
     });
     expect(rpc).toHaveBeenCalledWith(
       "grant_privilege_delegation",
@@ -1744,20 +1726,20 @@ describe("Server Action permission abuse gates", () => {
         p_scope: "catalog.manage",
         p_duration_hours: 2,
         p_reason: "Owner away",
-        p_step_up_proof_id: invitationId,
+        p_security_pin: "1234",
       }),
     );
     expect(recordActivityEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "delegation.grant_denied",
         result: "failure",
-        errorCode: "step_up_invalid_or_expired",
+        errorCode: "security_pin_not_set",
       }),
       { strict: true },
     );
   });
 
-  test("allows an owner to grant temporary access with activity proof", async () => {
+  test("allows an owner to grant temporary access with valid security PIN", async () => {
     mockTenant("owner");
     const rpc = vi.fn(async () => ({
       data: {
@@ -1784,7 +1766,7 @@ describe("Server Action permission abuse gates", () => {
         durationHours: "2",
         reason: "Owner away",
         confirmText: "GRANT",
-        stepUpProofId: invitationId,
+        securityPin: "1234",
       }),
     );
 
@@ -1798,7 +1780,7 @@ describe("Server Action permission abuse gates", () => {
         p_scope: "catalog.manage",
         p_duration_hours: 2,
         p_reason: "Owner away",
-        p_step_up_proof_id: invitationId,
+        p_security_pin: "1234",
       },
     );
     expect(recordActivityEvent).not.toHaveBeenCalled();
@@ -1828,7 +1810,7 @@ describe("Server Action permission abuse gates", () => {
         durationHours: "2",
         reason: "Owner away",
         confirmText: "GRANT",
-        stepUpProofId: invitationId,
+        securityPin: "1234",
       }),
     );
 
@@ -1843,7 +1825,7 @@ describe("Server Action permission abuse gates", () => {
         p_actor_user_id: ownerId,
         p_target_user_id: staffUserId,
         p_scope: "catalog.manage",
-        p_step_up_proof_id: invitationId,
+        p_security_pin: "1234",
       }),
     );
     expect(recordActivityEvent).toHaveBeenCalledWith(

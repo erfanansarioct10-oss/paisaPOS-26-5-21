@@ -1,6 +1,7 @@
 "use server";
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/shared/supabase/database.types";
 import { createHash } from "node:crypto";
 import { headers } from "next/headers";
 import { z } from "zod";
@@ -118,6 +119,85 @@ type SignupProfile = {
 
 const STAFF_ACCOUNT_OWNER_BLOCK =
   "This account is already connected to a store as staff. Use a different email to create your own shop.";
+
+type ExtendedDatabase = {
+  public: {
+    Tables: Database["public"]["Tables"] & {
+      pending_signups: {
+        Row: {
+          id: string;
+          email: string;
+          password: string;
+          full_name: string;
+          store_name: string;
+          token: string;
+          expires_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          email: string;
+          password: string;
+          full_name: string;
+          store_name: string;
+          token: string;
+          expires_at: string;
+          created_at?: string;
+        };
+        Update: Partial<{
+          id: string;
+          email: string;
+          password: string;
+          full_name: string;
+          store_name: string;
+          token: string;
+          expires_at: string;
+          created_at: string;
+        }>;
+        Relationships: [];
+      };
+      password_reset_codes: {
+        Row: {
+          id: string;
+          email: string;
+          code: string;
+          token: string | null;
+          expires_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          email: string;
+          code: string;
+          token?: string | null;
+          expires_at: string;
+          created_at?: string;
+        };
+        Update: Partial<{
+          id: string;
+          email: string;
+          code: string;
+          token: string | null;
+          expires_at: string;
+          created_at: string;
+        }>;
+        Relationships: [];
+      };
+    };
+    Views: Database["public"]["Views"];
+    Enums: Database["public"]["Enums"];
+    Functions: Database["public"]["Functions"] & {
+      get_user_id_by_email: {
+        Args: {
+          p_email: string;
+        };
+        Returns: string;
+      };
+    };
+    CompositeTypes: Database["public"]["CompositeTypes"];
+  };
+};
+
 
 async function hasPendingStaffInviteForEmail(email: string): Promise<boolean | "unavailable"> {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -254,6 +334,15 @@ export async function loginAction(rawParams: unknown) {
       return { error: getFriendlyErrorMessage(error.message) };
     }
 
+    if (data.user && !data.user.email_confirmed_at) {
+      await supabase.auth.signOut();
+      await writeLog("SECURITY", "AUTH_LOGIN_DENIED_UNCONFIRMED", `Login denied for unconfirmed email: ${email}`, {
+        userId: data.user.id,
+        email,
+      });
+      return { error: "Please verify your email address before logging in." };
+    }
+
     // Log successful login
     await writeLog("SECURITY", "AUTH_LOGIN_SUCCESS", `User successfully logged in: ${email}`, {
       userId: data.user.id,
@@ -283,6 +372,8 @@ export async function signupAction(rawParams: unknown) {
     const ip = await getClientIp();
     await enforceRateLimit(signupLimiter, `signup:${ip}`, "SIGNUP");
 
+
+
     const supabase = await getSupabaseServerClient();
     const existingSession = await getExistingSessionSignupResult(supabase, email);
     if (existingSession.blocked) {
@@ -301,8 +392,8 @@ export async function signupAction(rawParams: unknown) {
     }
 
     // Check if the user already exists in auth.users
-    const adminClient = getSupabaseAdminClient();
-    const { data: userId, error: rpcError } = await (adminClient as any).rpc("get_user_id_by_email", {
+    const adminClient = getSupabaseAdminClient() as unknown as SupabaseClient<ExtendedDatabase>;
+    const { data: userId, error: rpcError } = await adminClient.rpc("get_user_id_by_email", {
       p_email: email,
     });
 
@@ -320,7 +411,7 @@ export async function signupAction(rawParams: unknown) {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
     // Store pending signup details
-    const { error: insertError } = await (adminClient as any)
+    const { error: insertError } = await adminClient
       .from("pending_signups")
       .upsert({
         email,
@@ -371,8 +462,8 @@ export async function requestPasswordResetAction(email: string) {
     const ip = await getClientIp();
     await enforceRateLimit(passwordResetLimiter, `reset_password:${ip}`, "RESET_PASSWORD");
 
-    const adminClient = getSupabaseAdminClient();
-    const { data: userId, error: rpcError } = await (adminClient as any).rpc("get_user_id_by_email", {
+    const adminClient = getSupabaseAdminClient() as unknown as SupabaseClient<ExtendedDatabase>;
+    const { data: userId, error: rpcError } = await adminClient.rpc("get_user_id_by_email", {
       p_email: cleanEmail,
     });
 
@@ -390,7 +481,7 @@ export async function requestPasswordResetAction(email: string) {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
     // Store reset code in DB
-    const { error: codeError } = await (adminClient as any)
+    const { error: codeError } = await adminClient
       .from("password_reset_codes")
       .insert({
         email: cleanEmail,
@@ -480,8 +571,8 @@ export async function updatePasswordAction(rawParams: unknown) {
  */
 export async function verifySignupTokenAction(token: string) {
   try {
-    const adminClient = getSupabaseAdminClient();
-    const { data: pending, error: pendingError } = await (adminClient as any)
+    const adminClient = getSupabaseAdminClient() as unknown as SupabaseClient<ExtendedDatabase>;
+    const { data: pending, error: pendingError } = await adminClient
       .from("pending_signups")
       .select("*")
       .eq("token", token)
@@ -492,7 +583,7 @@ export async function verifySignupTokenAction(token: string) {
       return { error: "This verification link is invalid, expired, or has already been used. Please register again." };
     }
 
-    const pendingData = pending as any;
+    const pendingData = pending;
 
     // Create the user in auth schema using Admin SDK
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
@@ -513,7 +604,7 @@ export async function verifySignupTokenAction(token: string) {
     }
 
     // Delete the pending signup record
-    await (adminClient as any).from("pending_signups").delete().eq("id", pendingData.id);
+    await adminClient.from("pending_signups").delete().eq("id", pendingData.id);
 
     await writeLog("SECURITY", "AUTH_SIGNUP_CONFIRMED", `User email verified and account activated: ${pendingData.email}`, {
       userId: newUser.user.id,
@@ -533,9 +624,9 @@ export async function verifySignupTokenAction(token: string) {
 export async function verifyPasswordResetCodeAction(email: string, code: string) {
   try {
     const cleanEmail = normalizeEmail(email);
-    const adminClient = getSupabaseAdminClient();
+    const adminClient = getSupabaseAdminClient() as unknown as SupabaseClient<ExtendedDatabase>;
     
-    const { data: record, error: recordError } = await (adminClient as any)
+    const { data: record, error: recordError } = await adminClient
       .from("password_reset_codes")
       .select("*")
       .eq("email", cleanEmail)
@@ -549,12 +640,12 @@ export async function verifyPasswordResetCodeAction(email: string, code: string)
       return { error: "Invalid or expired verification code." };
     }
 
-    const recordData = record as any;
+    const recordData = record;
 
     // Generate reset verification token
     const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
     
-    const { error: updateError } = await (adminClient as any)
+    const { error: updateError } = await adminClient
       .from("password_reset_codes")
       .update({ token })
       .eq("id", recordData.id);
@@ -582,10 +673,10 @@ export async function resetPasswordWithTokenAction(email: string, token: string,
       return { error: formatZodError(validation.error) };
     }
 
-    const adminClient = getSupabaseAdminClient();
+    const adminClient = getSupabaseAdminClient() as unknown as SupabaseClient<ExtendedDatabase>;
 
     // Verify the token
-    const { data: record, error: recordError } = await (adminClient as any)
+    const { data: record, error: recordError } = await adminClient
       .from("password_reset_codes")
       .select("*")
       .eq("email", cleanEmail)
@@ -598,7 +689,7 @@ export async function resetPasswordWithTokenAction(email: string, token: string,
     }
 
     // Get the user ID from auth.users
-    const { data: userId, error: rpcError } = await (adminClient as any).rpc("get_user_id_by_email", {
+    const { data: userId, error: rpcError } = await adminClient.rpc("get_user_id_by_email", {
       p_email: cleanEmail,
     });
 
@@ -618,7 +709,7 @@ export async function resetPasswordWithTokenAction(email: string, token: string,
     }
 
     // Delete reset codes for this email
-    await (adminClient as any).from("password_reset_codes").delete().eq("email", cleanEmail);
+    await adminClient.from("password_reset_codes").delete().eq("email", cleanEmail);
 
     // Revoke all sessions globally to force re-authentication
     await adminClient.auth.admin.signOut(userId as string, "global");

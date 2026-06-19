@@ -17,7 +17,6 @@ import {
   XCircle,
 } from "lucide-react";
 import {
-  createDelegationStepUpProofAction,
   grantPrivilegeDelegationFormAction,
   reactivateStaffAction,
   resendStaffInviteAction,
@@ -176,11 +175,10 @@ function ReactivateStaffForm({ member }: { member: StaffMemberDTO }) {
 function DelegationGrantForm({ member, onClose }: { member: StaffMemberDTO; onClose: () => void }) {
   const [grantState, grantAction, grantPending] = useActionState(grantPrivilegeDelegationFormAction, initialGrantState);
   const [clientError, setClientError] = useState<string | null>(null);
-  const [mfaCode, setMfaCode] = useState("");
-  const [stepUpPending, setStepUpPending] = useState(false);
+  const [securityPin, setSecurityPin] = useState("");
   const [grantTransitionPending, startGrantTransition] = useTransition();
   const formRef = useRef<HTMLFormElement>(null);
-  const pending = grantPending || stepUpPending || grantTransitionPending;
+  const pending = grantPending || grantTransitionPending;
 
   useEffect(() => {
     if (grantState.success) {
@@ -191,62 +189,28 @@ function DelegationGrantForm({ member, onClose }: { member: StaffMemberDTO; onCl
     }
   }, [grantState.success, onClose]);
 
-  async function prepareStepUpProof() {
-    const code = mfaCode.trim();
-    if (!/^\d{6}$/.test(code)) {
-      throw new Error("Enter a valid 6-digit MFA code.");
-    }
-
-    const { data: factors, error: factorError } = await supabase.auth.mfa.listFactors();
-    if (factorError) {
-      throw new Error(factorError.message);
-    }
-
-    const factor = factors.totp.find((item) => item.status === "verified");
-    if (!factor) {
-      throw new Error("Set up MFA before granting temporary access.");
-    }
-
-    const { error: verifyError } = await supabase.auth.mfa.challengeAndVerify({
-      factorId: factor.id,
-      code,
-    });
-    if (verifyError) {
-      throw new Error("MFA code was not accepted.");
-    }
-
-    const proof = await createDelegationStepUpProofAction();
-    if (!proof.success || !proof.proofId) {
-      throw new Error(proof.error ?? "Step-up verification could not be completed.");
-    }
-
-    return proof.proofId;
-  }
-
   async function handleGrantSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setClientError(null);
-    setStepUpPending(true);
 
-    try {
-      const proofId = await prepareStepUpProof();
-      const form = formRef.current;
-      if (!form) {
-        throw new Error("Temporary access form is unavailable.");
-      }
-
-      const formData = new FormData(form);
-      formData.set("stepUpProofId", proofId);
-      formData.delete("mfaCode");
-      setMfaCode("");
-      startGrantTransition(() => {
-        grantAction(formData);
-      });
-    } catch (error: unknown) {
-      setClientError(getClientErrorMessage(error));
-    } finally {
-      setStepUpPending(false);
+    const pin = securityPin.trim();
+    if (!/^\d{4,6}$/.test(pin)) {
+      setClientError("Security PIN must be a 4 to 6 digit number.");
+      return;
     }
+
+    const form = formRef.current;
+    if (!form) {
+      setClientError("Temporary access form is unavailable.");
+      return;
+    }
+
+    const formData = new FormData(form);
+    formData.set("securityPin", pin);
+    setSecurityPin("");
+    startGrantTransition(() => {
+      grantAction(formData);
+    });
   }
 
   return (
@@ -263,7 +227,7 @@ function DelegationGrantForm({ member, onClose }: { member: StaffMemberDTO; onCl
 
         <form ref={formRef} action={grantAction} onSubmit={handleGrantSubmit} className="p-5 space-y-4">
           <input type="hidden" name="userId" value={member.id} />
-          <input type="hidden" name="stepUpProofId" value="" readOnly />
+          <input type="hidden" name="securityPin" value="" readOnly />
 
           {grantState.success && grantState.message && (
             <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 p-2.5 text-xs text-emerald-600 dark:text-emerald-400">
@@ -328,18 +292,17 @@ function DelegationGrantForm({ member, onClose }: { member: StaffMemberDTO; onCl
             </label>
 
             <label className="space-y-1">
-              <span className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">MFA Code</span>
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Security PIN</span>
               <input
-                name="mfaCode"
-                type="text"
+                name="securityPin"
+                type="password"
                 inputMode="numeric"
-                autoComplete="one-time-code"
-                pattern="[0-9]{6}"
+                pattern="[0-9]{4,6}"
                 maxLength={6}
                 required
-                value={mfaCode}
-                onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                placeholder="123456"
+                value={securityPin}
+                onChange={(event) => setSecurityPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="1234"
                 className="h-10 w-full rounded-lg border border-border bg-card px-3 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </label>
@@ -370,7 +333,7 @@ function DelegationGrantForm({ member, onClose }: { member: StaffMemberDTO; onCl
               className="flex-1 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold transition-all hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <KeyRound className="w-3.5 h-3.5" />
-              <span>{stepUpPending ? "Verifying..." : grantPending ? "Granting..." : "Verify & Grant"}</span>
+              <span>{pending ? "Granting..." : "Verify & Grant"}</span>
             </button>
           </div>
         </form>

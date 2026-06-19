@@ -5,6 +5,8 @@ import {
   updateProfileFormAction as updateProfileFormActionImpl,
   updateStoreAction as updateStoreActionImpl,
   updateStoreFormAction as updateStoreFormActionImpl,
+  updateSecurityPinAction as updateSecurityPinActionImpl,
+  updateSecurityPinFormAction as updateSecurityPinFormActionImpl,
 } from "@/app/actions";
 
 export async function updateStoreAction(...args: Parameters<typeof updateStoreActionImpl>) {
@@ -22,3 +24,12 @@ export async function updateStoreFormAction(...args: Parameters<typeof updateSto
 export async function updateProfileFormAction(...args: Parameters<typeof updateProfileFormActionImpl>) {
   return updateProfileFormActionImpl(...args);
 }
+
+export async function updateSecurityPinAction(...args: Parameters<typeof updateSecurityPinActionImpl>) {
+  return updateSecurityPinActionImpl(...args);
+}
+
+export async function updateSecurityPinFormAction(...args: Parameters<typeof updateSecurityPinFormActionImpl>) {
+  return updateSecurityPinFormActionImpl(...args);
+}
+

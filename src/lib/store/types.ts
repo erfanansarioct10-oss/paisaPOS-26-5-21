@@ -19,6 +19,7 @@ export interface Profile {
   email?: string;
   role?: "owner" | "cashier";
   status?: "active" | "suspended";
+  has_security_pin?: boolean;
 }
 
 export interface Product {

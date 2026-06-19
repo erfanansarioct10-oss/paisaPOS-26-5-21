@@ -85,8 +85,8 @@ export default function VerifyCodeContent({ email }: { email: string }) {
 
       setSuccessMsg("Code verified! Redirecting to password change page...");
       router.push(`/auth/reset-password?email=${encodeURIComponent(email)}&token=${encodeURIComponent(res.token!)}`);
-    } catch (err: any) {
-      setErrorMsg(err.message || "Invalid code or verification failed.");
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : "Invalid code or verification failed.");
     } finally {
       setLoading(false);
     }

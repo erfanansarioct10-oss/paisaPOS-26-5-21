@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useActionState, useState, useEffect } from "react";
+import React, { useActionState, useState, useEffect, useTransition } from "react";
 import { useAppStore } from "@/lib/store/useAppStore";
-import { updateProfileFormAction, updateStoreFormAction } from "@/features/settings/server/actions";
+import { updateProfileFormAction, updateStoreFormAction, updateSecurityPinAction } from "@/features/settings/server/actions";
 import type { SettingsFormState } from "@/app/actions";
 import { useTheme } from "@/shared/layout/theme-provider";
 import { getStaffCapabilities } from "@/lib/staff-capabilities";
@@ -77,183 +77,96 @@ export default function SettingsPage() {
     }
   }, [profileActionState.success, profileActionState.savedAt, profileName, updateLocalUser]);
 
-  // MFA Enrollment State
-  interface MfaFactor {
-    id: string;
-    friendly_name?: string;
-    created_at: string;
-  }
-  const [mfaFactors, setMfaFactors] = useState<MfaFactor[]>([]);
-  const [mfaStatus, setMfaStatus] = useState<"loading" | "disabled" | "enabled">("loading");
-  const [mfaError, setMfaError] = useState<string | null>(null);
-  const [mfaMessage, setMfaMessage] = useState<string | null>(null);
+  // Security PIN State
+  const [pinSaving, startPinTransition] = useTransition();
+  const [securityPin, setSecurityPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [pinPassword, setPinPassword] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [pinSuccess, setPinSuccess] = useState<string | null>(null);
 
-  // Setup Flow State
-  const [setupStep, setSetupStep] = useState<"idle" | "enrolling" | "verifying">("idle");
-  const [enrollData, setEnrollData] = useState<{ id: string; qrCode: string; secret: string } | null>(null);
-  const [verificationCode, setVerificationCode] = useState("");
-  const [verifyingCode, setVerifyingCode] = useState(false);
-  const [disablingMfa, setDisablingMfa] = useState(false);
+  const [disablingPin, setDisablingPin] = useState(false);
+  const [pinDisableModal, setPinDisableModal] = useState({ isOpen: false });
+  const [pinDisablePassword, setPinDisablePassword] = useState("");
+  const [pinDisableError, setPinDisableError] = useState<string | null>(null);
 
-  // MFA Disable Re-Authentication State
-  const [mfaDisableModal, setMfaDisableModal] = useState<{
-    isOpen: boolean;
-    factorId: string | null;
-  }>({ isOpen: false, factorId: null });
-  const [mfaDisablePassword, setMfaDisablePassword] = useState("");
-  const [mfaReauthError, setMfaReauthError] = useState<string | null>(null);
-
-  // Load MFA Factors on mount
-  const loadMfaFactors = async () => {
-    try {
-      const { data, error } = await supabase.auth.mfa.listFactors();
-      if (error) throw error;
-      const verified = data.totp.filter((f) => f.status === "verified");
-      setMfaFactors(verified);
-      setMfaStatus(verified.length > 0 ? "enabled" : "disabled");
-    } catch (err: unknown) {
-      console.error(err);
-      const message = err instanceof Error ? err.message : String(err);
-      setMfaError(message || "Failed to load MFA status.");
-      setMfaStatus("disabled");
-    }
-  };
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      loadMfaFactors();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, []);
-
-  // Start Enrollment
-  const handleEnrollMfa = async () => {
-    setMfaError(null);
-    setMfaMessage(null);
-    setSetupStep("enrolling");
-    try {
-      // Clean up any existing unverified factors first to avoid duplicate friendly name errors
-      const { data: factorsData, error: listError } = await supabase.auth.mfa.listFactors();
-      if (!listError && factorsData?.totp) {
-        const unverifiedFactors = factorsData.totp.filter((f) => (f.status as string) === "unverified");
-        for (const factor of unverifiedFactors) {
-          try {
-            await supabase.auth.mfa.unenroll({ factorId: factor.id });
-          } catch (unenrollErr) {
-            console.error("Failed to unenroll unverified factor:", unenrollErr);
-          }
-        }
-      }
-
-      const { data, error } = await supabase.auth.mfa.enroll({
-        factorType: "totp",
-        issuer: "Chlorif",
-        friendlyName: user?.email || "User Account"
-      });
-      if (error) throw error;
-
-      setEnrollData({
-        id: data.id,
-        qrCode: data.totp.qr_code,
-        secret: data.totp.secret
-      });
-      setSetupStep("verifying");
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setMfaError(message || "Failed to enroll MFA TOTP factor.");
-      setSetupStep("idle");
-    }
-  };
-
-  // Verify and Activate
-  const handleVerifyMfa = async (e: React.FormEvent) => {
+  const handleSaveSecurityPin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!enrollData) return;
-    setMfaError(null);
-    setMfaMessage(null);
-    setVerifyingCode(true);
+    setPinError(null);
+    setPinSuccess(null);
 
-    try {
-      const { error } = await supabase.auth.mfa.challengeAndVerify({
-        factorId: enrollData.id,
-        code: verificationCode.trim()
-      });
-      if (error) throw error;
-
-      setMfaMessage("MFA successfully enabled! Your account is now secure.");
-      setSetupStep("idle");
-      setEnrollData(null);
-      setVerificationCode("");
-      await loadMfaFactors();
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setMfaError(message || "Invalid verification code. Please try again.");
-    } finally {
-      setVerifyingCode(false);
+    if (securityPin.length < 4 || securityPin.length > 6) {
+      setPinError("Security PIN must be between 4 and 6 digits.");
+      return;
     }
-  };
-
-  // Disable MFA — Step 1: Show re-authentication modal
-  const handleDisableMfa = (factorId: string) => {
-    setMfaDisableModal({ isOpen: true, factorId });
-    setMfaDisablePassword("");
-    setMfaReauthError(null);
-  };
-
-  // Disable MFA — Step 2: Re-authenticate and unenroll
-  const handleConfirmDisableMfa = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const factorId = mfaDisableModal.factorId;
-    if (!factorId || !user?.email) return;
-
-    setMfaReauthError(null);
-    setDisablingMfa(true);
+    if (securityPin !== confirmPin) {
+      setPinError("New Security PIN and Confirmation PIN do not match.");
+      return;
+    }
+    if (!pinPassword) {
+      setPinError("Please enter your account password to authorize this change.");
+      return;
+    }
 
     try {
-      // Re-authenticate the user with their password
       const { error: authError } = await supabase.auth.signInWithPassword({
-        email: user.email,
-        password: mfaDisablePassword,
+        email: user?.email || "",
+        password: pinPassword,
       });
 
       if (authError) {
-        setMfaReauthError("Incorrect password. Please try again.");
+        setPinError("Incorrect password. Please try again.");
         return;
       }
 
-      // Password verified — proceed with unenroll
-      const { error: unenrollError } = await supabase.auth.mfa.unenroll({
-        factorId,
+      startPinTransition(async () => {
+        try {
+          await updateSecurityPinAction({ pin: securityPin });
+          updateLocalUser({ has_security_pin: true });
+          setPinSuccess("Security PIN updated successfully.");
+          setSecurityPin("");
+          setConfirmPin("");
+          setPinPassword("");
+          setPinError(null);
+        } catch (err: unknown) {
+          setPinError(err instanceof Error ? err.message : String(err));
+        }
       });
-      if (unenrollError) throw unenrollError;
-
-      setMfaMessage("MFA has been disabled for your account.");
-      setMfaDisableModal({ isOpen: false, factorId: null });
-      setMfaDisablePassword("");
-      await loadMfaFactors();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setMfaError(message || "Failed to disable MFA.");
-      setMfaDisableModal({ isOpen: false, factorId: null });
-    } finally {
-      setDisablingMfa(false);
+      setPinError(err instanceof Error ? err.message : String(err));
     }
   };
 
-  // Cancel Setup Flow
-  const handleCancelSetup = async () => {
-    if (enrollData?.id) {
-      try {
-        await supabase.auth.mfa.unenroll({ factorId: enrollData.id });
-      } catch (err) {
-        console.error("Failed to clean up unverified factor on cancellation:", err);
+  const handleConfirmDisablePin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPinDisableError(null);
+    setDisablingPin(true);
+
+    try {
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: user?.email || "",
+        password: pinDisablePassword,
+      });
+
+      if (authError) {
+        setPinDisableError("Incorrect password. Please try again.");
+        return;
       }
+
+      await updateSecurityPinAction({ pin: "" });
+
+      setPinDisableModal({ isOpen: false });
+      setPinDisablePassword("");
+      updateLocalUser({ has_security_pin: false });
+      setPinSuccess("Security PIN has been disabled.");
+    } catch (err: unknown) {
+      setPinDisableError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDisablingPin(false);
     }
-    setSetupStep("idle");
-    setEnrollData(null);
-    setVerificationCode("");
-    setMfaError(null);
   };
+
+
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -419,42 +332,37 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* MULTI-FACTOR AUTHENTICATION (MFA) CARD */}
+        {/* SECURITY PIN CARD */}
         <div className="bg-card border border-border rounded-xl p-5 sm:p-6 shadow-sm space-y-5 h-fit">
           <div className="flex items-center gap-2.5 pb-3 border-b border-border">
             <div className="p-2 bg-primary/10 text-primary rounded-lg">
               <Shield className="w-4 h-4" />
             </div>
-            <h2 className="font-semibold text-foreground">Multi-Factor Authentication (MFA)</h2>
+            <h2 className="font-semibold text-foreground">Security PIN</h2>
           </div>
 
-          {mfaError && (
+          {pinError && (
             <div className="bg-red-500/10 border border-red-500/25 rounded-xl p-3 flex items-start gap-2.5 text-xs text-red-400">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <p>{mfaError}</p>
+              <p>{pinError}</p>
             </div>
           )}
 
-          {mfaMessage && (
+          {pinSuccess && (
             <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-3 flex items-center gap-2.5 text-xs text-emerald-400">
               <CheckCircle className="w-4 h-4 shrink-0" />
-              <p>{mfaMessage}</p>
+              <p>{pinSuccess}</p>
             </div>
           )}
 
-          {mfaStatus === "loading" ? (
-            <div className="flex items-center justify-center py-6 text-muted-foreground text-xs gap-2">
-              <Loader2 className="w-4 h-4 animate-spin text-primary" />
-              <span>Checking security status...</span>
-            </div>
-          ) : mfaStatus === "enabled" ? (
+          {user?.has_security_pin ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between p-3.5 bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
                 <div className="flex items-center gap-2.5">
                   <ShieldCheck className="w-5 h-5 text-emerald-500" />
                   <div>
-                    <p className="text-xs font-semibold text-foreground">MFA is Active</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">Your account is secured with TOTP MFA.</p>
+                    <p className="text-xs font-semibold text-foreground">Security PIN is Active</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Your account is secured with a static Security PIN.</p>
                   </div>
                 </div>
                 <span className="text-[10px] bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
@@ -463,121 +371,154 @@ export default function SettingsPage() {
               </div>
 
               <p className="text-xs text-muted-foreground leading-normal">
-                Multi-Factor Authentication adds an extra layer of security when granting temporary access or performing sensitive administrative tasks.
+                This Security PIN is required when granting temporary access to cashier staff members.
               </p>
 
-              {mfaFactors.map((factor) => (
-                <div key={factor.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950/40 border border-border rounded-lg text-xs">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-foreground truncate">{factor.friendly_name || "Authenticator App"}</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">Added on {new Date(factor.created_at).toLocaleDateString()}</p>
+              <form onSubmit={handleSaveSecurityPin} className="space-y-4 pt-2 border-t border-border">
+                <h3 className="text-xs font-bold text-foreground">Change Security PIN</h3>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="new-security-pin" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">New PIN (4-6 digits)</label>
+                    <input
+                      id="new-security-pin"
+                      type="password"
+                      inputMode="numeric"
+                      pattern="[0-9]{4,6}"
+                      maxLength={6}
+                      required
+                      value={securityPin}
+                      onChange={(e) => setSecurityPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="Enter new PIN"
+                      className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-center tracking-[0.2em]"
+                    />
                   </div>
+                  <div>
+                    <label htmlFor="confirm-security-pin" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Confirm New PIN</label>
+                    <input
+                      id="confirm-security-pin"
+                      type="password"
+                      inputMode="numeric"
+                      pattern="[0-9]{4,6}"
+                      maxLength={6}
+                      required
+                      value={confirmPin}
+                      onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="Confirm new PIN"
+                      className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-center tracking-[0.2em]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="pin-auth-password" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Account Password</label>
+                  <input
+                    id="pin-auth-password"
+                    type="password"
+                    required
+                    value={pinPassword}
+                    onChange={(e) => setPinPassword(e.target.value)}
+                    placeholder="Enter your password to save changes"
+                    className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
                   <button
                     type="button"
-                    disabled={disablingMfa}
-                    onClick={() => handleDisableMfa(factor.id)}
-                    className="h-8 inline-flex items-center justify-center px-3 border border-red-500/20 hover:bg-red-500/10 text-red-600 dark:text-red-400 font-semibold rounded-md transition-all active:scale-[0.98]"
+                    onClick={() => setPinDisableModal({ isOpen: true })}
+                    className="flex-1 inline-flex h-11 items-center justify-center border border-red-500/20 hover:bg-red-500/10 text-red-600 dark:text-red-400 text-sm font-semibold rounded-lg transition-all active:scale-[0.98]"
                   >
-                    {disablingMfa ? "Disabling..." : "Disable"}
+                    Disable PIN
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={pinSaving || securityPin.length < 4 || confirmPin.length < 4 || !pinPassword}
+                    className="flex-1 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:opacity-95 shadow transition-all active:scale-[0.98] disabled:opacity-50"
+                  >
+                    {pinSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    <span>Update PIN</span>
                   </button>
                 </div>
-              ))}
+              </form>
             </div>
-          ) : setupStep === "idle" ? (
+          ) : (
             <div className="space-y-4">
               <div className="flex items-center gap-2.5 p-3.5 bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 rounded-xl">
                 <ShieldAlert className="w-5 h-5 text-amber-500 shrink-0" />
                 <div>
-                  <p className="text-xs font-semibold text-foreground">MFA is Not Setup</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">Your account is at higher risk of session hijack.</p>
+                  <p className="text-xs font-semibold text-foreground">Security PIN is Not Set</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Your account has no temporary access security PIN.</p>
                 </div>
               </div>
 
               <p className="text-xs text-muted-foreground leading-normal">
-                Protect your account by adding an authenticator app (Google Authenticator, Authy, Microsoft Authenticator, etc.).
+                Set a static 4-to-6 digit Security PIN to authorize temporary privilege grants.
               </p>
 
-              <button
-                type="button"
-                onClick={handleEnrollMfa}
-                className="w-full inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:opacity-95 shadow transition-all active:scale-[0.98]"
-              >
-                <Shield className="w-4 h-4" />
-                <span>Set up Authenticator App</span>
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="p-4 bg-slate-50 dark:bg-slate-950/40 border border-border rounded-xl space-y-4">
-                <div className="text-center space-y-2">
-                  <p className="text-xs font-bold text-foreground">Scan this QR Code</p>
-                  <p className="text-[10px] text-muted-foreground max-w-[280px] mx-auto leading-normal">
-                    Open your authenticator app, tap &quot;+&quot; or &quot;Add account&quot;, and scan the QR code below.
-                  </p>
-                </div>
-
-                {enrollData?.qrCode && (
-                  <div className="flex justify-center p-2 bg-white rounded-lg border border-border w-fit mx-auto">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={enrollData.qrCode} alt="MFA QR Code" className="w-40 h-40" />
+              <form onSubmit={handleSaveSecurityPin} className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="new-security-pin" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Security PIN (4-6 digits)</label>
+                    <input
+                      id="new-security-pin"
+                      type="password"
+                      inputMode="numeric"
+                      pattern="[0-9]{4,6}"
+                      maxLength={6}
+                      required
+                      value={securityPin}
+                      onChange={(e) => setSecurityPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="Enter PIN"
+                      className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-center tracking-[0.2em]"
+                    />
                   </div>
-                )}
-
-                <div className="text-center space-y-1 block w-full">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Secret Key</p>
-                  <code className="px-2.5 py-1 bg-white dark:bg-slate-900 border border-border rounded text-xs font-mono text-foreground select-all break-all block max-w-xs mx-auto">
-                    {enrollData?.secret}
-                  </code>
-                  <p className="text-[9px] text-muted-foreground mt-1">
-                    If scanning fails, enter this code manually in your authenticator app.
-                  </p>
+                  <div>
+                    <label htmlFor="confirm-security-pin" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Confirm PIN</label>
+                    <input
+                      id="confirm-security-pin"
+                      type="password"
+                      inputMode="numeric"
+                      pattern="[0-9]{4,6}"
+                      maxLength={6}
+                      required
+                      value={confirmPin}
+                      onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="Confirm PIN"
+                      className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-center tracking-[0.2em]"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <form onSubmit={handleVerifyMfa} className="space-y-3.5">
                 <div>
-                  <label htmlFor="mfa-verify-code" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
-                    Verification Code
-                  </label>
+                  <label htmlFor="pin-auth-password" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Account Password</label>
                   <input
-                    id="mfa-verify-code"
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]{6}"
-                    maxLength={6}
+                    id="pin-auth-password"
+                    type="password"
                     required
-                    value={verificationCode}
-                    onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    placeholder="Enter 6-digit code"
-                    className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-center tracking-[0.2em] font-bold text-base"
+                    value={pinPassword}
+                    onChange={(e) => setPinPassword(e.target.value)}
+                    placeholder="Enter your password to authorize"
+                    className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
                   />
                 </div>
 
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={handleCancelSetup}
-                    className="flex-1 h-11 flex items-center justify-center border border-border text-sm font-semibold rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition-all active:scale-[0.98]"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={verifyingCode || verificationCode.length !== 6}
-                    className="flex-1 h-11 inline-flex items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:opacity-95 shadow transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {verifyingCode ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                    <span>{verifyingCode ? "Verifying..." : "Verify & Activate"}</span>
-                  </button>
-                </div>
+                <button
+                  type="submit"
+                  disabled={pinSaving || securityPin.length < 4 || confirmPin.length < 4 || !pinPassword}
+                  className="w-full inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:opacity-95 shadow transition-all active:scale-[0.98] disabled:opacity-50"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Set Security PIN</span>
+                </button>
               </form>
             </div>
           )}
         </div>
       </div>
 
-      {/* MFA DISABLE RE-AUTH MODAL */}
-      {mfaDisableModal.isOpen && (
+      {/* SECURITY PIN DISABLE RE-AUTH MODAL */}
+      {pinDisableModal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
           <div className="bg-card border border-border rounded-xl w-full max-w-sm shadow-lg">
             <div className="flex items-center gap-2.5 px-5 py-4 border-b border-border">
@@ -586,29 +527,29 @@ export default function SettingsPage() {
               </div>
               <div>
                 <h3 className="font-semibold text-foreground text-sm">Confirm Identity</h3>
-                <p className="text-[10px] text-muted-foreground mt-0.5">Re-enter your password to disable MFA</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Re-enter your password to disable Security PIN</p>
               </div>
             </div>
 
-            <form onSubmit={handleConfirmDisableMfa} className="p-5 space-y-4">
-              {mfaReauthError && (
+            <form onSubmit={handleConfirmDisablePin} className="p-5 space-y-4">
+              {pinDisableError && (
                 <div className="bg-red-500/10 border border-red-500/25 rounded-lg p-3 flex items-start gap-2.5 text-xs text-red-400">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <p>{mfaReauthError}</p>
+                  <p>{pinDisableError}</p>
                 </div>
               )}
 
               <div>
-                <label htmlFor="mfa-disable-password" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
+                <label htmlFor="pin-disable-password" className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
                   Account Password
                 </label>
                 <input
-                  id="mfa-disable-password"
+                  id="pin-disable-password"
                   type="password"
                   required
                   autoFocus
-                  value={mfaDisablePassword}
-                  onChange={(e) => setMfaDisablePassword(e.target.value)}
+                  value={pinDisablePassword}
+                  onChange={(e) => setPinDisablePassword(e.target.value)}
                   placeholder="Enter your password"
                   className="block w-full px-4 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
                 />
@@ -616,7 +557,7 @@ export default function SettingsPage() {
 
               <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
                 <p className="text-[10px] text-amber-600 dark:text-amber-400 leading-normal">
-                  <strong>Warning:</strong> Disabling MFA will lower your account security. Anyone with your password will be able to access your account.
+                  <strong>Warning:</strong> Disabling the Security PIN will allow temporary privilege grants without any secondary verification checks.
                 </p>
               </div>
 
@@ -624,9 +565,9 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setMfaDisableModal({ isOpen: false, factorId: null });
-                    setMfaDisablePassword("");
-                    setMfaReauthError(null);
+                    setPinDisableModal({ isOpen: false });
+                    setPinDisablePassword("");
+                    setPinDisableError(null);
                   }}
                   className="flex-1 h-11 flex items-center justify-center border border-border text-sm font-semibold rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition-all"
                 >
@@ -634,11 +575,11 @@ export default function SettingsPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={disablingMfa || !mfaDisablePassword}
+                  disabled={disablingPin || !pinDisablePassword}
                   className="flex-1 h-11 inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {disablingMfa ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldAlert className="w-4 h-4" />}
-                  <span>{disablingMfa ? "Verifying..." : "Disable MFA"}</span>
+                  {disablingPin ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldAlert className="w-4 h-4" />}
+                  <span>{disablingPin ? "Verifying..." : "Disable Security PIN"}</span>
                 </button>
               </div>
             </form>

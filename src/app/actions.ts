@@ -1070,3 +1070,66 @@ export async function updateProfileFormAction(
     };
   }
 }
+
+const updateSecurityPinSchema = z.object({
+  pin: z.string().regex(/^\d{4,6}$/, "Security PIN must be a 4 to 6 digit number.").nullable().optional().or(z.literal("")),
+});
+
+export async function updateSecurityPinAction(rawParams: unknown) {
+  const validation = updateSecurityPinSchema.safeParse(rawParams);
+  if (!validation.success) {
+    throw new Error("Invalid security PIN: " + formatZodError(validation.error));
+  }
+  const { pin } = validation.data;
+
+  const { user, privilegeSource, delegationId } = await requirePrivilege("profile.update");
+
+  await enforceRateLimit(uiMutationLimiter, `ui:${user.id}`, "PIN_UPDATE");
+
+  const adminClient = getSupabaseAdminClient();
+  const { error } = await adminClient
+    .from("users")
+    .update({ security_pin: pin || null })
+    .eq("id", user.id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await recordActivityEvent({
+    storeId: user.store_id,
+    actor: user,
+    action: pin ? "profile.security_pin_updated" : "profile.security_pin_disabled",
+    privilegeSource,
+    delegationId,
+    targetType: "user",
+    targetId: user.id,
+    targetLabel: user.name,
+    result: "success",
+    summary: `${user.name} ${pin ? "updated" : "disabled"} their security PIN.`,
+  });
+
+  return true;
+}
+
+export async function updateSecurityPinFormAction(
+  _prevState: SettingsFormState,
+  formData: FormData,
+): Promise<SettingsFormState> {
+  try {
+    await updateSecurityPinAction({
+      pin: String(formData.get("pin") ?? ""),
+    });
+
+    return {
+      success: true,
+      message: "Security PIN updated successfully.",
+      savedAt: Date.now(),
+    };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: getFriendlyErrorMessage(err) || settingsInitialError,
+    };
+  }
+}

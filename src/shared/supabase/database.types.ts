@@ -807,6 +807,7 @@ export type Database = {
           invited_by_user_id: string | null
           name: string
           role: Database["public"]["Enums"]["user_role"]
+          security_pin: string | null
           status: Database["public"]["Enums"]["user_status"]
           store_id: string | null
           suspended_at: string | null
@@ -818,6 +819,7 @@ export type Database = {
           invited_by_user_id?: string | null
           name: string
           role?: Database["public"]["Enums"]["user_role"]
+          security_pin?: string | null
           status?: Database["public"]["Enums"]["user_status"]
           store_id?: string | null
           suspended_at?: string | null
@@ -829,6 +831,7 @@ export type Database = {
           invited_by_user_id?: string | null
           name?: string
           role?: Database["public"]["Enums"]["user_role"]
+          security_pin?: string | null
           status?: Database["public"]["Enums"]["user_status"]
           store_id?: string | null
           suspended_at?: string | null
@@ -992,7 +995,7 @@ export type Database = {
           p_duration_hours: number
           p_reason: string
           p_scope: Database["public"]["Enums"]["privilege_scope"]
-          p_step_up_proof_id: string
+          p_security_pin: string
           p_store_id: string
           p_target_user_id: string
         }

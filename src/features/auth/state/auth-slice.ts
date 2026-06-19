@@ -318,7 +318,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
       // 2. Load User Profile from Supabase
       const { data: profile, error: profileError } = await supabase
         .from("users")
-        .select("id, name, store_id, role, status")
+        .select("id, name, store_id, role, status, security_pin")
         .eq("id", authUser.id)
         .maybeSingle();
 
@@ -433,6 +433,7 @@ export const createAuthSlice = (set: SetState, get: GetState) => ({
           email: authUser.email,
           role: profile.role,
           status: profile.status ?? "active",
+          has_security_pin: !!profile.security_pin,
         },
         store: {
           id: store.id,

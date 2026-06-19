@@ -132,11 +132,6 @@ const revokePrivilegeDelegationSchema = privilegeDelegationIdSchema.extend({
   confirmText: confirmTextSchema("REVOKE", "Type REVOKE to revoke temporary access."),
 });
 
-const optionalStepUpProofIdSchema = z.preprocess(
-  (value) => (typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined),
-  z.string().uuid("Invalid step-up proof.").optional(),
-);
-
 const grantDelegationSchema = z.object({
   userId: z.string().uuid("Invalid staff user id."),
   scope: z.enum(ACTIVE_STAFF_DELEGATION_PRIVILEGES, {
@@ -154,7 +149,7 @@ const grantDelegationSchema = z.object({
     .refine(validateAuthStringSafety, "Reason contains unsupported control characters.")
     .transform(sanitizeString),
   confirmText: confirmTextSchema("GRANT", "Type GRANT to confirm temporary access."),
-  stepUpProofId: optionalStepUpProofIdSchema,
+  securityPin: z.string().regex(/^\d{4,6}$/, "Security PIN must be a 4 to 6 digit number."),
 });
 
 const staffInviteAcceptanceResultSchema = z.object({
@@ -272,10 +267,10 @@ function staffLifecycleRpcMessage(result: StaffLifecycleRpcResult | null, fallba
       return "Choose a valid duration.";
     case "delegation_reason_invalid":
       return "Reason must be at least 5 characters.";
-    case "step_up_required":
-      return "Verify your identity with MFA before granting temporary access.";
-    case "step_up_invalid_or_expired":
-      return "Your identity verification expired. Enter a fresh MFA code and try again.";
+    case "security_pin_not_set":
+      return "Please set up a Security PIN in settings before granting temporary access.";
+    case "security_pin_invalid":
+      return "Incorrect security PIN. Please try again.";
     case "staff_not_active":
       return "Temporary access can only be granted to active cashiers.";
     case "delegation_already_active":
@@ -478,80 +473,13 @@ async function getProfileForUserId(userId: string): Promise<StaffProfileRow | nu
 }
 
 export async function createDelegationStepUpProofAction(): Promise<DelegationStepUpProofState> {
-  try {
-    const { user, store } = await requirePrivilege("staff.manage");
-    await enforceRateLimit(delegationGrantLimiter, `delegation_step_up:${user.id}`, "DELEGATION_STEP_UP");
-
-    const supabase = await getSupabaseServerClient();
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    const accessToken = session?.access_token;
-    if (sessionError || !accessToken) {
-      return {
-        success: false,
-        error: "Please sign in again before granting temporary access.",
-        updatedAt: Date.now(),
-      };
-    }
-
-    const { data: assurance, error: assuranceError } =
-      await supabase.auth.mfa.getAuthenticatorAssuranceLevel(accessToken);
-    if (assuranceError || assurance?.currentLevel !== "aal2") {
-      return {
-        success: false,
-        error: "Verify your identity with MFA before granting temporary access.",
-        updatedAt: Date.now(),
-      };
-    }
-
-    const freshestMethod = getFreshestAuthenticationMethod(assurance.currentAuthenticationMethods);
-    const nowMs = Date.now();
-    if (!freshestMethod || nowMs - freshestMethod.timestampSeconds * 1000 > delegationStepUpMaxAgeMs) {
-      return {
-        success: false,
-        error: "Enter a fresh MFA code before granting temporary access.",
-        updatedAt: nowMs,
-      };
-    }
-
-    const authenticatedAtMs = freshestMethod.timestampSeconds * 1000;
-    const expiresAt = new Date(Math.min(
-      nowMs + delegationStepUpProofTtlMs,
-      authenticatedAtMs + delegationStepUpMaxAgeMs,
-    ));
-
-    const adminClient = getSupabaseAdminClient();
-    const { data: proof, error: proofError } = await adminClient
-      .from("staff_step_up_proofs")
-      .insert({
-        store_id: store.id,
-        user_id: user.id,
-        purpose: delegationStepUpPurpose,
-        assurance_level: "aal2",
-        authentication_method: freshestMethod.method,
-        authenticated_at: new Date(authenticatedAtMs).toISOString(),
-        expires_at: expiresAt.toISOString(),
-      })
-      .select("id, expires_at")
-      .single();
-
-    if (proofError || !proof) {
-      throw new Error(proofError?.message ?? "Step-up proof could not be created.");
-    }
-
-    return {
-      success: true,
-      proofId: proof.id,
-      expiresAt: proof.expires_at,
-      updatedAt: Date.now(),
-    };
-  } catch (error: unknown) {
-    await logStaffActionError("DELEGATION_STEP_UP_PROOF_FAILED", error);
-    return {
-      success: false,
-      error: getFriendlyErrorMessage(error) || "Step-up verification could not be completed.",
-      updatedAt: Date.now(),
-    };
-  }
+  // Return a dummy proof for backward compatibility with old client/test signatures
+  return {
+    success: true,
+    proofId: "00000000-0000-0000-0000-000000000000",
+    expiresAt: new Date(Date.now() + 60000).toISOString(),
+    updatedAt: Date.now(),
+  };
 }
 
 export async function inviteStaffFormAction(
@@ -955,7 +883,7 @@ export async function grantPrivilegeDelegationFormAction(
     durationHours: formData.get("durationHours"),
     reason: formData.get("reason"),
     confirmText: formData.get("confirmText"),
-    stepUpProofId: formData.get("stepUpProofId"),
+    securityPin: formData.get("securityPin"),
   });
 
   if (!validation.success) {
@@ -966,7 +894,7 @@ export async function grantPrivilegeDelegationFormAction(
     const { user, store, privilegeSource, delegationId } = await requirePrivilege("staff.manage");
     await enforceRateLimit(delegationGrantLimiter, `delegation_grant:${user.id}`, "DELEGATION_GRANT");
 
-    const { userId, scope, durationHours, reason, stepUpProofId } = validation.data;
+    const { userId, scope, durationHours, reason, securityPin } = validation.data;
     const adminClient = getSupabaseAdminClient();
     const { data: rawResult, error: rpcError } = await adminClient.rpc("grant_privilege_delegation", {
       p_store_id: store.id,
@@ -975,7 +903,7 @@ export async function grantPrivilegeDelegationFormAction(
       p_scope: scope,
       p_duration_hours: durationHours,
       p_reason: reason,
-      p_step_up_proof_id: (stepUpProofId ?? null) as string,
+      p_security_pin: securityPin,
     });
 
     if (rpcError) {

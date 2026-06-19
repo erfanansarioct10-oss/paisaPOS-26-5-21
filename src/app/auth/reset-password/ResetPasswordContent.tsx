@@ -46,8 +46,8 @@ export default function ResetPasswordContent({ email, token }: { email: string; 
       }
 
       setSuccess(true);
-    } catch (err: any) {
-      setErrorMsg(err.message || "Failed to reset password. Please request a new code.");
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to reset password. Please request a new code.");
     } finally {
       setLoading(false);
     }
